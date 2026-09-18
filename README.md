@@ -1,115 +1,123 @@
-# Coluna do dia — controle de estoque
+# Painel de Separação — Olist ERP
 
-Gera automaticamente a coluna diária de saldo da planilha de estoque, a partir do
-relatório de vendas exportado do Tiny.
+Painel fixo pra TV do estoque: 3 contadores da fila de separação, sincronizados
+com a API 2.0 (Tiny) do Olist ERP.
 
-Entrada: relatório de vendas do dia + saldo da última coluna preenchida.
-Saída: uma coluna pronta para colar, um valor por linha, na ordem da planilha.
+- **Aguardando separação** (`situacao=1`)
+- **Em separação** (`situacao=4`)
+- **Separadas** (`situacao=2`)
 
-## Rodando
+(Um 4o contador, "Embaladas hoje" via `situacao=3`, foi removido — ver por quê
+na seção de arquitetura abaixo.)
+
+## Arquitetura
+
+- `lib/store.ts` — KV em arquivo JSON local (só guarda o último snapshot sincronizado).
+- `lib/olist.ts` — `fetchSeparacaoCountsLive()` (bate na API de verdade) + `getCachedCounts()` (serve o cache).
+- `server/routes/separacao.ts` — `GET /api/separacao` (cache, rápido) e `POST /api/separacao/sync` (força uma sincronização sob demanda).
+- `server/index.ts` — sobe o Express e agenda a sincronização a cada 30s (padrão) com `setInterval` — como o processo fica sempre no ar (Render, PC do escritório etc.), não precisa de Vercel Cron nem Vercel KV.
+- `src/App.tsx` / `src/styles/globals.css` — frontend: faz polling em `/api/separacao` a cada 30s.
+
+Autenticação é por **token fixo da API 2.0** (gerado em ERP Olist >
+Configurações > Token API), não OAuth — bem mais simples: o token não expira
+sozinho, só é preciso trocar se alguém revogar/regenerar manualmente no ERP.
+
+`GET /separacao.pesquisa.php` devolve `{ retorno: { status, pagina, numero_paginas, separacoes: [...] } }`,
+100 registros por página, sem um campo de total pronto.
+
+Cada etapa usa um critério de "hoje" diferente — ajustados um por um
+comparando com a tela de separação do próprio Olist ERP até os números
+baterem:
+
+- **Aguardando / Em separação** (`situacao=1`/`4`): o parâmetro nativo
+  `dataInicial`/`dataFinal=hoje` já filtra certo (por `dataCriacao`). Conta
+  pela página 1 + última, sem precisar trazer os itens.
+- **Separadas** (`situacao=2`): a tela do Olist conta por `dataSeparacao`, não
+  por `dataCriacao` — a API não tem esse filtro pronto. Busca **sem** filtro
+  de data (essa fila é pequena, não acumula) e conta no código quem tem
+  `dataSeparacao === hoje`.
+- Um `codigo_erro: 32` (a forma da API dizer "consulta sem registros") vira
+  contagem 0 em vez de erro — fila vazia é estado normal, não falha.
+
+**Por que não tem "Embaladas" (`situacao=3`):** a tela do Olist mostra um
+"prazo máximo de despacho" que bateria 100%, mas esse campo **não existe** na
+resposta dessa API (só `dataCriacao`/`dataSeparacao`/`dataCheckout` —
+conferido campo a campo no JSON). A aproximação possível (`dataCheckout ===
+hoje`) chegava a ~0,5% de diferença (375 vs 377) e, por ser status final que
+acumula pra sempre (~500-600 embalagens/dia), exigia uma janela de dias de
+criação arriscando um teto de paginação não documentado da API (~44 páginas
+ok, ~50+ falha com `codigo_erro 35`). Não valeu a complexidade pra um número
+que nunca batia exato — decisão consciente, não limitação técnica sem saída.
+
+## Rodando localmente
 
 ```bash
 npm install
-npm run dev      # front em http://localhost:5173, API em http://localhost:4000
+cp .env.example .env.local   # preencha OLIST_API_TOKEN
+npm run dev                  # front em :5173, API em :4000
 ```
 
-`npm run dev` sobe os dois processos juntos (Vite + Express); o Vite faz proxy
-de `/api/*` para o Express, então a UI só conhece caminhos relativos.
+1. No Olist ERP, vá em **Configurações > Token API** e copie o token da conta.
+2. Cole em `OLIST_API_TOKEN` no `.env.local`.
+3. Abra `http://localhost:5173` — o servidor já sincroniza sozinho ao subir e
+   depois a cada 30s por padrão, sem precisar clicar em nada.
 
-Sem nenhuma configuração o app já funciona: os dados ficam num arquivo JSON em
-`data/vitae-db.json`.
+Sem o token configurado, a tela mostra um aviso claro em vez de números
+zerados ou travados em "—".
 
-### Supabase (opcional)
+## Deploy
 
-Preencha `.env.local` a partir de `.env.example`:
+Duas formas de hospedar — a diferença é só se o front e a API moram no mesmo
+lugar ou não. **A Vercel sozinha não serve**: ela não mantém processo vivo
+(sem `setInterval`) nem disco persistente, e a sincronização de 30 em 30s
+depende dos dois.
 
-```
-SUPABASE_URL=...                 # Project Settings > Data API > Project URL
-SUPABASE_SERVICE_ROLE_KEY=...    # Project Settings > API Keys > service_role
-```
+### Opção A — tudo no Render (mais simples)
 
-**Passo obrigatório:** abra o SQL Editor do projeto e rode o conteúdo de
-[`src/lib/supabase/schema.sql`](src/lib/supabase/schema.sql). Sem isso as tabelas
-não existem e o app avisa na tela.
+1. Web Service novo, apontando pra este repo. Build command: `npm run build`.
+   Start command: `npm start`.
+2. Variáveis de ambiente: `OLIST_API_TOKEN` (obrigatório) e o resto do
+   `.env.example` se quiser mudar os padrões. **Não** precisa de `CORS_ORIGIN`
+   nem `VITE_API_URL` — front e API são o mesmo domínio.
+3. **Adicione um Persistent Disk** (Render > seu serviço > Disks) montado em,
+   por exemplo, `/data`, e defina `DATA_DIR=/data`. Sem isso, o cache do
+   último snapshot zera a cada redeploy — nada grave, o painel só mostra
+   "esqueleto" até a próxima sincronização automática rodar, mas evita esse
+   soluço.
 
-A `service_role` key ignora RLS e por isso só é usada no servidor (`server/`) —
-nunca é lida ou embutida no bundle do navegador.
+### Opção B — front na Vercel, API no Render
 
-## Primeiro uso
+Crie o Render **primeiro** (é de lá que sai a URL que a Vercel vai usar).
 
-Em **Produtos e saldos**, cole da planilha a coluna de produtos junto com a
-última coluna de saldo preenchida:
+**Render (API):**
+1. Web Service novo, apontando pra este repo.
+2. Build command: `npm install && npx tsc --noEmit` (não precisa rodar
+   `vite build` aqui — a Vercel cuida do front). Start command: `npm start`.
+3. Variáveis: `OLIST_API_TOKEN` (obrigatório), `DATA_DIR=/data` + Persistent
+   Disk (mesma razão da Opção A), e `CORS_ORIGIN=https://seu-painel.vercel.app`
+   (a URL que a Vercel vai te dar — pode ajustar depois de criar).
+4. Anote a URL pública que o Render gerou (algo como
+   `https://olist-dashboard-xxxx.onrender.com`).
 
-```
-ABAJUR AMARELO	221
-ABAJUR AZUL	44
-AQUECEDOR 110V	97
-```
+**Vercel (front):**
+1. Importe o mesmo repo na Vercel — ela detecta Vite sozinha (build command
+   `npm run build`, output `dist/`).
+2. Em Settings > Environment Variables, adicione `VITE_API_URL` com a URL do
+   Render do passo anterior (sem barra no final). Precisa existir **antes** do
+   build, porque o Vite lê em build-time, não em runtime.
+3. Deploy. Se a URL da Vercel não bater com o que você colocou em
+   `CORS_ORIGIN` no Render, volte lá e corrija (redeploy o Render depois).
 
-A ordem das linhas coladas é a ordem da planilha — é ela que faz a coluna gerada
-colar alinhada de volta. Se a planilha tiver SKU, cole também
-(`NOME ⇥ SKU ⇥ SALDO`): o SKU é o que casa os anúncios do Tiny sem depender do
-nome.
-
-## Dia a dia
-
-1. Suba o relatório de vendas do Tiny (CSV ou XLSX).
-2. Escolha a data — ou marque "agrupa vários dias" para uma coluna tipo
-   `04/09 à 07/09`.
-3. Escolha o modo de contagem.
-4. Resolva os produtos que o sistema não conseguiu mapear sozinho.
-5. Copie a coluna e cole na planilha.
-6. **Fechar o dia** grava o saldo, que vira o saldo anterior de amanhã.
-
-## Os dois modos de contagem
-
-A decisão de qual adotar ainda está em aberto, então os dois convivem e a
-comparação fica visível na tela.
-
-- **Por Pedido** — soma os pedidos do período, ignorando os cancelados.
-- **Por Nota Fiscal** — soma só o que virou nota emitida no período.
-
-Quais situações entram na conta é ajustável em "Ajustes do relatório", junto com
-o filtro de canais (o full de Amazon/Mercado Livre pode ser separado ali).
-
-**Importante:** o relatório agregado do Tiny (`E-commerce | Produto | Código
-(SKU) | Quantidade | ...`) não traz dados de nota fiscal. Com ele só o modo Por
-Pedido tem base, e o app diz isso em vez de fingir que comparou. Para comparar os
-dois modos, exporte também o relatório por nota fiscal e envie no segundo campo.
-
-## Mapeamento de nomes
-
-O relatório traz o título do anúncio ("Aquecedor de Ambiente Elétrico 110V
-Portátil"); a planilha usa o nome curto ("AQUECEDOR 110V"). O sistema resolve
-nesta ordem: mapeamento já salvo → SKU exato → nome exato → similaridade.
-
-Só mapeia sozinho quando a confiança é alta e não há empate. Especificação
-numérica divergente (110V vs 220V) derruba o score de propósito — errar isso
-baixaria o estoque do produto errado. O resto vai para confirmação humana, e a
-resposta fica salva em **Mapeamentos** para não perguntar de novo.
-
-Um produto do relatório que não existe na planilha nunca é descartado em
-silêncio: aparece em destaque e trava o fechamento até alguém decidir.
+Como o token não expira sozinho (diferente de um OAuth), não tem limitação de
+"reconectar depois de X tempo fora do ar" — o serviço do Render volta a
+sincronizar sozinho assim que o processo sobe de novo, nas duas opções.
 
 ## Desenvolvimento
 
 ```bash
-npm test         # testes do domínio
+npm test
 npm run typecheck
 npm run lint
-npm run build    # build de produção do front (Vite) em dist/
-npm start        # roda o Express (server/), servindo a API e o build de dist/
+npm run build     # build de produção do front (Vite) em dist/
+npm start         # roda o Express, servindo a API e o build de dist/
 ```
-
-Onde as coisas estão:
-
-| Caminho | O quê |
-|---|---|
-| `src/pages/`, `src/components/`, `src/App.tsx` | Frontend (Vite + React + React Router) |
-| `server/` | API HTTP (Express) — uma rota por recurso, monta os mesmos módulos de domínio |
-| `src/lib/domain/parser/` | Leitura de CSV/XLSX, encoding, detecção de colunas |
-| `src/lib/domain/aggregate.ts` | Os dois modos de contagem |
-| `src/lib/domain/matching.ts` | Nome do relatório → linha da planilha |
-| `src/lib/domain/column.ts` | Montagem da coluna e formatos de exportação |
-| `src/lib/service/columns.ts` | Orquestra prévia e fechamento |
-| `src/lib/storage/` | Persistência: driver Supabase e driver arquivo |

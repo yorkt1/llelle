@@ -6,7 +6,7 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 export default defineConfig([
-  globalIgnores(["dist/**", "coverage/**"]),
+  globalIgnores(["dist/**", "coverage/**", "data/**"]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [
@@ -21,7 +21,7 @@ export default defineConfig([
     },
   },
   {
-    files: ["server/**/*.ts", "vite.config.ts", "vitest.config.mts"],
+    files: ["server/**/*.ts", "lib/**/*.ts", "vite.config.ts", "vitest.config.mts", "tests/**/*.ts"],
     languageOptions: {
       globals: globals.node,
     },
