@@ -110,6 +110,30 @@ body {
   font-weight: 700;
   font-size: min(11vw, 9rem);
   line-height: 1;
+  display: inline-block;
+}
+
+.stage-value--pulse {
+  animation: value-pop 0.5s ease;
+}
+
+@keyframes value-pop {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.08);
+    color: var(--stage-color, var(--fg));
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-value--pulse {
+    animation: none;
+  }
 }
 
 .connect {

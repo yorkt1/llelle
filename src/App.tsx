@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 interface SeparacaoCounts {
   aguardandoSeparacao: number;
@@ -32,6 +32,58 @@ function useClock(): string {
     return () => clearInterval(id);
   }, []);
   return now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Anima de um valor pro outro em vez de trocar o número seco — mesmo efeito de "subindo" do contador do YouTube. */
+function useAnimatedNumber(value: number, duration = 600): number {
+  const [display, setDisplay] = useState(value);
+  const displayRef = useRef(value);
+
+  useEffect(() => {
+    displayRef.current = display;
+  }, [display]);
+
+  useEffect(() => {
+    const from = displayRef.current;
+    if (from === value) return;
+    const start = performance.now();
+    let raf = 0;
+
+    const tick = (now: number) => {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(from + (value - from) * eased));
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+
+  return display;
+}
+
+/** true por 500ms toda vez que o valor muda — dispara o "pop" visual junto com a contagem. */
+function useChangePulse(value: number): boolean {
+  const [pulsing, setPulsing] = useState(false);
+  const prevRef = useRef(value);
+
+  useEffect(() => {
+    if (prevRef.current === value) return;
+    prevRef.current = value;
+    setPulsing(true);
+    const id = setTimeout(() => setPulsing(false), 500);
+    return () => clearTimeout(id);
+  }, [value]);
+
+  return pulsing;
+}
+
+function StageValue({ value }: { value: number }) {
+  const display = useAnimatedNumber(value);
+  const pulsing = useChangePulse(value);
+  return (
+    <span className={`stage-value tabular${pulsing ? " stage-value--pulse" : ""}`}>{display}</span>
+  );
 }
 
 function GhostGrid() {
@@ -126,7 +178,7 @@ export function App() {
           {STAGES.map((stage) => (
             <div key={stage.key} className="stage" style={{ "--stage-color": stage.color } as CSSProperties}>
               <span className="stage-label">{stage.label}</span>
-              <span className="stage-value tabular">{data.counts![stage.key]}</span>
+              <StageValue value={data.counts![stage.key]} />
             </div>
           ))}
         </div>
