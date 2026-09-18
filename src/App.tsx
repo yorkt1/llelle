@@ -16,17 +16,27 @@ interface SeparacaoResponse {
 
 type StageKey = keyof SeparacaoCounts;
 
-const STAGES: { key: StageKey; label: string; color: string }[] = [
-  { key: "aguardandoSeparacao", label: "Aguardando separação", color: "var(--stage-1)" },
-  { key: "emSeparacao", label: "Em separação", color: "var(--stage-2)" },
-  { key: "separadas", label: "Separadas", color: "var(--stage-3)" },
-  { key: "embaladas", label: "Embaladas", color: "var(--stage-4)" },
+const STAGES: { key: StageKey; label: string }[] = [
+  { key: "aguardandoSeparacao", label: "Aguardando separação" },
+  { key: "emSeparacao", label: "Em separação" },
+  { key: "separadas", label: "Separadas" },
+  { key: "embaladas", label: "Embaladas" },
 ];
 
 // Pessoa que nunca abriu a configuração vê exatamente as 3 etapas exatas —
 // "Embaladas" é aproximado (ver lib/olist.ts) e fica opt-in.
 const DEFAULT_VISIBLE_STAGES: StageKey[] = ["aguardandoSeparacao", "emSeparacao", "separadas"];
 const VISIBLE_STAGES_STORAGE_KEY = "painel:visibleStages";
+
+type StageColors = Record<StageKey, string>;
+
+const DEFAULT_STAGE_COLORS: StageColors = {
+  aguardandoSeparacao: "#5b8def",
+  emSeparacao: "#f2b84b",
+  separadas: "#2dd4bf",
+  embaladas: "#a78bfa",
+};
+const STAGE_COLORS_STORAGE_KEY = "painel:stageColors";
 
 const POLL_MS = 30_000;
 
@@ -138,6 +148,44 @@ function useVisibleStages(): [Set<StageKey>, (key: StageKey) => void] {
   return [visible, toggleStage];
 }
 
+function readStageColors(): StageColors {
+  try {
+    const raw = localStorage.getItem(STAGE_COLORS_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_STAGE_COLORS };
+    const parsed = JSON.parse(raw) as Partial<StageColors>;
+    return { ...DEFAULT_STAGE_COLORS, ...parsed };
+  } catch {
+    return { ...DEFAULT_STAGE_COLORS };
+  }
+}
+
+function persistStageColors(colors: StageColors): void {
+  try {
+    localStorage.setItem(STAGE_COLORS_STORAGE_KEY, JSON.stringify(colors));
+  } catch {
+    // localStorage bloqueado (aba anônima etc.) — a escolha só não sobrevive a um reload.
+  }
+}
+
+function useStageColors(): [StageColors, (key: StageKey, color: string) => void, () => void] {
+  const [colors, setColors] = useState<StageColors>(readStageColors);
+
+  const setColor = useCallback((key: StageKey, color: string) => {
+    setColors((current) => {
+      const next = { ...current, [key]: color };
+      persistStageColors(next);
+      return next;
+    });
+  }, []);
+
+  const resetColors = useCallback(() => {
+    setColors({ ...DEFAULT_STAGE_COLORS });
+    persistStageColors(DEFAULT_STAGE_COLORS);
+  }, []);
+
+  return [colors, setColor, resetColors];
+}
+
 function useFullscreen(): [boolean, () => void] {
   const [isFullscreen, setIsFullscreen] = useState(() => document.fullscreenElement != null);
 
@@ -169,12 +217,18 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
 function SettingsPanel({
   visible,
   onToggleStage,
+  colors,
+  onColorChange,
+  onResetColors,
   isFullscreen,
   onToggleFullscreen,
   onClose,
 }: {
   visible: Set<StageKey>;
   onToggleStage: (key: StageKey) => void;
+  colors: StageColors;
+  onColorChange: (key: StageKey, color: string) => void;
+  onResetColors: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onClose: () => void;
@@ -191,25 +245,39 @@ function SettingsPanel({
         </p>
         <div className="settings-options">
           {STAGES.map((stage) => (
-            <label key={stage.key} className="settings-option">
-              <input type="checkbox" checked={visible.has(stage.key)} onChange={() => onToggleStage(stage.key)} />
-              {stage.label}
-            </label>
+            <div key={stage.key} className="settings-option">
+              <label className="settings-option-label">
+                <input type="checkbox" checked={visible.has(stage.key)} onChange={() => onToggleStage(stage.key)} />
+                {stage.label}
+              </label>
+              <input
+                type="color"
+                className="settings-color"
+                value={colors[stage.key]}
+                onChange={(event) => onColorChange(stage.key, event.target.value)}
+                aria-label={`Cor de ${stage.label}`}
+              />
+            </div>
           ))}
         </div>
-        <button className="refresh-btn" onClick={onToggleFullscreen}>
-          {isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
-        </button>
+        <div className="settings-actions">
+          <button className="refresh-btn" onClick={onToggleFullscreen}>
+            {isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+          </button>
+          <button className="settings-reset" onClick={onResetColors}>
+            Restaurar cores padrão
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function GhostGrid({ stages }: { stages: typeof STAGES }) {
+function GhostGrid({ stages, colors }: { stages: typeof STAGES; colors: StageColors }) {
   return (
     <div className="grid" style={{ "--stage-count": stages.length } as CSSProperties} aria-hidden="true">
       {stages.map((stage) => (
-        <div key={stage.key} className="stage" style={{ "--stage-color": stage.color } as CSSProperties}>
+        <div key={stage.key} className="stage" style={{ "--stage-color": colors[stage.key] } as CSSProperties}>
           <span className="skeleton skeleton-label" />
           <span className="skeleton skeleton-value" />
         </div>
@@ -221,6 +289,7 @@ function GhostGrid({ stages }: { stages: typeof STAGES }) {
 export function App() {
   const clock = useClock();
   const [visibleStages, toggleStage] = useVisibleStages();
+  const [stageColors, setStageColor, resetStageColors] = useStageColors();
   const [isFullscreen, toggleFullscreen] = useFullscreen();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -300,14 +369,14 @@ export function App() {
       {data?.counts ? (
         <div className="grid" style={{ "--stage-count": stages.length } as CSSProperties}>
           {stages.map((stage) => (
-            <div key={stage.key} className="stage" style={{ "--stage-color": stage.color } as CSSProperties}>
+            <div key={stage.key} className="stage" style={{ "--stage-color": stageColors[stage.key] } as CSSProperties}>
               <span className="stage-label">{stage.label}</span>
               <StageValue value={data.counts![stage.key]} />
             </div>
           ))}
         </div>
       ) : (
-        <GhostGrid stages={stages} />
+        <GhostGrid stages={stages} colors={stageColors} />
       )}
 
       {syncError && <p className="error-banner">{syncError}</p>}
@@ -317,6 +386,9 @@ export function App() {
         <SettingsPanel
           visible={visibleStages}
           onToggleStage={toggleStage}
+          colors={stageColors}
+          onColorChange={setStageColor}
+          onResetColors={resetStageColors}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
           onClose={() => setSettingsOpen(false)}
