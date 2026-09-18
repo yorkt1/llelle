@@ -13,9 +13,15 @@ diferentes acompanharem etapas diferentes sem afetar o que aparece em outra TV.
 ## Arquitetura
 
 - `lib/store.ts` — KV em arquivo JSON local (só guarda o último snapshot sincronizado).
-- `lib/olist.ts` — `fetchSeparacaoCountsLive()` (bate na API de verdade) + `getCachedCounts()` (serve o cache).
-- `server/routes/separacao.ts` — `GET /api/separacao` (cache, rápido) e `POST /api/separacao/sync` (força uma sincronização sob demanda).
-- `server/index.ts` — sobe o Express e agenda a sincronização a cada 30s (padrão) com `setInterval` — como o processo fica sempre no ar (Render, PC do escritório etc.), não precisa de Vercel Cron nem Vercel KV.
+- `lib/olist.ts` — `fetchCoreCountsLive()` (Aguardando/Em separação/Separadas) e
+  `fetchEmbaladasCountLive()` (Embaladas) sincronizam **independente um do outro**
+  — cada um preserva no cache o que o outro já tinha calculado. `fetchSeparacaoCountsLive()`
+  faz os dois de uma vez (só usada pelo botão manual). `getCachedCounts()` serve o cache.
+- `server/routes/separacao.ts` — `GET /api/separacao` (cache, rápido) e `POST /api/separacao/sync` (força uma sincronização completa sob demanda).
+- `server/index.ts` — sobe o Express e agenda **dois** `setInterval` — um pra Aguardando/Em
+  separação/Separadas (30s, padrão) e outro pra Embaladas (10min, padrão) — como o
+  processo fica sempre no ar (Render, PC do escritório etc.), não precisa de Vercel Cron
+  nem Vercel KV.
 - `src/App.tsx` / `src/styles/globals.css` — frontend: faz polling em `/api/separacao` a cada 30s.
 
 Autenticação é por **token fixo da API 2.0** (gerado em ERP Olist >
@@ -41,14 +47,28 @@ baterem:
 - **Embaladas** (`situacao=3`): a tela do Olist mostra um "prazo máximo de
   despacho" que bateria 100%, mas esse campo **não existe** na resposta dessa
   API (só `dataCriacao`/`dataSeparacao`/`dataCheckout`). A aproximação usada
-  (`dataCheckout === hoje`) fica com ~0,5% de diferença testada contra a tela
-  real (375 vs 377) — aceita conscientemente. Diferente de Separadas, essa fila
-  nunca esvazia (~500-600 embalagens/dia acumuladas), então não dá pra buscar
-  sem filtro de data: filtra por `dataCriacao` numa janela de dias
-  (`OLIST_EMBALADAS_WINDOW_DAYS`, padrão 3) com um teto de páginas (40, ~4000
-  registros) pra nunca arriscar o limite não documentado da API (`codigo_erro
-  35` visto em ~50+ páginas nos testes). Se estourar o teto, essa etapa falha
-  isolada e mantém o último valor em cache — não derruba as outras 3.
+  (`dataCheckout === hoje`) tem duas fontes de divergência conhecidas e
+  aceitas: (1) o campo em si não é 100% equivalente ao "prazo máximo de
+  despacho" da tela, e (2) só entram na conta itens **criados** dentro da
+  janela de dias (`OLIST_EMBALADAS_WINDOW_DAYS`, padrão 6) — um item criado
+  antes disso e embalado hoje escapa da contagem (foi a causa de uma
+  divergência de ~2% observada: 528 aqui vs 539 na tela do Olist, com janela
+  de 3 dias). Aumentar a janela reduz (2), mas tem um teto de páginas (40,
+  ~4000 registros) pra nunca arriscar o limite não documentado da API
+  (`codigo_erro 35` visto em ~50+ páginas nos testes) — se estourar, essa etapa
+  falha isolada e mantém o último valor em cache, sem derrubar as outras 3.
+
+  Essa fila nunca esvazia (~500-600 embalagens/dia acumuladas), diferente de
+  Separadas, então não dá pra buscar sem filtro de data como lá. E como depois
+  de "Separadas" só existe um caminho possível (virar "Embaladas", sem outra
+  saída), esse número não precisa ser tão ao vivo quanto os outros 3 — por
+  isso sincroniza numa frequência própria e bem mais baixa
+  (`OLIST_EMBALADAS_SYNC_INTERVAL_MS`, padrão 10min, ver `server/index.ts`).
+  Isso importa na prática: rodar a busca de Embaladas (várias páginas) junto
+  com o sync de 30s das outras 3 etapas foi o que estourou o rate limit real
+  do Tiny nos testes — a API passou a recusar toda requisição com "Token
+  inválido" por alguns segundos depois de uma rajada de ~20 páginas (não é o
+  token, é limite de taxa).
 
 ## Rodando localmente
 

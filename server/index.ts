@@ -5,7 +5,7 @@ import { config } from "dotenv";
 import cors from "cors";
 import express from "express";
 import { separacaoRouter } from "./routes/separacao";
-import { fetchSeparacaoCountsLive, isConfigured, OlistConfigError } from "../lib/olist";
+import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,29 +40,59 @@ app.listen(port, () => {
 
 // Substitui o Vercel Cron: como este processo fica sempre no ar (Render, PC do
 // escritório etc.), ele mesmo agenda a sincronização — não precisa de nada externo.
-// Padrão de 30s (igual ao polling do frontend) pra ficar o mais "ao vivo"
-// possível sem depender de botão manual — CUIDADO ao baixar mais que isso: a
-// API do Tiny tem limite de taxa.
-const SYNC_INTERVAL_MS = Number(process.env.OLIST_SYNC_INTERVAL_MS ?? 30_000);
+//
+// Embaladas sincroniza numa frequência própria, bem mais baixa: diferente das
+// outras 3 etapas, o fluxo depois de "Separadas" só tem um caminho (vira
+// "Embaladas"), então não precisa ser tão ao vivo — e cada sync dela custa
+// várias páginas (proporcional à janela de dias). Rodar as duas juntas a cada
+// 30s foi o que estourou o rate limit do Tiny na prática (ver comentário em
+// lib/olist.ts). Padrão de 10min pra Embaladas, 30s pro resto.
+const CORE_SYNC_INTERVAL_MS = Number(process.env.OLIST_SYNC_INTERVAL_MS ?? 30_000);
+const EMBALADAS_SYNC_INTERVAL_MS = Number(process.env.OLIST_EMBALADAS_SYNC_INTERVAL_MS ?? 10 * 60_000);
 
-let syncing = false;
+let syncingCore = false;
 
-async function syncOnce(): Promise<void> {
-  if (!isConfigured() || syncing) return;
-  syncing = true;
+async function syncCoreOnce(): Promise<void> {
+  if (!isConfigured() || syncingCore) return;
+  syncingCore = true;
   try {
-    const snapshot = await fetchSeparacaoCountsLive();
-    console.log(`[olist] sincronizado às ${snapshot.syncedAt}`, snapshot.counts);
+    const snapshot = await fetchCoreCountsLive();
+    console.log(`[olist] core sincronizado às ${snapshot.syncedAt}`, {
+      aguardandoSeparacao: snapshot.counts.aguardandoSeparacao,
+      emSeparacao: snapshot.counts.emSeparacao,
+      separadas: snapshot.counts.separadas,
+    });
   } catch (error) {
     if (error instanceof OlistConfigError) {
       console.error(`[olist] ${error.message}`);
       return;
     }
-    console.error("[olist] falha na sincronização:", error);
+    console.error("[olist] falha na sincronização core:", error);
   } finally {
-    syncing = false;
+    syncingCore = false;
   }
 }
 
-void syncOnce();
-setInterval(() => void syncOnce(), SYNC_INTERVAL_MS);
+let syncingEmbaladas = false;
+
+async function syncEmbaladasOnce(): Promise<void> {
+  if (!isConfigured() || syncingEmbaladas) return;
+  syncingEmbaladas = true;
+  try {
+    const snapshot = await fetchEmbaladasCountLive();
+    console.log(`[olist] embaladas sincronizado às ${snapshot.syncedAt}`, { embaladas: snapshot.counts.embaladas });
+  } catch (error) {
+    if (error instanceof OlistConfigError) {
+      console.error(`[olist] ${error.message}`);
+      return;
+    }
+    console.error("[olist] falha na sincronização de embaladas:", error);
+  } finally {
+    syncingEmbaladas = false;
+  }
+}
+
+void syncCoreOnce();
+void syncEmbaladasOnce();
+setInterval(() => void syncCoreOnce(), CORE_SYNC_INTERVAL_MS);
+setInterval(() => void syncEmbaladasOnce(), EMBALADAS_SYNC_INTERVAL_MS);

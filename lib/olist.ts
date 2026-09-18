@@ -20,14 +20,22 @@ import * as store from "./store";
  *   de data (fila pequena, não acumula) e conta client-side pelo campo certo.
  * - Embaladas (situacao=3): aproximação conhecida e aceita — a tela do Olist
  *   usa um "prazo máximo de despacho" que não existe nessa API, então conta
- *   por dataCheckout=hoje (~0,5% de diferença testada contra a tela real).
- *   Diferente de Separadas, essa fila NUNCA esvazia (acumula pra sempre), então
- *   não dá pra buscar sem filtro de data como lá — filtra por dataCriacao numa
- *   janela de dias (OLIST_EMBALADAS_WINDOW_DAYS) pra pegar os itens recentes
- *   que podem ter sido "embalados" hoje, com um teto de páginas pra nunca
- *   arriscar o limite não documentado da API (codigo_erro 35 visto ~50+
- *   páginas). Se estourar o teto, essa etapa falha isolada e mantém o último
- *   valor em cache — não derruba as outras 3 contagens.
+ *   por dataCheckout=hoje. Diferente de Separadas, essa fila NUNCA esvazia
+ *   (acumula pra sempre), então não dá pra buscar sem filtro de data como lá —
+ *   filtra por dataCriacao numa janela de dias (OLIST_EMBALADAS_WINDOW_DAYS)
+ *   pra pegar os itens recentes que podem ter sido "embalados" hoje, com um
+ *   teto de páginas pra nunca arriscar o limite não documentado da API
+ *   (codigo_erro 35 visto ~50+ páginas nos testes). Se estourar o teto, essa
+ *   etapa falha isolada e mantém o último valor em cache — não derruba as
+ *   outras 3 contagens.
+ *
+ *   Como o fluxo é sempre o mesmo caminho (Separadas -> Embaladas, sem outra
+ *   saída), esse número não precisa ser tão "ao vivo" quanto os outros —
+ *   sincroniza numa frequência bem mais baixa (OLIST_EMBALADAS_SYNC_INTERVAL_MS,
+ *   ver server/index.ts), o que sobra de "orçamento" de requisições pra usar
+ *   numa janela maior sem martelar o rate limit do Tiny (visto na prática:
+ *   uma rajada de ~20 páginas já é suficiente pra API começar a recusar com
+ *   "Token inválido" por alguns segundos — não é o token, é limite de taxa).
  */
 // Lidos a cada chamada, não capturados num const no import: o dotenv só
 // carrega o .env.local depois que os imports de server/index.ts já rodaram
@@ -42,7 +50,7 @@ function apiToken(): string {
   return process.env.OLIST_API_TOKEN ?? "";
 }
 function embaladasWindowDays(): number {
-  return Number(process.env.OLIST_EMBALADAS_WINDOW_DAYS ?? 3);
+  return Number(process.env.OLIST_EMBALADAS_WINDOW_DAYS ?? 6);
 }
 
 // Cada página tem 100 registros; 40 páginas = 4000 registros. O teto real da
@@ -212,23 +220,68 @@ async function countEmbaladasHoje(dia: string): Promise<number> {
   return items.filter((item) => item.dataCheckout === dia).length;
 }
 
-/** Bate na API de verdade, atualiza o cache e devolve o snapshot novo. Chamada só pelo sync periódico. */
-export async function fetchSeparacaoCountsLive(): Promise<CachedSnapshot> {
+async function syncCore(): Promise<Omit<SeparacaoCounts, "embaladas">> {
   const hoje = todayInSaoPaulo();
-  const previous = await getCachedCounts();
-
-  const [aguardandoSeparacao, emSeparacao, separadas, embaladas] = await Promise.all([
+  const [aguardandoSeparacao, emSeparacao, separadas] = await Promise.all([
     countByCreatedOn(SITUACAO.aguardandoSeparacao, hoje),
     countByCreatedOn(SITUACAO.emSeparacao, hoje),
     countSeparadasHoje(hoje),
-    countEmbaladasHoje(hoje).catch((error) => {
-      console.error("[olist] falha ao contar embaladas, mantendo cache antigo:", error);
-      return previous?.counts.embaladas ?? null;
-    }),
   ]);
+  return { aguardandoSeparacao, emSeparacao, separadas };
+}
 
+async function syncEmbaladas(previous: CachedSnapshot | null): Promise<number | null> {
+  try {
+    return await countEmbaladasHoje(todayInSaoPaulo());
+  } catch (error) {
+    console.error("[olist] falha ao contar embaladas, mantendo cache antigo:", error);
+    return previous?.counts.embaladas ?? null;
+  }
+}
+
+/**
+ * Sincroniza só Aguardando/Em separação/Separadas — as 3 contagens exatas,
+ * baratas em requisições. Preserva o Embaladas que já estava em cache
+ * (sincronizado por `fetchEmbaladasCountLive`, numa frequência mais baixa).
+ */
+export async function fetchCoreCountsLive(): Promise<CachedSnapshot> {
+  const previous = await getCachedCounts();
+  const core = await syncCore();
   const snapshot: CachedSnapshot = {
-    counts: { aguardandoSeparacao, emSeparacao, separadas, embaladas },
+    counts: { ...core, embaladas: previous?.counts.embaladas ?? null },
+    syncedAt: new Date().toISOString(),
+  };
+  await store.set(COUNTS_KEY, snapshot);
+  return snapshot;
+}
+
+/**
+ * Sincroniza só Embaladas — a etapa cara em requisições (páginas
+ * proporcionais à janela de dias). Preserva as outras 3 que já estavam em
+ * cache (sincronizadas por `fetchCoreCountsLive`, com muito mais frequência).
+ */
+export async function fetchEmbaladasCountLive(): Promise<CachedSnapshot> {
+  const previous = await getCachedCounts();
+  const embaladas = await syncEmbaladas(previous);
+  const snapshot: CachedSnapshot = {
+    counts: {
+      aguardandoSeparacao: previous?.counts.aguardandoSeparacao ?? 0,
+      emSeparacao: previous?.counts.emSeparacao ?? 0,
+      separadas: previous?.counts.separadas ?? 0,
+      embaladas,
+    },
+    syncedAt: new Date().toISOString(),
+  };
+  await store.set(COUNTS_KEY, snapshot);
+  return snapshot;
+}
+
+/** Sincroniza tudo de uma vez — usada só pelo botão manual "Atualizar números" (POST /api/separacao/sync). */
+export async function fetchSeparacaoCountsLive(): Promise<CachedSnapshot> {
+  const previous = await getCachedCounts();
+  const [core, embaladas] = await Promise.all([syncCore(), syncEmbaladas(previous)]);
+  const snapshot: CachedSnapshot = {
+    counts: { ...core, embaladas },
     syncedAt: new Date().toISOString(),
   };
   await store.set(COUNTS_KEY, snapshot);

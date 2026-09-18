@@ -141,6 +141,39 @@ describe("fetchSeparacaoCountsLive", () => {
     expect(snapshot.counts.aguardandoSeparacao).toBe(0);
   });
 
+  it("fetchCoreCountsLive: atualiza as 3 etapas exatas e preserva o embaladas que já estava em cache", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async () => jsonResponse(retornoOk([{}])));
+
+    const olist = await freshOlist();
+    const embaladasSnapshot = await olist.fetchEmbaladasCountLive(); // popula o cache com embaladas != null
+    const snapshot = await olist.fetchCoreCountsLive();
+
+    expect(snapshot.counts.aguardandoSeparacao).toBe(1);
+    expect(snapshot.counts.embaladas).toBe(embaladasSnapshot.counts.embaladas);
+    expect(snapshot.counts.embaladas).not.toBeNull();
+  });
+
+  it("fetchEmbaladasCountLive: atualiza so o embaladas e preserva as outras 3 que ja estavam em cache", async () => {
+    const fetchMock = vi.mocked(fetch);
+    let situacaoEmbaladasCalls = 0;
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("situacao") === "3") situacaoEmbaladasCalls++;
+      return jsonResponse(retornoOk([{}]));
+    });
+
+    const olist = await freshOlist();
+    await olist.fetchCoreCountsLive(); // popula o cache com aguardando/em separacao/separadas != 0
+    const before = await olist.getCachedCounts();
+    const snapshot = await olist.fetchEmbaladasCountLive();
+
+    expect(snapshot.counts.aguardandoSeparacao).toBe(before?.counts.aguardandoSeparacao);
+    expect(snapshot.counts.emSeparacao).toBe(before?.counts.emSeparacao);
+    expect(snapshot.counts.separadas).toBe(before?.counts.separadas);
+    expect(situacaoEmbaladasCalls).toBeGreaterThan(0);
+  });
+
   it("rejeita quando o Olist devolve status de erro", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(
