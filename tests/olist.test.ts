@@ -100,6 +100,47 @@ describe("fetchSeparacaoCountsLive", () => {
     expect(snapshot.counts.separadas).toBe(101);
   });
 
+  it("embaladas: filtra por dataCriacao numa janela de dias e conta client-side por dataCheckout=hoje", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const hoje = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" }).format(new Date());
+    let sawDateRangeForEmbaladas = false;
+
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("situacao") !== "3") return jsonResponse(retornoOk([]));
+      if (url.searchParams.get("dataInicial") && url.searchParams.get("dataFinal")) {
+        sawDateRangeForEmbaladas = true;
+      }
+      return jsonResponse(
+        retornoOk([{ dataCheckout: hoje }, { dataCheckout: hoje }, { dataCheckout: "01/01/2020" }, { dataCheckout: null }]),
+      );
+    });
+
+    const { fetchSeparacaoCountsLive } = await freshOlist();
+    const snapshot = await fetchSeparacaoCountsLive();
+
+    expect(sawDateRangeForEmbaladas).toBe(true);
+    expect(snapshot.counts.embaladas).toBe(2);
+  });
+
+  it("embaladas: quando a janela estoura o teto de paginas, mantem o valor anterior em cache sem falhar as outras contagens", async () => {
+    const fetchMock = vi.mocked(fetch);
+
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("situacao") === "3") {
+        return jsonResponse(retornoOk([{}], 41));
+      }
+      return jsonResponse(retornoOk([]));
+    });
+
+    const { fetchSeparacaoCountsLive } = await freshOlist();
+    const snapshot = await fetchSeparacaoCountsLive();
+
+    expect(snapshot.counts.embaladas).toBeNull();
+    expect(snapshot.counts.aguardandoSeparacao).toBe(0);
+  });
+
   it("rejeita quando o Olist devolve status de erro", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(
@@ -121,6 +162,7 @@ describe("fetchSeparacaoCountsLive", () => {
       aguardandoSeparacao: 0,
       emSeparacao: 0,
       separadas: 0,
+      embaladas: 0,
     });
   });
 });

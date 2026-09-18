@@ -18,11 +18,16 @@ import * as store from "./store";
  * - Separadas (situacao=2): a tela do Olist conta por dataSeparacao=hoje, não
  *   por dataCriacao — a API não tem esse filtro pronto, então busca sem filtro
  *   de data (fila pequena, não acumula) e conta client-side pelo campo certo.
- *
- * (Um 4o contador, "Embaladas hoje" via situacao=3, foi removido: a tela do
- * Olist usa um "prazo máximo de despacho" que não existe nessa API, então só
- * dava pra aproximar por dataCheckout — ficava com ~0,5% de diferença e exigia
- * uma janela de dias arriscando o teto de paginação da API. Não valeu a pena.)
+ * - Embaladas (situacao=3): aproximação conhecida e aceita — a tela do Olist
+ *   usa um "prazo máximo de despacho" que não existe nessa API, então conta
+ *   por dataCheckout=hoje (~0,5% de diferença testada contra a tela real).
+ *   Diferente de Separadas, essa fila NUNCA esvazia (acumula pra sempre), então
+ *   não dá pra buscar sem filtro de data como lá — filtra por dataCriacao numa
+ *   janela de dias (OLIST_EMBALADAS_WINDOW_DAYS) pra pegar os itens recentes
+ *   que podem ter sido "embalados" hoje, com um teto de páginas pra nunca
+ *   arriscar o limite não documentado da API (codigo_erro 35 visto ~50+
+ *   páginas). Se estourar o teto, essa etapa falha isolada e mantém o último
+ *   valor em cache — não derruba as outras 3 contagens.
  */
 // Lidos a cada chamada, não capturados num const no import: o dotenv só
 // carrega o .env.local depois que os imports de server/index.ts já rodaram
@@ -36,6 +41,14 @@ function apiFormat(): string {
 function apiToken(): string {
   return process.env.OLIST_API_TOKEN ?? "";
 }
+function embaladasWindowDays(): number {
+  return Number(process.env.OLIST_EMBALADAS_WINDOW_DAYS ?? 3);
+}
+
+// Cada página tem 100 registros; 40 páginas = 4000 registros. O teto real da
+// API não é documentado (só sabemos que ~44 páginas passa e ~50+ já vimos
+// falhar com codigo_erro 35), então fica com margem de segurança embaixo disso.
+const MAX_SAFE_PAGES = 40;
 
 const COUNTS_KEY = "olist:counts";
 
@@ -47,6 +60,7 @@ const NO_RECORDS_ERROR_CODE = 32;
 export const SITUACAO = {
   aguardandoSeparacao: 1,
   separadas: 2,
+  embaladas: 3,
   emSeparacao: 4,
 } as const;
 
@@ -54,6 +68,8 @@ export type SeparacaoCounts = {
   aguardandoSeparacao: number;
   emSeparacao: number;
   separadas: number;
+  /** null quando a última tentativa falhou (ex: teto de páginas) e não há cache anterior. Aproximado — ver comentário no topo do arquivo. */
+  embaladas: number | null;
 };
 
 export type CachedSnapshot = {
@@ -74,17 +90,29 @@ export function isConfigured(): boolean {
 
 /** dd/mm/yyyy no fuso do Brasil — o formato que a API espera em dataInicial/dataFinal. */
 function todayInSaoPaulo(): string {
+  return dateInSaoPaulo(new Date());
+}
+
+function dateInSaoPaulo(date: Date): string {
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(new Date());
+  }).format(date);
+}
+
+/** N dias atrás, no mesmo formato dd/mm/yyyy — início da janela de busca do Embaladas. */
+function daysAgoInSaoPaulo(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  return dateInSaoPaulo(date);
 }
 
 interface SeparacaoItem {
   dataCriacao?: string;
   dataSeparacao?: string | null;
+  dataCheckout?: string | null;
 }
 
 interface SeparacaoPage {
@@ -162,18 +190,45 @@ async function countSeparadasHoje(dia: string): Promise<number> {
   return items.filter((item) => item.dataSeparacao === dia).length;
 }
 
+/**
+ * Embaladas: fila que nunca esvazia, então (diferente de Separadas) não dá pra
+ * buscar sem filtro de data. Filtra por dataCriacao numa janela de dias e conta
+ * client-side por dataCheckout=hoje — aproximação aceita (~0,5% de diferença
+ * testada contra a tela do Olist). Lança se a janela cair fora do teto seguro
+ * de páginas, pra quem chama decidir o que fazer (aqui: manter o cache antigo).
+ */
+async function countEmbaladasHoje(dia: string): Promise<number> {
+  const range = { dataInicial: daysAgoInSaoPaulo(embaladasWindowDays()), dataFinal: dia };
+  const first = await fetchPage(SITUACAO.embaladas, 1, range);
+  if (first.numero_paginas > MAX_SAFE_PAGES) {
+    throw new Error(
+      `Embaladas: janela de ${embaladasWindowDays()} dia(s) tem ${first.numero_paginas} páginas, acima do teto seguro (${MAX_SAFE_PAGES}). Reduza OLIST_EMBALADAS_WINDOW_DAYS.`,
+    );
+  }
+  const items = [...first.separacoes];
+  for (let pagina = 2; pagina <= first.numero_paginas; pagina++) {
+    items.push(...(await fetchPage(SITUACAO.embaladas, pagina, range)).separacoes);
+  }
+  return items.filter((item) => item.dataCheckout === dia).length;
+}
+
 /** Bate na API de verdade, atualiza o cache e devolve o snapshot novo. Chamada só pelo sync periódico. */
 export async function fetchSeparacaoCountsLive(): Promise<CachedSnapshot> {
   const hoje = todayInSaoPaulo();
+  const previous = await getCachedCounts();
 
-  const [aguardandoSeparacao, emSeparacao, separadas] = await Promise.all([
+  const [aguardandoSeparacao, emSeparacao, separadas, embaladas] = await Promise.all([
     countByCreatedOn(SITUACAO.aguardandoSeparacao, hoje),
     countByCreatedOn(SITUACAO.emSeparacao, hoje),
     countSeparadasHoje(hoje),
+    countEmbaladasHoje(hoje).catch((error) => {
+      console.error("[olist] falha ao contar embaladas, mantendo cache antigo:", error);
+      return previous?.counts.embaladas ?? null;
+    }),
   ]);
 
   const snapshot: CachedSnapshot = {
-    counts: { aguardandoSeparacao, emSeparacao, separadas },
+    counts: { aguardandoSeparacao, emSeparacao, separadas, embaladas },
     syncedAt: new Date().toISOString(),
   };
   await store.set(COUNTS_KEY, snapshot);

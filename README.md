@@ -1,14 +1,14 @@
 # Painel de Separação — Olist ERP
 
-Painel fixo pra TV do estoque: 3 contadores da fila de separação, sincronizados
-com a API 2.0 (Tiny) do Olist ERP.
+Painel fixo pra TV do estoque: contadores da fila de separação, sincronizados
+com a API 2.0 (Tiny) do Olist ERP. Cada tela escolhe (tela de configuração,
+guardado localmente no navegador) quais dos 4 contadores mostrar — pra times
+diferentes acompanharem etapas diferentes sem afetar o que aparece em outra TV.
 
 - **Aguardando separação** (`situacao=1`)
 - **Em separação** (`situacao=4`)
 - **Separadas** (`situacao=2`)
-
-(Um 4o contador, "Embaladas hoje" via `situacao=3`, foi removido — ver por quê
-na seção de arquitetura abaixo.)
+- **Embaladas** (`situacao=3`) — aproximado, ver seção de arquitetura abaixo.
 
 ## Arquitetura
 
@@ -38,16 +38,17 @@ baterem:
   `dataSeparacao === hoje`.
 - Um `codigo_erro: 32` (a forma da API dizer "consulta sem registros") vira
   contagem 0 em vez de erro — fila vazia é estado normal, não falha.
-
-**Por que não tem "Embaladas" (`situacao=3`):** a tela do Olist mostra um
-"prazo máximo de despacho" que bateria 100%, mas esse campo **não existe** na
-resposta dessa API (só `dataCriacao`/`dataSeparacao`/`dataCheckout` —
-conferido campo a campo no JSON). A aproximação possível (`dataCheckout ===
-hoje`) chegava a ~0,5% de diferença (375 vs 377) e, por ser status final que
-acumula pra sempre (~500-600 embalagens/dia), exigia uma janela de dias de
-criação arriscando um teto de paginação não documentado da API (~44 páginas
-ok, ~50+ falha com `codigo_erro 35`). Não valeu a complexidade pra um número
-que nunca batia exato — decisão consciente, não limitação técnica sem saída.
+- **Embaladas** (`situacao=3`): a tela do Olist mostra um "prazo máximo de
+  despacho" que bateria 100%, mas esse campo **não existe** na resposta dessa
+  API (só `dataCriacao`/`dataSeparacao`/`dataCheckout`). A aproximação usada
+  (`dataCheckout === hoje`) fica com ~0,5% de diferença testada contra a tela
+  real (375 vs 377) — aceita conscientemente. Diferente de Separadas, essa fila
+  nunca esvazia (~500-600 embalagens/dia acumuladas), então não dá pra buscar
+  sem filtro de data: filtra por `dataCriacao` numa janela de dias
+  (`OLIST_EMBALADAS_WINDOW_DAYS`, padrão 3) com um teto de páginas (40, ~4000
+  registros) pra nunca arriscar o limite não documentado da API (`codigo_erro
+  35` visto em ~50+ páginas nos testes). Se estourar o teto, essa etapa falha
+  isolada e mantém o último valor em cache — não derruba as outras 3.
 
 ## Rodando localmente
 
