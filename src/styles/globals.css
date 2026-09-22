@@ -67,6 +67,7 @@ body {
 }
 
 .refresh-btn {
+  display: inline-block;
   background: none;
   border: 1px solid var(--line);
   color: var(--fg);
@@ -75,6 +76,7 @@ body {
   font-size: 0.8rem;
   cursor: pointer;
   font-family: inherit;
+  text-decoration: none;
 }
 
 .refresh-btn:hover {
@@ -450,6 +452,11 @@ body {
   position: fixed;
   bottom: 1.5rem;
   left: 1.5rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-corner-item {
   background: none;
   border: 1px solid var(--line);
   color: var(--muted);
@@ -462,9 +469,15 @@ body {
   transition: opacity 0.2s ease;
 }
 
-.nav-corner:hover,
-.nav-corner:focus-visible {
+.nav-corner-item:hover,
+.nav-corner-item:focus-visible {
   opacity: 1;
+  border-color: var(--muted);
+}
+
+.nav-corner-item--active {
+  opacity: 1;
+  color: var(--fg);
   border-color: var(--muted);
 }
 
