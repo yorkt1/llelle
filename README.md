@@ -171,6 +171,51 @@ já indica o que ajustar — os nomes de campo estão isolados nas interfaces
 `PedidoDetalhe`/`PedidoPesquisaResponse`/`NotaFiscalPesquisaResponse` desse
 arquivo, então corrigir é só questão de acertar os nomes ali.
 
+## Relatórios
+
+Terceira aba (`#relatorios`): digita o nome (ou parte do nome) de um produto
+e um período, e baixa um `.xlsx` com uma linha por dia — inclusive os dias
+sem venda — e uma coluna por variação de produto encontrada (ex: 110V, 220V),
+detectadas automaticamente pelo texto da descrição, sem nada fixo no código.
+
+- `lib/relatorioVendas.ts` — busca todos os pedidos do período
+  (`pedidos.pesquisa.php`, paginado por `dataInicial`/`dataFinal`) e, pra
+  cada um, os itens (`pedido.obter.php`), somando as quantidades dos itens
+  cujo nome contém o termo buscado. **1 chamada ao Tiny por pedido do
+  período, não só pelos que têm o produto** — isso importa porque, com o
+  volume real visto em produção (~630 pedidos/dia), um período de ~1 mês já
+  passa de 15 mil chamadas.
+- `server/routes/relatorios.ts` — roda isso em background (job em memória,
+  não sobrevive a um redeploy) porque um relatório grande pode levar bem mais
+  de 1 hora. `POST /api/relatorios/vendas` inicia e devolve um `jobId`;
+  `GET /api/relatorios/vendas/:id` dá o progresso (`atual`/`total` de pedidos
+  já consultados); `GET /api/relatorios/vendas/:id/download` baixa o `.xlsx`
+  quando `status: "concluido"`. O job só é apagado da memória 2h **depois de
+  terminar** (nunca a partir do início — um relatório longo não pode ser
+  descartado antes de acabar).
+- `src/Relatorios.tsx` — um botão só: gera, mostra o progresso (faz polling a
+  cada 1,5s) e troca por um link de download quando pronto.
+
+Pontos de atenção pra quem for usar em volume alto:
+
+- **Demora é esperado, não é falha.** No volume visto (~630 pedidos/dia), um
+  período de ~27 dias já passa de 15 mil chamadas ao `pedido.obter.php` — com
+  o intervalo de 150ms entre chamadas (`RATE_LIMIT_DELAY_MS` em
+  `lib/relatorioVendas.ts`), isso é bem mais de 1 hora rodando. O teto de
+  segurança (`MAX_PEDIDOS_POR_RELATORIO`) está em 50 mil pedidos só pra pegar
+  um termo/período claramente errado antes de gastar tempo nisso — não é
+  pensado pra limitar um relatório mensal real.
+- **Mesmo token do painel de separação.** Uma rajada de milhares de chamadas
+  pode fazer o Tiny recusar temporariamente ("Token inválido" por alguns
+  segundos) — isso afeta o painel de separação também, que sincroniza a cada
+  30s com o mesmo token. `tinyGet` já retenta com backoff quando isso
+  acontece, então o relatório não falha por causa disso, só fica mais lento;
+  ainda assim, evite gerar relatórios grandes durante o horário de pico se o
+  painel estiver sendo usado ao vivo numa TV.
+- **Não filtra pedidos cancelados** (não deu pra confirmar qual código do
+  Tiny representa isso — mesma ressalva de sempre). Confira o total contra o
+  relatório de vendas do próprio Tiny antes de usar os números pra decisão.
+
 ## Desenvolvimento
 
 ```bash

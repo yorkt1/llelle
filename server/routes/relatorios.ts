@@ -17,9 +17,11 @@ type Job = {
 };
 
 // Em memória de propósito: relatório é sob demanda e efêmero, não precisa sobreviver a um redeploy.
-// Guardado por no máximo 1h pra não acumular na memória se ninguém baixar o arquivo.
+// A limpeza só é agendada quando o job termina (sucesso ou erro) — nunca a partir do início: com o
+// volume real de pedidos, um relatório de ~1 mês pode passar de 1h rodando, e agendar a partir do
+// início apagaria o job (e o resultado, silenciosamente) antes mesmo de terminar.
 const jobs = new Map<string, Job>();
-const JOB_TTL_MS = 60 * 60 * 1000;
+const JOB_TTL_MS = 2 * 60 * 60 * 1000; // 2h depois de pronto pra dar tempo de notar e baixar
 
 relatoriosRouter.post(
   "/vendas",
@@ -35,7 +37,6 @@ relatoriosRouter.post(
 
     const id = randomUUID();
     jobs.set(id, { status: "processando", progresso: { atual: 0, total: 0 }, termo, dataInicial, dataFinal });
-    setTimeout(() => jobs.delete(id), JOB_TTL_MS);
 
     void gerarRelatorioVendas(termo, dataInicial, dataFinal, (progresso) => {
       const job = jobs.get(id);
@@ -54,6 +55,9 @@ relatoriosRouter.post(
           job.status = "erro";
           job.erro = error instanceof Error ? error.message : "Erro inesperado ao gerar o relatório.";
         }
+      })
+      .finally(() => {
+        setTimeout(() => jobs.delete(id), JOB_TTL_MS);
       });
 
     ok(res, { jobId: id }, 202);

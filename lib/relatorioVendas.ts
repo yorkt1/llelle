@@ -8,11 +8,15 @@ import { apiBaseUrl, apiFormat, apiToken, isConfigured, OlistConfigError } from 
  * paginado, filtrando por dataInicial/dataFinal) e, pra cada um, os itens
  * (pedido.obter.php), somando as quantidades dos itens cujo nome contém o
  * termo buscado — 1 chamada por pedido do período, não só pelos que têm o
- * produto. Pra um mês inteiro isso pode ser várias centenas de chamadas, por
- * isso roda em background com progresso (ver server/routes/relatorios.ts) e
- * com um intervalo pequeno entre chamadas (RATE_LIMIT_DELAY_MS) pra não
- * estourar o limite de taxa do Tiny — o mesmo comportamento (token recusado
- * por alguns segundos após uma rajada) já visto e documentado em lib/olist.ts.
+ * produto. Num volume alto de pedidos/dia isso passa fácil de várias milhares
+ * de chamadas por mês — visto na prática (~630 pedidos/dia, ~17 mil num
+ * período de 27 dias) — por isso roda em background com progresso (ver
+ * server/routes/relatorios.ts) e com um intervalo pequeno entre chamadas
+ * (RATE_LIMIT_DELAY_MS) pra não estourar o limite de taxa do Tiny; se estourar
+ * mesmo assim, tinyGet reage com retry e backoff, não falha na hora — o mesmo
+ * comportamento (token recusado por alguns segundos após uma rajada) já visto
+ * e documentado em lib/olist.ts. Nesse volume, um relatório de ~1 mês pode
+ * levar bem mais de uma hora — é esperado, não travou.
  *
  * Não filtra por situação do pedido (aberto/cancelado/etc.): não deu pra
  * confirmar contra a documentação ao vivo do Tiny qual código representa
@@ -23,7 +27,10 @@ import { apiBaseUrl, apiFormat, apiToken, isConfigured, OlistConfigError } from 
  */
 
 const RATE_LIMIT_DELAY_MS = 150;
-const MAX_PEDIDOS_POR_RELATORIO = 3000;
+// Teto alto de propósito (era 3000, estourava com o volume real de pedidos/dia
+// do negócio) — existe só pra pegar um termo/período claramente errado antes
+// de gastar horas nisso, não pra limitar um relatório mensal de verdade.
+const MAX_PEDIDOS_POR_RELATORIO = 50_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
