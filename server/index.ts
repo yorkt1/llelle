@@ -5,7 +5,6 @@ import { config } from "dotenv";
 import cors from "cors";
 import express from "express";
 import { separacaoRouter } from "./routes/separacao";
-import { devolucoesRouter } from "./routes/devolucoes";
 import { relatoriosRouter } from "./routes/relatorios";
 import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
 
@@ -27,7 +26,6 @@ if (corsOrigin) {
 }
 
 app.use("/api/separacao", separacaoRouter);
-app.use("/api/devolucoes", devolucoesRouter);
 app.use("/api/relatorios", relatoriosRouter);
 
 // Quando existe um build do Vite (dist/), o backend tambem serve o front — assim "npm start" sobe tudo.

@@ -20,10 +20,9 @@ import { apiBaseUrl, apiFormat, apiToken, isConfigured, OlistConfigError } from 
  *
  * Não filtra por situação do pedido (aberto/cancelado/etc.): não deu pra
  * confirmar contra a documentação ao vivo do Tiny qual código representa
- * "cancelado" (tiny.com.br bloqueado no ambiente onde isso foi escrito — mesma
- * ressalva de lib/devolucoes.ts), então pedidos cancelados podem entrar na
- * contagem. Cheque o total contra o relatório de vendas do próprio Tiny antes
- * de usar os números pra decisão.
+ * "cancelado" (tiny.com.br bloqueado no ambiente onde isso foi escrito), então
+ * pedidos cancelados podem entrar na contagem. Cheque o total contra o
+ * relatório de vendas do próprio Tiny antes de usar os números pra decisão.
  */
 
 const RATE_LIMIT_DELAY_MS = 150;

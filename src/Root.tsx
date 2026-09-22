@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
 import { App } from "@/App";
-import { Devolucoes } from "@/Devolucoes";
 import { Relatorios } from "@/Relatorios";
 
-type View = "separacao" | "devolucao" | "relatorios";
+type View = "separacao" | "relatorios";
 
 const VIEWS: { key: View; label: string; hash: string }[] = [
   { key: "separacao", label: "Painel", hash: "" },
-  { key: "devolucao", label: "Devolução", hash: "devolucao" },
   { key: "relatorios", label: "Relatórios", hash: "relatorios" },
 ];
 
@@ -20,7 +18,7 @@ function viewFromHash(): View {
  * Discreto de propósito, no mesmo espírito do botão de configurações do painel:
  * o painel de separação é feito pra TV do estoque, sem chrome de navegação por
  * cima. A troca de tela mora num link no canto, não numa barra de menu — e
- * serve também como "saída" pra voltar de Devolução/Relatórios pro Painel.
+ * serve também como "saída" pra voltar de Relatórios pro Painel.
  */
 function NavCorner({ view, onChange }: { view: View; onChange: (view: View) => void }) {
   return (
@@ -55,7 +53,6 @@ export function Root() {
   return (
     <>
       {view === "separacao" && <App />}
-      {view === "devolucao" && <Devolucoes />}
       {view === "relatorios" && <Relatorios />}
       <NavCorner view={view} onChange={go} />
     </>

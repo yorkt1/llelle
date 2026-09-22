@@ -346,8 +346,8 @@ body {
   }
 }
 
-/* Devolução — mesma paleta do painel, mas layout de formulário em vez de grade de números. */
-.page.devolucao-page {
+/* Relatórios — mesma paleta do painel, mas layout de formulário em vez de grade de números. */
+.page.relatorio-page {
   justify-content: flex-start;
   gap: 2.5rem;
   max-width: 46rem;
@@ -355,14 +355,7 @@ body {
   width: 100%;
 }
 
-.devolucao-busca {
-  display: flex;
-  align-items: flex-end;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.devolucao-form {
+.relatorio-form {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -370,7 +363,7 @@ body {
   padding-top: 1.5rem;
 }
 
-.devolucao-info {
+.relatorio-grade {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
@@ -413,45 +406,6 @@ body {
   border-color: var(--muted);
 }
 
-.field-textarea {
-  resize: vertical;
-}
-
-.devolucao-historico {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.devolucao-historico-title {
-  margin: 0;
-  font-family: "Space Grotesk", sans-serif;
-  font-size: 1rem;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.devolucao-tabela {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-
-.devolucao-tabela th,
-.devolucao-tabela td {
-  text-align: left;
-  padding: 0.5rem 0.75rem 0.5rem 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.devolucao-tabela th {
-  color: var(--muted);
-  font-weight: 500;
-  text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.05em;
-}
-
 /* Mesmo espírito discreto do .settings-trigger — no canto oposto, sempre visível pra trocar de tela. */
 .nav-corner {
   position: fixed;
@@ -487,7 +441,7 @@ body {
 }
 
 @media (max-width: 640px) {
-  .devolucao-info {
+  .relatorio-grade {
     grid-template-columns: 1fr;
   }
 }

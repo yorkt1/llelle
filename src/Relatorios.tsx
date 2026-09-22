@@ -15,7 +15,7 @@ interface JobSalvo {
   dataFinal: string;
 }
 
-// Vazio quando front e API rodam juntos — mesma convenção do painel de separação e da devolução.
+// Vazio quando front e API rodam juntos — mesma convenção do painel de separação.
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const POLL_MS = 1500;
 
@@ -156,12 +156,12 @@ export function Relatorios() {
   );
 
   return (
-    <div className="page devolucao-page">
+    <div className="page relatorio-page">
       <header className="header">
         <h1 className="title">Relatórios</h1>
       </header>
 
-      <form className="devolucao-form" onSubmit={iniciar}>
+      <form className="relatorio-form" onSubmit={iniciar}>
         <label className="field">
           <span className="field-label">Produto (nome ou parte do nome)</span>
           <input
@@ -173,7 +173,7 @@ export function Relatorios() {
           />
         </label>
 
-        <div className="devolucao-info">
+        <div className="relatorio-grade">
           <label className="field">
             <span className="field-label">Data inicial</span>
             <input className="field-input" type="date" value={dataInicial} onChange={(event) => setDataInicial(event.target.value)} />
