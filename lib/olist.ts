@@ -40,13 +40,15 @@ import * as store from "./store";
 // Lidos a cada chamada, não capturados num const no import: o dotenv só
 // carrega o .env.local depois que os imports de server/index.ts já rodaram
 // (import é hoisted), então um const de topo aqui sempre veria "" antes disso.
-function apiBaseUrl(): string {
+// Exportadas porque lib/devolucoes.ts reaproveita o mesmo token/base da API 2.0
+// pra consultar pedido/nota fiscal — mesma conta Tiny, outro conjunto de endpoints.
+export function apiBaseUrl(): string {
   return process.env.OLIST_API_BASE_URL ?? "https://api.tiny.com.br/api2";
 }
-function apiFormat(): string {
+export function apiFormat(): string {
   return process.env.OLIST_API_FORMAT ?? "json";
 }
-function apiToken(): string {
+export function apiToken(): string {
   return process.env.OLIST_API_TOKEN ?? "";
 }
 function embaladasWindowDays(): number {

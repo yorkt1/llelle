@@ -343,3 +343,133 @@ body {
     row-gap: 6vh;
   }
 }
+
+/* Devolução — mesma paleta do painel, mas layout de formulário em vez de grade de números. */
+.page.devolucao-page {
+  justify-content: flex-start;
+  gap: 2.5rem;
+  max-width: 46rem;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.devolucao-busca {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.devolucao-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.5rem;
+}
+
+.devolucao-info {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.field-value {
+  font-size: 0.95rem;
+}
+
+.field-input {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--muted);
+}
+
+.field-textarea {
+  resize: vertical;
+}
+
+.devolucao-historico {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.devolucao-historico-title {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.devolucao-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.devolucao-tabela th,
+.devolucao-tabela td {
+  text-align: left;
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.devolucao-tabela th {
+  color: var(--muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+/* Mesmo espírito discreto do .settings-trigger — no canto oposto, sempre visível pra trocar de tela. */
+.nav-corner {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.2s ease;
+}
+
+.nav-corner:hover,
+.nav-corner:focus-visible {
+  opacity: 1;
+  border-color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .devolucao-info {
+    grid-template-columns: 1fr;
+  }
+}

@@ -133,6 +133,44 @@ Como o token não expira sozinho (diferente de um OAuth), não tem limitação d
 "reconectar depois de X tempo fora do ar" — o serviço do Render volta a
 sincronizar sozinho assim que o processo sobe de novo, nas duas opções.
 
+## Devolução
+
+Aba separada (link discreto no canto inferior esquerdo, ou `#devolucao` na
+URL) pro setor de devolução: digita o código do pedido (ou o número do
+marketplace, quando é esse que o cliente/nota trazem), e o Tiny já devolve
+cliente e produto — só falta descrever o defeito antes de registrar.
+
+- `lib/devolucoes.ts` — busca no Tiny (só leitura, nunca escreve nada lá) e
+  guarda os registros de devolução no mesmo KV de arquivo local
+  (`lib/store.ts`) que o painel de separação já usa.
+- `server/routes/devolucoes.ts` — `GET /api/devolucoes/buscar?codigo=X` (busca
+  ao vivo, não salva nada), `GET /api/devolucoes` (histórico) e
+  `POST /api/devolucoes` (registra).
+- `src/Devolucoes.tsx` — formulário: busca → confere cliente/produto trazidos
+  → escolhe o produto (quando o pedido tem mais de um item) → descreve o
+  defeito → registra. Lista embaixo as últimas devoluções já registradas.
+
+Fluxo de busca no Tiny (API 2.0, mesmo token da `OLIST_API_TOKEN`):
+
+1. `pedidos.pesquisa.php?numero=X` acha o `id` do pedido. Se não achar, tenta
+   de novo por `numeroEcommerce=X` (número que o marketplace mostra pro
+   cliente, quando é diferente do número interno do Tiny).
+2. `pedido.obter.php?id=Y` traz cliente (nome, CPF/CNPJ) e os itens do pedido.
+3. `notas.fiscais.pesquisa.php?numeroPedido=X` tenta achar o número da nota
+   fiscal vinculada — só um extra: se falhar ou não achar, o campo fica vazio
+   e não trava o resto do fluxo.
+
+**Atenção**: os nomes de endpoint/campo acima (`pedidos.pesquisa.php`,
+`pedido.obter.php`, `cpf_cnpj`, `tipo_pessoa`, `notas.fiscais.pesquisa.php`
+etc.) seguem o padrão conhecido da API 2.0 do Tiny, mas não deu pra confirmar
+contra a documentação ao vivo (`tiny.com.br` bloqueado no ambiente onde isso
+foi escrito). **Teste com um código de pedido real antes de confiar nisso em
+produção.** Se o Tiny devolver um formato diferente, o erro sobe com a
+mensagem literal da API (ver `falhaComDetalhe` em `lib/devolucoes.ts`), o que
+já indica o que ajustar — os nomes de campo estão isolados nas interfaces
+`PedidoDetalhe`/`PedidoPesquisaResponse`/`NotaFiscalPesquisaResponse` desse
+arquivo, então corrigir é só questão de acertar os nomes ali.
+
 ## Desenvolvimento
 
 ```bash
