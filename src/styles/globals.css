@@ -393,6 +393,11 @@ body {
   font-size: 0.95rem;
 }
 
+.field-value--muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .field-input {
   background: var(--panel);
   border: 1px solid var(--line);
