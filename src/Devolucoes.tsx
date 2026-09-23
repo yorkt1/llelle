@@ -30,6 +30,8 @@ interface LinhaEditavel {
   observacoes: string;
   produto: string;
   quantidade: number;
+  status: string;
+  reembolso: string;
 }
 
 interface BuscaRecente {
@@ -44,6 +46,20 @@ const BUSCAS_STORAGE_KEY = "devolucao:buscasRecentes";
 const MAX_BUSCAS_RECENTES = 10;
 
 const OCORRENCIAS = ["DANIFICADO", "ARREPENDIMENTO", "ERRO OPERACIONAL", "CANCELAMENTO", "DEFEITO"] as const;
+
+// Mesmas listas fixas do dropdown de validação da planilha (colunas STATUS e REEMBOLSOS).
+const STATUS_OPCOES = ["TESTE", "ESTOQUE", "PERDA", "AGUARDANDO PRODUTO"] as const;
+
+const REEMBOLSO_OPCOES = [
+  "REEMBOLSO AO CLIENTE",
+  "NÃO REEMBOLSADO",
+  "DISPUTA EM ANALISE",
+  "DISPUTA REJEITADA",
+  "REEMBOLSO AUTOMATICO",
+  "AGUARDANDO PRODUTO CHEGAR",
+  "EFETUADO A TROCA",
+  "DISPUTA APROVADA",
+] as const;
 
 // Texto exato pedido — atenção ao DEFEITO: são dois espaços antes do parêntese, de propósito.
 const OBSERVACAO_PADRAO: Record<string, string> = {
@@ -87,24 +103,24 @@ function extrairErro(json: unknown, fallback: string): string {
 
 function linhaParaCopia(preview: DevolucaoPreview, linha: LinhaEditavel): string {
   return [
-    linha.dataPedidoSac,
-    preview.cliente,
-    preview.cpf,
-    preview.idPedido,
-    preview.nf,
-    preview.marketplace,
-    linha.ocorrencia,
-    linha.observacoes,
-    String(linha.quantidade),
-    linha.produto,
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
+    linha.dataPedidoSac, // A
+    preview.cliente, // B
+    preview.cpf, // C
+    preview.idPedido, // D
+    preview.nf, // E
+    preview.marketplace, // F
+    linha.ocorrencia, // G
+    linha.observacoes, // H
+    String(linha.quantidade), // I
+    linha.produto, // J
+    "", // K - data recebimento produto (só depois que o produto chega)
+    "", // L - defeito encontrado na inspeção (só depois)
+    "", // M - código de série do fabricante (só o estoque sabe)
+    linha.status, // N
+    linha.reembolso, // O
+    "", // P - nº nota fiscal de devolução
+    "", // Q - nº nota fiscal de perda
+    "", // R - valor recebido do banco
   ].join("\t");
 }
 
@@ -144,6 +160,8 @@ export function Devolucoes() {
             observacoes: "",
             produto: item.produtoPlanilha,
             quantidade: item.quantidade,
+            status: "",
+            reembolso: "",
           })),
         );
         setBuscasRecentes(salvarBuscaRecente({ numero: dados.nf, cliente: dados.cliente, buscadoEm: hojeBr() }));
@@ -188,7 +206,7 @@ export function Devolucoes() {
   }, [preview, linhas]);
 
   return (
-    <div className="page pagina-formulario">
+    <div className="page pagina-formulario pagina-formulario--larga">
       <header className="header">
         <h1 className="title">Devoluções</h1>
       </header>
@@ -249,6 +267,8 @@ export function Devolucoes() {
                   <th>Observações</th>
                   <th>Qtd</th>
                   <th>Produto</th>
+                  <th>Status</th>
+                  <th>Reembolso</th>
                 </tr>
               </thead>
               <tbody>
@@ -278,6 +298,26 @@ export function Devolucoes() {
                     <td>{linha.quantidade}</td>
                     <td>
                       <input value={linha.produto} onChange={(event) => atualizarLinha(index, "produto", event.target.value)} />
+                    </td>
+                    <td>
+                      <select value={linha.status} onChange={(event) => atualizarLinha(index, "status", event.target.value)}>
+                        <option value="">—</option>
+                        {STATUS_OPCOES.map((opcao) => (
+                          <option key={opcao} value={opcao}>
+                            {opcao}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select value={linha.reembolso} onChange={(event) => atualizarLinha(index, "reembolso", event.target.value)}>
+                        <option value="">—</option>
+                        {REEMBOLSO_OPCOES.map((opcao) => (
+                          <option key={opcao} value={opcao}>
+                            {opcao}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                   </tr>
                 ))}

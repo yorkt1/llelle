@@ -356,6 +356,13 @@ body {
   width: 100%;
 }
 
+/* Devoluções tem uma tabela larga (12 colunas) — usa mais a tela em vez do limite estreito do formulário
+   simples do Relatórios. Especificidade igual a `.page.pagina-formulario` (duas classes) de propósito —
+   um seletor de uma classe só perderia mesmo vindo depois no arquivo. */
+.page.pagina-formulario--larga {
+  max-width: 100%;
+}
+
 .formulario {
   display: flex;
   flex-direction: column;

@@ -159,17 +159,25 @@ controle de devoluções.
   `{ erro: "..." }` (não `{ error }`, diferente do resto da API — por pedido
   explícito de quem for consumir isso) com 404 pra NF não encontrada, 429 pro
   limite de taxa do Tiny.
-- `src/Devolucoes.tsx` — campo de busca, prévia em tabela com DATA PEDIDO
-  SAC/OCORRÊNCIA/OBSERVAÇÕES/PRODUTO editáveis (OCORRÊNCIA é um select de 5
-  opções fixas que preenche OBSERVAÇÕES automaticamente, mas o texto
-  continua editável depois), botão "Copiar p/ planilha"
+- `src/Devolucoes.tsx` — campo de busca, prévia em tabela larga (usa a tela
+  toda — `.pagina-formulario--larga`, diferente do Relatórios que fica
+  estreito de propósito) com DATA PEDIDO SAC/OCORRÊNCIA/OBSERVAÇÕES/PRODUTO
+  editáveis (OCORRÊNCIA é um select de 5 opções fixas que preenche
+  OBSERVAÇÕES automaticamente, mas o texto continua editável depois) e mais
+  dois selects, STATUS e REEMBOLSOS, com as mesmas listas fixas da validação
+  de dados da planilha — normalmente ficam vazios na hora do registro
+  inicial (só dão pra saber depois que o produto físico chega), mas dá pra
+  preencher já se você souber. Botão "Copiar p/ planilha"
   (`navigator.clipboard`) e as últimas 10 buscas guardadas no navegador
   (`localStorage`) pra reabrir rápido.
 
 **Formato exato do que é copiado**: uma linha por item da nota, 18 colunas
 separadas por TAB (`\t`) e sem cabeçalho — A a J preenchidas (data, cliente,
 CPF, ID pedido, NF, marketplace, ocorrência, observações, quantidade,
-produto), K a R vazias (8 TABs vazios no final). Ver `linhaParaCopia` em
+produto), K a M vazias (data de recebimento, defeito da inspeção e código de
+série só existem depois que o produto físico chega — não tem como vir da
+busca pela NF), N e O preenchidas se você escolheu status/reembolso na
+prévia (ficam vazias senão), P a R vazias. Ver `linhaParaCopia` em
 `src/Devolucoes.tsx` se a ordem das colunas da planilha mudar.
 
 **Atenção**: `lib/tinyClient.ts` faz as chamadas via GET com os parâmetros na
