@@ -133,9 +133,57 @@ Como o token não expira sozinho (diferente de um OAuth), não tem limitação d
 "reconectar depois de X tempo fora do ar" — o serviço do Render volta a
 sincronizar sozinho assim que o processo sobe de novo, nas duas opções.
 
+## Devoluções
+
+Segunda aba (`#devolucoes`) pro setor de devolução: digita o **número da nota
+fiscal de venda**, clica em Buscar (ou aperta Enter) e aparece uma prévia
+editável, linha por item, pra copiar (`Ctrl+V`) direto na planilha de
+controle de devoluções.
+
+- `lib/devolucao.ts` — busca no Tiny (só leitura, nunca escreve nada lá):
+  `notas.fiscais.pesquisa.php?numero=X&tipoNota=S` acha a nota; se tiver mais
+  de uma com o mesmo número (séries diferentes), usa a de emissão mais
+  recente e devolve o resto em `outras`. `nota.fiscal.obter.php?id=Y` traz
+  cliente e itens. Pro marketplace: se a nota tiver `id_venda`,
+  `pedido.obter.php?id=Z` e lê `pedido.ecommerce.nomeEcommerce`; sem isso,
+  cai pro `intermediador.nome` da própria nota. `codigo_erro: 6` do Tiny
+  (limite de taxa) vira uma mensagem clara em vez de erro genérico.
+- `lib/produtoPlanilha.ts` + `lib/data/produtos.json` — nome do produto no
+  formato curto da planilha (coluna PRODUTO). Primeiro tenta o mapa editável
+  (`data/produtos.json`, código Tiny → nome exato — fica vazio de propósito,
+  pra quem conhece a planilha completar); se o código não estiver lá, monta
+  TIPO + LINHA + COR + VOLTAGEM a partir da descrição do Tiny (ex.: "Chaleira
+  Modern Preta 127V" → "CHALEIRA MODERN PRETA 127V"). 110V e 127V caem no
+  mesmo rótulo "127V", seguindo a regra pedida.
+- `server/routes/devolucao.ts` — `GET /api/devolucao/nf/:numero`. Responde
+  `{ erro: "..." }` (não `{ error }`, diferente do resto da API — por pedido
+  explícito de quem for consumir isso) com 404 pra NF não encontrada, 429 pro
+  limite de taxa do Tiny.
+- `src/Devolucoes.tsx` — campo de busca, prévia em tabela com DATA PEDIDO
+  SAC/OCORRÊNCIA/OBSERVAÇÕES/PRODUTO editáveis (OCORRÊNCIA é um select de 5
+  opções fixas que preenche OBSERVAÇÕES automaticamente, mas o texto
+  continua editável depois), botão "Copiar p/ planilha"
+  (`navigator.clipboard`) e as últimas 10 buscas guardadas no navegador
+  (`localStorage`) pra reabrir rápido.
+
+**Formato exato do que é copiado**: uma linha por item da nota, 18 colunas
+separadas por TAB (`\t`) e sem cabeçalho — A a J preenchidas (data, cliente,
+CPF, ID pedido, NF, marketplace, ocorrência, observações, quantidade,
+produto), K a R vazias (8 TABs vazios no final). Ver `linhaParaCopia` em
+`src/Devolucoes.tsx` se a ordem das colunas da planilha mudar.
+
+**Atenção**: `lib/tinyClient.ts` faz as chamadas via GET com os parâmetros na
+URL — mesmo padrão já usado (e funcionando) em `lib/olist.ts` e
+`lib/relatorioVendas.ts`. Não deu pra confirmar contra a documentação ao vivo
+do Tiny se `notas.fiscais.pesquisa.php`/`nota.fiscal.obter.php` aceitam GET
+do mesmo jeito (`tiny.com.br` bloqueado no ambiente onde isso foi escrito) —
+**teste com uma NF real antes de confiar em produção**. Se o Tiny exigir POST
+pra esses dois endpoints, é só adicionar `{ method: "POST" }` no `fetch`
+dentro de `tinyGet` (`lib/tinyClient.ts`).
+
 ## Relatórios
 
-Segunda aba (`#relatorios`): digita o nome (ou parte do nome) de um produto
+Terceira aba (`#relatorios`): digita o nome (ou parte do nome) de um produto
 e um período, e baixa um `.xlsx` com uma linha por dia — inclusive os dias
 sem venda — e uma coluna por variação de produto encontrada (ex: 110V, 220V),
 detectadas automaticamente pelo texto da descrição, sem nada fixo no código.

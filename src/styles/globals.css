@@ -4,6 +4,7 @@
   --muted: #6b7280;
   --line: #1f2226;
   --danger: #f87171;
+  --success: #4ade80;
 
   --stage-1: #5b8def;
   --stage-2: #f2b84b;
@@ -346,8 +347,8 @@ body {
   }
 }
 
-/* Relatórios — mesma paleta do painel, mas layout de formulário em vez de grade de números. */
-.page.relatorio-page {
+/* Relatórios/Devoluções — mesma paleta do painel, mas layout de formulário em vez de grade de números. */
+.page.pagina-formulario {
   justify-content: flex-start;
   gap: 2.5rem;
   max-width: 46rem;
@@ -355,7 +356,7 @@ body {
   width: 100%;
 }
 
-.relatorio-form {
+.formulario {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -363,7 +364,7 @@ body {
   padding-top: 1.5rem;
 }
 
-.relatorio-grade {
+.formulario-grade {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
@@ -441,7 +442,90 @@ body {
 }
 
 @media (max-width: 640px) {
-  .relatorio-grade {
+  .formulario-grade {
     grid-template-columns: 1fr;
   }
+}
+
+.busca-linha {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.tabela-wrap {
+  overflow-x: auto;
+}
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.tabela th,
+.tabela td {
+  text-align: left;
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.tabela th {
+  color: var(--muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+.tabela input,
+.tabela select {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  min-width: 8rem;
+}
+
+.tabela input:focus,
+.tabela select:focus {
+  outline: none;
+  border-color: var(--muted);
+}
+
+.aviso-sucesso {
+  color: var(--success);
+  font-size: 0.85rem;
+}
+
+.nota-info {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.buscas-recentes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.buscas-recentes-item {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.buscas-recentes-item:hover {
+  border-color: var(--muted);
+  color: var(--fg);
 }

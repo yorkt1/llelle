@@ -156,12 +156,12 @@ export function Relatorios() {
   );
 
   return (
-    <div className="page relatorio-page">
+    <div className="page pagina-formulario">
       <header className="header">
         <h1 className="title">Relatórios</h1>
       </header>
 
-      <form className="relatorio-form" onSubmit={iniciar}>
+      <form className="formulario" onSubmit={iniciar}>
         <label className="field">
           <span className="field-label">Produto (nome ou parte do nome)</span>
           <input
@@ -173,7 +173,7 @@ export function Relatorios() {
           />
         </label>
 
-        <div className="relatorio-grade">
+        <div className="formulario-grade">
           <label className="field">
             <span className="field-label">Data inicial</span>
             <input className="field-input" type="date" value={dataInicial} onChange={(event) => setDataInicial(event.target.value)} />

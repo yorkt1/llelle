@@ -6,6 +6,7 @@ import cors from "cors";
 import express from "express";
 import { separacaoRouter } from "./routes/separacao";
 import { relatoriosRouter } from "./routes/relatorios";
+import { devolucaoRouter } from "./routes/devolucao";
 import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,6 +28,7 @@ if (corsOrigin) {
 
 app.use("/api/separacao", separacaoRouter);
 app.use("/api/relatorios", relatoriosRouter);
+app.use("/api/devolucao", devolucaoRouter);
 
 // Quando existe um build do Vite (dist/), o backend tambem serve o front — assim "npm start" sobe tudo.
 const staticDir = path.resolve(__dirname, "../dist");
