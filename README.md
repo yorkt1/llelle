@@ -161,24 +161,26 @@ controle de devoluções.
   limite de taxa do Tiny.
 - `src/Devolucoes.tsx` — campo de busca, prévia em tabela larga (usa a tela
   toda — `.pagina-formulario--larga`, diferente do Relatórios que fica
-  estreito de propósito) com DATA PEDIDO SAC/OCORRÊNCIA/OBSERVAÇÕES/PRODUTO
-  editáveis (OCORRÊNCIA é um select de 5 opções fixas que preenche
-  OBSERVAÇÕES automaticamente, mas o texto continua editável depois) e mais
-  dois selects, STATUS e REEMBOLSOS, com as mesmas listas fixas da validação
-  de dados da planilha — normalmente ficam vazios na hora do registro
-  inicial (só dão pra saber depois que o produto físico chega), mas dá pra
-  preencher já se você souber. Botão "Copiar p/ planilha"
+  estreito de propósito) com todas as colunas de A a O editáveis: DATA
+  PEDIDO SAC/OCORRÊNCIA/OBSERVAÇÕES/PRODUTO (OCORRÊNCIA é um select de 5
+  opções fixas que preenche OBSERVAÇÕES automaticamente, mas o texto
+  continua editável depois), DATA RECEBIMENTO/DEFEITO/CÓDIGO FABRICANTE
+  (texto livre — normalmente só dão pra preencher depois que o produto
+  físico chega, mas ficam disponíveis desde já) e STATUS/REEMBOLSOS (dois
+  selects com as mesmas listas fixas da validação de dados da planilha).
+  Tudo fica vazio por padrão exceto o que o Tiny já traz — nada é
+  obrigatório além da OCORRÊNCIA. Botão "Copiar p/ planilha"
   (`navigator.clipboard`) e as últimas 10 buscas guardadas no navegador
   (`localStorage`) pra reabrir rápido.
 
 **Formato exato do que é copiado**: uma linha por item da nota, 18 colunas
-separadas por TAB (`\t`) e sem cabeçalho — A a J preenchidas (data, cliente,
-CPF, ID pedido, NF, marketplace, ocorrência, observações, quantidade,
-produto), K a M vazias (data de recebimento, defeito da inspeção e código de
-série só existem depois que o produto físico chega — não tem como vir da
-busca pela NF), N e O preenchidas se você escolheu status/reembolso na
-prévia (ficam vazias senão), P a R vazias. Ver `linhaParaCopia` em
-`src/Devolucoes.tsx` se a ordem das colunas da planilha mudar.
+separadas por TAB (`\t`) e sem cabeçalho — A a O vêm do formulário (data,
+cliente, CPF, ID pedido, NF, marketplace, ocorrência, observações,
+quantidade, produto, data de recebimento, defeito, código de série, status,
+reembolso — as que não foram preenchidas ficam vazias), P a R sempre vazias
+(nota de devolução, nota de perda e valor recebido do banco — não tem campo
+pra isso ainda). Ver `linhaParaCopia` em `src/Devolucoes.tsx` se a ordem das
+colunas da planilha mudar.
 
 **Atenção**: `lib/tinyClient.ts` faz as chamadas via GET com os parâmetros na
 URL — mesmo padrão já usado (e funcionando) em `lib/olist.ts` e

@@ -30,6 +30,9 @@ interface LinhaEditavel {
   observacoes: string;
   produto: string;
   quantidade: number;
+  dataRecebimento: string;
+  defeito: string;
+  codigoFabricante: string;
   status: string;
   reembolso: string;
 }
@@ -113,9 +116,9 @@ function linhaParaCopia(preview: DevolucaoPreview, linha: LinhaEditavel): string
     linha.observacoes, // H
     String(linha.quantidade), // I
     linha.produto, // J
-    "", // K - data recebimento produto (só depois que o produto chega)
-    "", // L - defeito encontrado na inspeção (só depois)
-    "", // M - código de série do fabricante (só o estoque sabe)
+    linha.dataRecebimento, // K
+    linha.defeito, // L
+    linha.codigoFabricante, // M
     linha.status, // N
     linha.reembolso, // O
     "", // P - nº nota fiscal de devolução
@@ -160,6 +163,9 @@ export function Devolucoes() {
             observacoes: "",
             produto: item.produtoPlanilha,
             quantidade: item.quantidade,
+            dataRecebimento: "",
+            defeito: "",
+            codigoFabricante: "",
             status: "",
             reembolso: "",
           })),
@@ -267,6 +273,9 @@ export function Devolucoes() {
                   <th>Observações</th>
                   <th>Qtd</th>
                   <th>Produto</th>
+                  <th>Data recebimento</th>
+                  <th>Defeito</th>
+                  <th>Cód. fabricante</th>
                   <th>Status</th>
                   <th>Reembolso</th>
                 </tr>
@@ -298,6 +307,22 @@ export function Devolucoes() {
                     <td>{linha.quantidade}</td>
                     <td>
                       <input value={linha.produto} onChange={(event) => atualizarLinha(index, "produto", event.target.value)} />
+                    </td>
+                    <td>
+                      <input
+                        value={linha.dataRecebimento}
+                        onChange={(event) => atualizarLinha(index, "dataRecebimento", event.target.value)}
+                        placeholder="dd/mm/aaaa"
+                      />
+                    </td>
+                    <td>
+                      <input value={linha.defeito} onChange={(event) => atualizarLinha(index, "defeito", event.target.value)} />
+                    </td>
+                    <td>
+                      <input
+                        value={linha.codigoFabricante}
+                        onChange={(event) => atualizarLinha(index, "codigoFabricante", event.target.value)}
+                      />
                     </td>
                     <td>
                       <select value={linha.status} onChange={(event) => atualizarLinha(index, "status", event.target.value)}>
