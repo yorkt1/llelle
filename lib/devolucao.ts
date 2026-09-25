@@ -1,5 +1,6 @@
 import { tinyGet } from "./tinyClient";
 import { nomeProdutoPlanilha } from "./produtoPlanilha";
+import { buscarImportacaoShopee, mapearMotivoParaOcorrencia } from "./shopeeImportacao";
 
 /**
  * Busca uma nota fiscal de venda no Tiny pelo número e monta a prévia da
@@ -197,6 +198,18 @@ export type OutraNotaFiscal = {
   dataEmissao: string;
 };
 
+export type DevolucaoShopee = {
+  idDevolucaoShopee?: string;
+  /** ISO (yyyy-mm-dd) — a data que o comprador solicitou a devolução no Shopee. */
+  dataSolicitacao?: string;
+  motivoDevolucao?: string;
+  /** null quando `motivoDevolucao` não bateu com nenhuma frase conhecida — o atendente escolhe na mão. */
+  ocorrenciaSugerida: string | null;
+  descricaoCliente?: string;
+  valorReembolso?: number;
+  valorCompensacao?: number;
+};
+
 export type DevolucaoPreview = {
   nf: string;
   dataEmissao: string;
@@ -206,6 +219,8 @@ export type DevolucaoPreview = {
   marketplace: string;
   itens: ItemDevolucao[];
   outras?: OutraNotaFiscal[];
+  /** Presente só quando o Tampermonkey já raspou esse pedido no Shopee antes do atendente buscar a NF aqui. */
+  shopee?: DevolucaoShopee;
 };
 
 export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<DevolucaoPreview> {
@@ -215,13 +230,15 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
   const { escolhida, outras } = await pesquisarNotasFiscais(numero);
   const detalhe = await obterNotaFiscal(escolhida.id);
   const marketplace = await resolverMarketplace(detalhe);
+  const idPedido = detalhe.numero_ecommerce ?? "";
+  const importacaoShopee = buscarImportacaoShopee(idPedido);
 
   return {
     nf: detalhe.numero,
     dataEmissao: detalhe.data_emissao ?? escolhida.data_emissao,
     cliente: formatarNomeTitulo(detalhe.cliente?.nome ?? ""),
     cpf: formatarDocumento(detalhe.cliente?.cpf_cnpj ?? ""),
-    idPedido: detalhe.numero_ecommerce ?? "",
+    idPedido,
     marketplace,
     itens: (detalhe.itens ?? [])
       .map((registro) => registro.item)
@@ -240,5 +257,16 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
       outras.length > 0
         ? outras.map((n) => ({ numero: n.numero, serie: n.serie, dataEmissao: n.data_emissao }))
         : undefined,
+    shopee: importacaoShopee
+      ? {
+          idDevolucaoShopee: importacaoShopee.idDevolucaoShopee,
+          dataSolicitacao: importacaoShopee.dataSolicitacao,
+          motivoDevolucao: importacaoShopee.motivoDevolucao,
+          ocorrenciaSugerida: mapearMotivoParaOcorrencia(importacaoShopee.motivoDevolucao),
+          descricaoCliente: importacaoShopee.descricaoCliente,
+          valorReembolso: importacaoShopee.valorReembolso,
+          valorCompensacao: importacaoShopee.valorCompensacao,
+        }
+      : undefined,
   };
 }

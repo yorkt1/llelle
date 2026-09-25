@@ -176,4 +176,61 @@ describe("buscarDevolucaoPorNf", () => {
 
     expect(preview.cpf).toBe("12.345.678/0001-99");
   });
+
+  it("anexa dados do Shopee já importados (casados pelo idPedido/numero_ecommerce) e sugere a ocorrência", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      if (endpointDe(input) === "notas.fiscais.pesquisa.php") {
+        return jsonResponse({ retorno: { status: "OK", notas_fiscais: [{ nota_fiscal: { id: "1", numero: "1", data_emissao: "01/01/2026" } }] } });
+      }
+      if (endpointDe(input) === "nota.fiscal.obter.php") {
+        return jsonResponse({
+          retorno: { status: "OK", nota_fiscal: { numero: "1", numero_ecommerce: "260909HHAER7FN", cliente: {}, itens: [] } },
+        });
+      }
+      throw new Error(`nao deveria chamar ${String(input)}`);
+    });
+
+    const { buscarDevolucaoPorNf } = await freshDevolucao();
+    const { salvarImportacaoShopee } = await import("../lib/shopeeImportacao");
+    salvarImportacaoShopee({
+      idPedido: "260909HHAER7FN",
+      idDevolucaoShopee: "2609100M3X5919T",
+      dataSolicitacao: "2026-09-10",
+      motivoDevolucao: "Mudei de ideia",
+      descricaoCliente: "Não gostei mais do produto",
+    });
+
+    const preview = await buscarDevolucaoPorNf("1");
+
+    expect(preview.shopee).toEqual({
+      idDevolucaoShopee: "2609100M3X5919T",
+      dataSolicitacao: "2026-09-10",
+      motivoDevolucao: "Mudei de ideia",
+      ocorrenciaSugerida: "ARREPENDIMENTO",
+      descricaoCliente: "Não gostei mais do produto",
+      valorReembolso: undefined,
+      valorCompensacao: undefined,
+    });
+  });
+
+  it("sem importação do Shopee pra esse idPedido, preview.shopee fica undefined", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      if (endpointDe(input) === "notas.fiscais.pesquisa.php") {
+        return jsonResponse({ retorno: { status: "OK", notas_fiscais: [{ nota_fiscal: { id: "1", numero: "1", data_emissao: "01/01/2026" } }] } });
+      }
+      if (endpointDe(input) === "nota.fiscal.obter.php") {
+        return jsonResponse({
+          retorno: { status: "OK", nota_fiscal: { numero: "1", numero_ecommerce: "PEDIDO-SEM-IMPORTACAO", cliente: {}, itens: [] } },
+        });
+      }
+      throw new Error(`nao deveria chamar ${String(input)}`);
+    });
+
+    const { buscarDevolucaoPorNf } = await freshDevolucao();
+    const preview = await buscarDevolucaoPorNf("1");
+
+    expect(preview.shopee).toBeUndefined();
+  });
 });

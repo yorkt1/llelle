@@ -191,6 +191,55 @@ do mesmo jeito (`tiny.com.br` bloqueado no ambiente onde isso foi escrito) —
 pra esses dois endpoints, é só adicionar `{ method: "POST" }` no `fetch`
 dentro de `tinyGet` (`lib/tinyClient.ts`).
 
+### Importação do Shopee (Tampermonkey)
+
+O Tiny não sabe nada sobre a devolução em si (motivo que o comprador deu,
+data que ele solicitou, ID do caso no Shopee) — só sobre a venda original.
+Pra trazer isso, `tampermonkey/devolucao-shopee.user.js` roda dentro do
+navegador na tela de devolução do Shopee Seller
+(`seller.shopee.com.br/portal/sale/return...`), raspa o que dá, e manda pro
+backend via `POST /api/devolucao/shopee` — que guarda em memória, casado pelo
+**ID do Pedido** (o mesmo `numero_ecommerce` que o Tiny devolve), esperando o
+atendente buscar a NF correspondente aqui no sistema.
+
+- `lib/shopeeImportacao.ts` — guarda os registros (`Map` em memória, expira em
+  7 dias) e faz **merge** em vez de sobrescrever: a raspagem da tela de lista
+  (rápida, vários pedidos de uma vez, mas sem a data exata da solicitação nem
+  a descrição do comprador) e a raspagem da tela de detalhe de um caso
+  específico (mais completa, mas uma de cada vez) se completam em vez de uma
+  apagar o que a outra já achou. Também tem `mapearMotivoParaOcorrencia`, que
+  reconhece o "Motivo de Devolução" do Shopee e já sugere a OCORRÊNCIA — hoje
+  só reconhece 3 frases **confirmadas de verdade** na tela real ("Demais
+  tipos de dano..." → DANIFICADO, "Mudei de ideia" → ARREPENDIMENTO, "Recebi
+  um produto com defeito funcional..." → DEFEITO); ERRO OPERACIONAL e
+  CANCELAMENTO ainda não têm frase confirmada do Shopee, então nunca são
+  sugeridos sozinhos — o atendente escolhe na mão nesses casos, de propósito
+  (nunca adivinha sem evidência real, mesma lição do bug de voltagem).
+- `POST /api/devolucao/shopee` (`server/routes/devolucao.ts`) — aceita um
+  registro só ou uma lista (array). Protegida por um token separado do
+  `OLIST_API_TOKEN`: exige o header `x-import-token` batendo com
+  `SHOPEE_IMPORT_TOKEN` (variável de ambiente nova, ver `.env.example`) —
+  sem isso, qualquer um que descobrisse a URL podia mandar dado falso pro
+  sistema. `GM_xmlhttpRequest` (usado no Tampermonkey) ignora CORS, então não
+  precisa mexer em `CORS_ORIGIN` pra essa rota.
+- Quando o atendente busca uma NF em `GET /api/devolucao/nf/:numero`
+  (`lib/devolucao.ts`), se já existir uma importação do Shopee pro mesmo ID
+  de pedido, ela vem junto no campo `shopee` da resposta — e
+  `src/Devolucoes.tsx` usa isso pra pré-preencher DATA PEDIDO SAC (data real
+  da solicitação, não "hoje"), OCORRÊNCIA (quando reconhecida) + OBSERVAÇÕES,
+  e DEFEITO (com a descrição que o próprio comprador escreveu). Mostra
+  também, só como informação (ainda sem coluna certa — ver abaixo), o
+  "Reembolso ao comprador" e a "Compensação ao vendedor" que o Shopee mostra.
+
+**Sem confirmação ainda**: se "VALOR RECEBIDO BANCO" (coluna R) é a
+Compensação ao vendedor (dinheiro que entra) ou outra coisa — os dois valores
+aparecem na tela só como texto informativo, nenhum vai pro texto copiado
+ainda. **Os seletores do `.user.js` são um ponto de partida, não um script
+pronto**: foram escritos sem acesso à tela real do Shopee, só ao texto colado
+numa conversa — abra o DevTools (F12) na tela de devolução de verdade e
+ajuste os `TODO` marcados no arquivo (principalmente o seletor de cada
+"card" de solicitação na tela de lista).
+
 ## Relatórios
 
 Terceira aba (`#relatorios`): digita o nome (ou parte do nome) de um produto

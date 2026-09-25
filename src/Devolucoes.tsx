@@ -13,6 +13,16 @@ interface OutraNotaFiscal {
   dataEmissao: string;
 }
 
+interface DevolucaoShopee {
+  idDevolucaoShopee?: string;
+  dataSolicitacao?: string; // ISO yyyy-mm-dd
+  motivoDevolucao?: string;
+  ocorrenciaSugerida: string | null;
+  descricaoCliente?: string;
+  valorReembolso?: number;
+  valorCompensacao?: number;
+}
+
 interface DevolucaoPreview {
   nf: string;
   dataEmissao: string;
@@ -22,6 +32,7 @@ interface DevolucaoPreview {
   marketplace: string;
   itens: ItemDevolucao[];
   outras?: OutraNotaFiscal[];
+  shopee?: DevolucaoShopee;
 }
 
 interface LinhaEditavel {
@@ -75,6 +86,15 @@ const OBSERVACAO_PADRAO: Record<string, string> = {
 
 function hojeBr(): string {
   return new Date().toLocaleDateString("pt-BR");
+}
+
+function isoParaBr(dataIso: string): string {
+  const [ano, mes, dia] = dataIso.split("-");
+  return dia && mes && ano ? `${dia}/${mes}/${ano}` : dataIso;
+}
+
+function formatarReal(valor: number): string {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function lerBuscasRecentes(): BuscaRecente[] {
@@ -155,16 +175,18 @@ export function Devolucoes() {
         if (!response.ok) throw new Error(extrairErro(json, "Não consegui buscar essa nota fiscal."));
 
         const dados = json as DevolucaoPreview;
+        const shopee = dados.shopee;
+        const ocorrenciaInicial = shopee?.ocorrenciaSugerida ?? "";
         setPreview(dados);
         setLinhas(
           dados.itens.map((item) => ({
-            dataPedidoSac: hojeBr(),
-            ocorrencia: "",
-            observacoes: "",
+            dataPedidoSac: shopee?.dataSolicitacao ? isoParaBr(shopee.dataSolicitacao) : hojeBr(),
+            ocorrencia: ocorrenciaInicial,
+            observacoes: ocorrenciaInicial ? (OBSERVACAO_PADRAO[ocorrenciaInicial] ?? "") : "",
             produto: item.produtoPlanilha,
             quantidade: item.quantidade,
             dataRecebimento: "",
-            defeito: "",
+            defeito: shopee?.descricaoCliente ?? "",
             codigoFabricante: "",
             status: "",
             reembolso: "",
@@ -256,6 +278,17 @@ export function Devolucoes() {
             <p className="nota-info">
               Havia {preview.outras.length + 1} notas com o número {numero} — usando a mais recente, emitida em{" "}
               {preview.dataEmissao}.
+            </p>
+          )}
+
+          {preview.shopee && (
+            <p className="nota-info">
+              Dados do Shopee aplicados
+              {preview.shopee.idDevolucaoShopee ? ` (ID devolução: ${preview.shopee.idDevolucaoShopee})` : ""}
+              {preview.shopee.motivoDevolucao ? ` — motivo: "${preview.shopee.motivoDevolucao}"` : ""}
+              {!preview.shopee.ocorrenciaSugerida ? " — não reconheci esse motivo automaticamente, escolha a ocorrência na mão." : ""}
+              {preview.shopee.valorReembolso != null ? ` · reembolso ao cliente: ${formatarReal(preview.shopee.valorReembolso)}` : ""}
+              {preview.shopee.valorCompensacao != null ? ` · compensação ao vendedor: ${formatarReal(preview.shopee.valorCompensacao)}` : ""}
             </p>
           )}
 
