@@ -39,4 +39,12 @@ describe("nomeProdutoPlanilha", () => {
     // código desconhecido cai pra heurística em vez de travar.
     expect(nomeProdutoPlanilha("SKU-INEXISTENTE", "Chaleira Basic Preta 127V")).toBe("CHALEIRA BASIC PRETA 127V");
   });
+
+  it("quando a descrição menciona as duas voltagens, usa a última (a variante real vendida), não a primeira", () => {
+    // Caso real visto no Tiny: a descrição cita as duas genericamente e só no fim diz qual foi vendida.
+    expect(nomeProdutoPlanilha("", "Sanduicheira Grill Quality Koti Preta 750w - 110v ou 220v - 110V")).toBe(
+      "SANDUICHEIRA PRETA 127V",
+    );
+    expect(nomeProdutoPlanilha("", "Chaleira Modern Preta - 110v ou 220v - 220V")).toBe("CHALEIRA MODERN PRETA 220V");
+  });
 });

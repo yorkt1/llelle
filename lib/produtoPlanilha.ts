@@ -83,13 +83,21 @@ const CORES: { padrao: RegExp; label: string }[] = [
  * Se isso gerar nome diferente do esperado pra algum produto específico, o
  * conserto certo é completar `data/produtos.json` pra esse código — o mapa
  * sempre tem prioridade sobre esta heurística.
+ *
+ * Usa a ÚLTIMA menção de voltagem no texto, não a primeira: visto num caso
+ * real do Tiny, a descrição do produto costuma citar as duas voltagens
+ * genericamente ("... Preta 750w - 110v ou 220v") e só no final acrescenta
+ * "- 110V" (ou "- 220V") pra dizer qual variante foi realmente vendida —
+ * pegar a primeira ocorrência ("220" de "110v ou 220v") dava a voltagem
+ * errada quase sempre, já que "220" aparece antes na frase genérica.
  */
 function detectarVoltagem(descNormalizada: string): string | null {
   // Sem \b no final: "220v"/"127v" é uma palavra só (dígito e letra são ambos \w,
   // não há fronteira entre eles) — só a fronteira ANTES do número importa aqui.
-  if (/\b220/.test(descNormalizada)) return "220V";
-  if (/\b(110|127)/.test(descNormalizada)) return "127V";
-  return null;
+  const ocorrencias = [...descNormalizada.matchAll(/\b(110|127|220)/g)];
+  if (ocorrencias.length === 0) return null;
+  const ultima = ocorrencias[ocorrencias.length - 1][1];
+  return ultima === "220" ? "220V" : "127V";
 }
 
 /** Só usado pra AIRFRYER — ex.: "Airfryer 6,5L 220V" → "6,5L". */
