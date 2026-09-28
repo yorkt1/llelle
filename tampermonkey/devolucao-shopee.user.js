@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLE Importadora — Devolução Shopee -> llelle
 // @namespace    lle-importadora
-// @version      0.6.0
+// @version      0.7.0
 // @description  Raspa a lista/detalhe de devolução do Shopee Seller e manda pro backend do llelle (aba Devoluções)
 // @match        https://seller.shopee.com.br/portal/sale/returnrefundcancel*
 // @match        https://seller.shopee.com.br/portal/sale/return/*
@@ -34,9 +34,10 @@
  * de verdade no texto da página, e detecta troca de URL (inclusive sem reload de página, comum
  * em SPA) pra resetar e tentar de novo na devolução seguinte.
  *
- * v0.6.0: sem botão, precisava de algum feedback visual — agora aparece um avisinho flutuante
- * verde ("✔ Enviado pro llelle") ou vermelho (erro) por 2,5s depois de cada envio, sem precisar
- * abrir o Console pra saber se funcionou.
+ * v0.7.0: trocou o avisinho que aparecia/sumia por um indicador FIXO no canto da tela —
+ * vermelho ("● Aguardando dados...") assim que abre a página (ou troca de devolução), e vira
+ * verde ("✔ Enviado pro llelle") quando o envio dá certo. Fica visível o tempo todo, então dá
+ * pra saber o status de longe sem precisar abrir o Console.
  *
  * A tela de LISTA (/returnrefundcancel) ainda não tem seletor de card confirmado — TODO.
  */
@@ -48,22 +49,32 @@
   const IMPORT_TOKEN = "COLE_AQUI_O_MESMO_VALOR_DE_SHOPEE_IMPORT_TOKEN_DO_RENDER";
   // ================================================
 
-  // Avisinho flutuante que aparece e some sozinho — sem botão, precisa de algum jeito de saber
-  // que o envio aconteceu (ou falhou) sem precisar abrir o Console.
-  function mostrarAviso(texto, cor) {
-    const aviso = document.createElement("div");
-    aviso.textContent = texto;
-    aviso.style.cssText = `
+  // Indicador fixo (não some sozinho) — começa vermelho quando a página abre/troca de devolução,
+  // e vira verde quando o envio pra o llelle dá certo. Se der erro, fica vermelho com o motivo,
+  // pra dar pra notar sem precisar abrir o Console.
+  const VERMELHO = "#b3261e";
+  const VERDE = "#1a7d3a";
+
+  function criarIndicador() {
+    const el = document.createElement("div");
+    el.id = "llelle-indicador";
+    el.style.cssText = `
       position:fixed;bottom:16px;right:16px;z-index:99999;padding:10px 16px;
-      background:${cor};color:#fff;border-radius:8px;font-size:13px;font-family:sans-serif;
-      box-shadow:0 2px 8px rgba(0,0,0,.3);transition:opacity .4s;opacity:1;
+      color:#fff;border-radius:8px;font-size:13px;font-family:sans-serif;
+      box-shadow:0 2px 8px rgba(0,0,0,.3);transition:background-color .3s;
     `;
-    document.body.appendChild(aviso);
-    setTimeout(() => {
-      aviso.style.opacity = "0";
-      setTimeout(() => aviso.remove(), 400);
-    }, 2500);
+    document.body.appendChild(el);
+    return el;
   }
+
+  const indicador = criarIndicador();
+
+  function atualizarIndicador(texto, cor) {
+    indicador.textContent = texto;
+    indicador.style.background = cor;
+  }
+
+  atualizarIndicador("● Aguardando dados...", VERMELHO);
 
   function enviar(payload) {
     GM_xmlhttpRequest({
@@ -74,14 +85,14 @@
       onload: (resposta) => {
         console.log("[llelle] enviado:", resposta.status, resposta.responseText);
         if (resposta.status >= 200 && resposta.status < 300) {
-          mostrarAviso("✔ Enviado pro llelle", "#1a7d3a");
+          atualizarIndicador("✔ Enviado pro llelle", VERDE);
         } else {
-          mostrarAviso(`✕ Erro ao enviar (${resposta.status})`, "#b3261e");
+          atualizarIndicador(`✕ Erro ao enviar (${resposta.status})`, VERMELHO);
         }
       },
       onerror: (erro) => {
         console.error("[llelle] falha ao enviar pro backend:", erro);
-        mostrarAviso("✕ Falha ao enviar pro llelle", "#b3261e");
+        atualizarIndicador("✕ Falha ao enviar pro llelle", VERMELHO);
       },
     });
   }
@@ -221,6 +232,7 @@
     if (urlAtual !== ultimaUrlVista) {
       ultimaUrlVista = urlAtual;
       jaEnviadoNestaUrl = false;
+      atualizarIndicador("● Aguardando dados...", VERMELHO); // nova devolução, ainda não enviou
     }
     if (jaEnviadoNestaUrl) return;
 
