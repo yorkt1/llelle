@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLE Importadora — Devolução Shopee -> llelle
 // @namespace    lle-importadora
-// @version      0.7.0
+// @version      0.8.0
 // @description  Raspa a lista/detalhe de devolução do Shopee Seller e manda pro backend do llelle (aba Devoluções)
 // @match        https://seller.shopee.com.br/portal/sale/returnrefundcancel*
 // @match        https://seller.shopee.com.br/portal/sale/return/*
@@ -39,6 +39,9 @@
  * verde ("✔ Enviado pro llelle") quando o envio dá certo. Fica visível o tempo todo, então dá
  * pra saber o status de longe sem precisar abrir o Console.
  *
+ * v0.8.0: indicador virou só uma bolinha de 12px (sem texto visível) — o texto do status
+ * (ex.: "✔ Enviado pro llelle") vira tooltip nativo (passa o mouse por cima pra ler).
+ *
  * A tela de LISTA (/returnrefundcancel) ainda não tem seletor de card confirmado — TODO.
  */
 (function () {
@@ -59,9 +62,8 @@
     const el = document.createElement("div");
     el.id = "llelle-indicador";
     el.style.cssText = `
-      position:fixed;bottom:16px;right:16px;z-index:99999;padding:10px 16px;
-      color:#fff;border-radius:8px;font-size:13px;font-family:sans-serif;
-      box-shadow:0 2px 8px rgba(0,0,0,.3);transition:background-color .3s;
+      position:fixed;bottom:16px;right:16px;z-index:99999;width:12px;height:12px;
+      border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.4);transition:background-color .3s;
     `;
     document.body.appendChild(el);
     return el;
@@ -69,8 +71,10 @@
 
   const indicador = criarIndicador();
 
+  // Bolinha só de cor — o texto vira o tooltip (passa o mouse por cima pra ver o motivo, sem
+  // precisar abrir o Console).
   function atualizarIndicador(texto, cor) {
-    indicador.textContent = texto;
+    indicador.title = texto;
     indicador.style.background = cor;
   }
 
