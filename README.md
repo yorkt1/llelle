@@ -136,14 +136,20 @@ sincronizar sozinho assim que o processo sobe de novo, nas duas opções.
 ## Devoluções
 
 Segunda aba (`#devolucoes`) pro setor de devolução: digita o **número da nota
-fiscal de venda**, clica em Buscar (ou aperta Enter) e aparece uma prévia
-editável, linha por item, pra copiar (`Ctrl+V`) direto na planilha de
-controle de devoluções.
+fiscal de venda OU o "Nº do pedido"** (o número que aparece na tela do
+Shopee, quando você não tem a NF em mãos), clica em Buscar (ou aperta Enter)
+e aparece uma prévia editável, linha por item, pra copiar (`Ctrl+V`) direto
+na planilha de controle de devoluções.
 
 - `lib/devolucao.ts` — busca no Tiny (só leitura, nunca escreve nada lá):
   `notas.fiscais.pesquisa.php?numero=X&tipoNota=S` acha a nota; se tiver mais
   de uma com o mesmo número (séries diferentes), usa a de emissão mais
-  recente e devolve o resto em `outras`. `nota.fiscal.obter.php?id=Y` traz
+  recente e devolve o resto em `outras`. Se não achar nenhuma NF com esse
+  número, tenta como **"Nº do pedido"** do Shopee (`numero_ecommerce`):
+  `pedidos.pesquisa.php?numeroEcommerce=X` → `pedido.obter.php?id=Y` → lê
+  `id_nota_fiscal` e segue o fluxo normal a partir daí — assim quem está na
+  tela de devolução do Shopee (só tem o "Nº do pedido" à mão) não precisa ir
+  no Tiny achar a NF antes de buscar aqui. `nota.fiscal.obter.php?id=Y` traz
   cliente e itens. Pro marketplace: se a nota tiver `id_venda`,
   `pedido.obter.php?id=Z` e lê `pedido.ecommerce.nomeEcommerce`; sem isso,
   cai pro `intermediador.nome` da própria nota. `codigo_erro: 6` do Tiny
@@ -208,13 +214,17 @@ atendente buscar a NF correspondente aqui no sistema.
   a descrição do comprador) e a raspagem da tela de detalhe de um caso
   específico (mais completa, mas uma de cada vez) se completam em vez de uma
   apagar o que a outra já achou. Também tem `mapearMotivoParaOcorrencia`, que
-  reconhece o "Motivo de Devolução" do Shopee e já sugere a OCORRÊNCIA — hoje
-  só reconhece 3 frases **confirmadas de verdade** na tela real ("Demais
+  reconhece o "Motivo da devolução" do Shopee e já sugere a OCORRÊNCIA — hoje
+  reconhece 4 frases **confirmadas de verdade** numa tela real ("Demais
   tipos de dano..." → DANIFICADO, "Mudei de ideia" → ARREPENDIMENTO, "Recebi
-  um produto com defeito funcional..." → DEFEITO); ERRO OPERACIONAL e
-  CANCELAMENTO ainda não têm frase confirmada do Shopee, então nunca são
-  sugeridos sozinhos — o atendente escolhe na mão nesses casos, de propósito
-  (nunca adivinha sem evidência real, mesma lição do bug de voltagem).
+  um produto com defeito funcional..." → DEFEITO, "Recebi um produto
+  errado..." → ERRO OPERACIONAL); CANCELAMENTO ainda não tem frase
+  confirmada, então nunca é sugerido sozinho — o atendente escolhe na mão
+  nesse caso, de propósito (nunca adivinha sem evidência real, mesma lição
+  do bug de voltagem). Também guarda `variacaoShopee` (campo "Opção" da tela,
+  ex.: "110V") — a variação exata do item, mais confiável que tentar
+  adivinhar pela descrição, mas só mostrado como informação pra conferir
+  contra o PRODUTO do Tiny, não substitui automaticamente.
 - `POST /api/devolucao/shopee` (`server/routes/devolucao.ts`) — aceita um
   registro só ou uma lista (array). Protegida por um token separado do
   `OLIST_API_TOKEN`: exige o header `x-import-token` batendo com
@@ -234,11 +244,16 @@ atendente buscar a NF correspondente aqui no sistema.
 **Sem confirmação ainda**: se "VALOR RECEBIDO BANCO" (coluna R) é a
 Compensação ao vendedor (dinheiro que entra) ou outra coisa — os dois valores
 aparecem na tela só como texto informativo, nenhum vai pro texto copiado
-ainda. **Os seletores do `.user.js` são um ponto de partida, não um script
-pronto**: foram escritos sem acesso à tela real do Shopee, só ao texto colado
-numa conversa — abra o DevTools (F12) na tela de devolução de verdade e
-ajuste os `TODO` marcados no arquivo (principalmente o seletor de cada
-"card" de solicitação na tela de lista).
+ainda.
+
+**Sobre os seletores do `.user.js`**: os rótulos da tela de **detalhe**
+("Nº do pedido", "Nº da solicitação", "Motivo da devolução", "Descrição",
+"Valor do reembolso", "Opção") já foram confirmados contra uma tela real
+(não só texto colado) — `valorAposRotulo` tenta 3 formas comuns de a página
+montar rótulo+valor, então tem uma chance razoável de funcionar direto. A
+tela de **lista** (`/returnrefundcancel`) ainda não tem o seletor de cada
+"card" de solicitação confirmado — segue marcado como `TODO` no arquivo. Pra
+achar: abra essa tela, botão direito num card > Inspecionar.
 
 ## Relatórios
 

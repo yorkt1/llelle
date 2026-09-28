@@ -66,6 +66,7 @@ describe("salvarImportacaoShopee / buscarImportacaoShopee", () => {
       idDevolucaoShopee: "2609100M3X5919T",
       dataSolicitacao: "2026-09-10",
       descricaoCliente: "Não gostei mais do produto",
+      variacaoShopee: "110V",
     });
 
     const encontrado = buscarImportacaoShopee("260909HHAER7FN");
@@ -76,6 +77,7 @@ describe("salvarImportacaoShopee / buscarImportacaoShopee", () => {
       idDevolucaoShopee: "2609100M3X5919T",
       dataSolicitacao: "2026-09-10",
       descricaoCliente: "Não gostei mais do produto",
+      variacaoShopee: "110V",
     });
   });
 

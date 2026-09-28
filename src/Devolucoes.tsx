@@ -21,6 +21,7 @@ interface DevolucaoShopee {
   descricaoCliente?: string;
   valorReembolso?: number;
   valorCompensacao?: number;
+  variacaoShopee?: string;
 }
 
 interface DevolucaoPreview {
@@ -241,12 +242,12 @@ export function Devolucoes() {
 
       <form className="busca-linha" onSubmit={buscar}>
         <label className="field">
-          <span className="field-label">Nº da NF</span>
+          <span className="field-label">Nº da NF ou Nº do pedido</span>
           <input
             className="field-input"
             value={numero}
             onChange={(event) => setNumero(event.target.value)}
-            placeholder="Ex: 338894"
+            placeholder="Ex: 338894 (NF) ou 260913UJGQT69B (nº do pedido)"
             autoFocus
           />
         </label>
@@ -289,6 +290,7 @@ export function Devolucoes() {
               {!preview.shopee.ocorrenciaSugerida ? " — não reconheci esse motivo automaticamente, escolha a ocorrência na mão." : ""}
               {preview.shopee.valorReembolso != null ? ` · reembolso ao cliente: ${formatarReal(preview.shopee.valorReembolso)}` : ""}
               {preview.shopee.valorCompensacao != null ? ` · compensação ao vendedor: ${formatarReal(preview.shopee.valorCompensacao)}` : ""}
+              {preview.shopee.variacaoShopee ? ` · variação no Shopee: ${preview.shopee.variacaoShopee} (confira contra o PRODUTO abaixo)` : ""}
             </p>
           )}
 

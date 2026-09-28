@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLE Importadora — Devolução Shopee -> llelle
 // @namespace    lle-importadora
-// @version      0.1.0
+// @version      0.2.0
 // @description  Raspa a lista/detalhe de devolução do Shopee Seller e manda pro backend do llelle (aba Devoluções)
 // @match        https://seller.shopee.com.br/portal/sale/returnrefundcancel*
 // @match        https://seller.shopee.com.br/portal/sale/return/*
@@ -10,23 +10,13 @@
 // ==/UserScript==
 
 /**
- * PONTO DE PARTIDA, NÃO PRODUTO PRONTO.
+ * Rótulos confirmados numa tela real de devolução (print, não só texto colado):
+ *   "Nº da solicitação", "Nº do pedido", "Motivo da devolução", "Descrição",
+ *   "Valor do reembolso", e um campo "Opção" (a variação exata do item, ex.: "110V") —
+ *   bem mais confiável que tentar adivinhar a voltagem pela descrição do produto.
  *
- * Este script foi escrito sem acesso à tela real do Shopee Seller (só ao texto que foi colado
- * numa conversa) — os seletores abaixo marcados com TODO quase certamente vão precisar de ajuste.
- * O jeito de achar o seletor certo: botão direito num elemento na tela do Shopee > Inspecionar,
- * ver a classe/estrutura real no painel do navegador (F12 > Elements).
- *
- * O que ESTE script tenta fazer:
- * 1. Na tela de LISTA (/returnrefundcancel): acha cada "card" de solicitação visível na página e
- *    manda um lote (array) pro backend de uma vez — idPedido, idDevolucaoShopee, motivoDevolucao,
- *    valorReembolso, valorCompensacao (não tem data exata da solicitação nem a descrição do
- *    comprador aqui, só na tela de detalhe).
- * 2. Na tela de DETALHE (/return/:id): pega o que só existe ali — data exata da solicitação e a
- *    descrição que o comprador escreveu — e manda só esse registro.
- *
- * As duas raspagens se completam no backend (merge por idPedido, ver lib/shopeeImportacao.ts) —
- * rodar só uma das duas já ajuda, não precisa das duas pra funcionar.
+ * A tela de LISTA (/returnrefundcancel) ainda não tem seletor confirmado — o card de cada
+ * solicitação continua marcado como TODO. Pra achar: botão direito num card > Inspecionar.
  */
 (function () {
   "use strict";
@@ -48,20 +38,43 @@
   }
 
   /**
-   * Acha o texto que aparece logo DEPOIS de um rótulo (ex: acha o elemento cujo texto é
-   * "ID do Pedido" e devolve o texto do elemento seguinte, que costuma ser o valor).
-   * TODO: se a tela real não seguir esse padrão "rótulo num elemento, valor no próximo irmão",
-   * ajuste aqui — pode ser preciso subir pro elemento pai e pegar outro filho, por exemplo.
+   * Acha o valor associado a um rótulo, tentando 3 formas comuns de a tela montar isso — sem
+   * precisar saber de antemão qual delas o Shopee usa:
+   * 1. Rótulo é o texto exato de um elemento, valor é o elemento irmão seguinte.
+   * 2. Rótulo e valor estão em blocos separados (o irmão seguinte do PAI do rótulo).
+   * 3. Rótulo e valor são o mesmo nó de texto (ex.: "Nº do pedido\n260913...") — devolve o que
+   *    vem depois do rótulo dentro do mesmo elemento.
    */
-  function valorAposRotulo(raiz, rotulo) {
-    const candidatos = [...raiz.querySelectorAll("*")].filter(
-      (el) => el.children.length === 0 && el.textContent?.trim() === rotulo,
-    );
-    for (const el of candidatos) {
-      const valor = el.nextElementSibling?.textContent?.trim();
-      if (valor) return valor;
+  function acharValor(raiz, testeTexto, comprimentoParaCortar) {
+    const elementos = [...raiz.querySelectorAll("*")];
+    for (const el of elementos) {
+      if (el.children.length !== 0) continue;
+      const texto = el.textContent?.trim() ?? "";
+      if (!testeTexto(texto)) continue;
+
+      const valorIrmao = el.nextElementSibling?.textContent?.trim();
+      if (valorIrmao) return valorIrmao;
+
+      const valorIrmaoDoPai = el.parentElement?.nextElementSibling?.textContent?.trim();
+      if (valorIrmaoDoPai) return valorIrmaoDoPai;
+
+      if (comprimentoParaCortar != null && texto.length > comprimentoParaCortar) {
+        return texto.slice(comprimentoParaCortar).trim();
+      }
     }
     return null;
+  }
+
+  function valorAposRotulo(raiz, rotulo) {
+    // Tenta com e sem ":" no final — não deu pra confirmar se o rótulo real inclui o dois-pontos.
+    return (
+      acharValor(raiz, (texto) => texto === rotulo, rotulo.length) ??
+      acharValor(raiz, (texto) => texto === `${rotulo}:`, rotulo.length + 1)
+    );
+  }
+
+  function valorProximoDoTextoQueContem(raiz, trecho) {
+    return acharValor(raiz, (texto) => texto.includes(trecho), null);
   }
 
   function paraNumero(texto) {
@@ -82,7 +95,7 @@
   // ===== Tela de LISTA (/returnrefundcancel) =====
   function rasparLista() {
     // TODO: trocar pelo seletor real de cada bloco/card de solicitação (o que se repete uma vez
-    // por linha da lista — "vilmacastro529", "ID do Pedido", "ID da Solicitação" etc. dentro dele).
+    // por linha da lista). Ainda não confirmado contra a tela real.
     const cards = document.querySelectorAll("[SELETOR_DE_CADA_CARD_DE_SOLICITACAO]");
     if (cards.length === 0) {
       console.warn("[llelle] nenhum card encontrado na lista — ajuste o seletor em rasparLista().");
@@ -91,11 +104,11 @@
 
     const registros = [...cards]
       .map((card) => {
-        const idPedido = valorAposRotulo(card, "ID do Pedido");
+        const idPedido = valorAposRotulo(card, "Nº do pedido");
         if (!idPedido) return null;
         return {
           idPedido,
-          idDevolucaoShopee: valorAposRotulo(card, "ID da Solicitação") ?? undefined,
+          idDevolucaoShopee: valorAposRotulo(card, "Nº da solicitação") ?? undefined,
           motivoDevolucao: valorAposRotulo(card, "Motivo de Devolução") ?? undefined,
           valorReembolso: paraNumero(valorAposRotulo(card, "Reembolso")),
           valorCompensacao: paraNumero(valorAposRotulo(card, "Compensação")),
@@ -109,26 +122,25 @@
 
   // ===== Tela de DETALHE (/return/:id) =====
   function rasparDetalhe() {
-    const idDevolucaoShopee = location.pathname.split("/").filter(Boolean).pop();
-    const idPedido = valorAposRotulo(document.body, "ID do Pedido") ?? undefined;
+    const idPedido = valorAposRotulo(document.body, "Nº do pedido") ?? undefined;
+    const idDevolucaoShopee =
+      valorAposRotulo(document.body, "Nº da solicitação") ?? location.pathname.split("/").filter(Boolean).pop();
 
-    // "Comprador solicitou Devolução/Reembolso" aparece na linha do tempo, com a data/hora do lado.
-    const eventoSolicitacao = [...document.querySelectorAll("*")].find(
-      (el) => el.children.length === 0 && el.textContent?.includes("solicitou Devolução"),
-    );
-    const dataSolicitacao = paraIso(eventoSolicitacao?.nextElementSibling?.textContent?.trim());
-
-    const motivoDevolucao = valorAposRotulo(document.body, "Motivo da devolução:") ?? undefined;
-    const descricaoCliente = valorAposRotulo(document.body, "Descrição:") ?? undefined;
-    const valorReembolso = paraNumero(valorAposRotulo(document.body, "Valor do reembolso:"));
+    const dataSolicitacao = paraIso(valorProximoDoTextoQueContem(document.body, "solicitou Devolução"));
+    const motivoDevolucao = valorAposRotulo(document.body, "Motivo da devolução") ?? undefined;
+    const descricaoCliente = valorAposRotulo(document.body, "Descrição") ?? undefined;
+    const valorReembolso = paraNumero(valorAposRotulo(document.body, "Valor do reembolso"));
+    // "Opção" é a variação exata do item (ex.: "110V") — mais confiável que adivinhar pela descrição.
+    const variacaoShopee = valorAposRotulo(document.body, "Opção") ?? undefined;
 
     if (!idPedido) {
-      console.warn("[llelle] não achei o ID do Pedido nessa tela de detalhe — ajuste rasparDetalhe().");
+      console.warn("[llelle] não achei o Nº do pedido nessa tela de detalhe — ajuste rasparDetalhe().");
       return;
     }
 
-    console.log("[llelle] raspado da tela de detalhe:", { idPedido, idDevolucaoShopee, dataSolicitacao, motivoDevolucao });
-    enviar({ idPedido, idDevolucaoShopee, dataSolicitacao, motivoDevolucao, descricaoCliente, valorReembolso });
+    const payload = { idPedido, idDevolucaoShopee, dataSolicitacao, motivoDevolucao, descricaoCliente, valorReembolso, variacaoShopee };
+    console.log("[llelle] raspado da tela de detalhe:", payload);
+    enviar(payload);
   }
 
   function rasparAgora() {

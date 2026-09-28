@@ -53,6 +53,7 @@ function paraEntradaShopee(bruto: unknown): ShopeeImportacaoEntrada | null {
     descricaoCliente: paraTexto(body.descricaoCliente),
     valorReembolso: paraNumero(body.valorReembolso),
     valorCompensacao: paraNumero(body.valorCompensacao),
+    variacaoShopee: paraTexto(body.variacaoShopee),
   };
 }
 

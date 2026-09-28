@@ -15,7 +15,7 @@
 
 export type ShopeeImportacao = {
   idPedido: string;
-  /** "ID da Solicitação" do Shopee — identifica o caso de devolução em si, não o pedido de venda. */
+  /** "Nº da solicitação" do Shopee — identifica o caso de devolução em si, não o pedido de venda. */
   idDevolucaoShopee?: string;
   /** Data em que o comprador solicitou a devolução, formato ISO (yyyy-mm-dd). */
   dataSolicitacao?: string;
@@ -27,6 +27,10 @@ export type ShopeeImportacao = {
   valorReembolso?: number;
   /** "Compensação ao vendedor" — dinheiro que entra pra você (Programa de Devolução Fácil etc.). Ainda não mapeado pra nenhuma coluna da planilha, só informativo. */
   valorCompensacao?: number;
+  /** Campo "Opção" do Shopee — a variação exata do item vendido (ex.: "110V"). Mais confiável que
+   * adivinhar pela descrição do produto, mas ainda só informativo — não substitui o PRODUTO que
+   * vem do Tiny, só ajuda a confirmar/conferir. */
+  variacaoShopee?: string;
   recebidoEm: string;
 };
 

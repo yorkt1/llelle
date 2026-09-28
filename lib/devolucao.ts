@@ -10,6 +10,12 @@ import { buscarImportacaoShopee, mapearMotivoParaOcorrencia } from "./shopeeImpo
  * 1. `notas.fiscais.pesquisa.php?numero=X&tipoNota=S` acha a(s) nota(s) de
  *    venda com esse número. Se vier mais de uma (séries diferentes), usa a
  *    de emissão mais recente e devolve o resto em `outras`.
+ * 1b. Se não achar nenhuma NF com esse número, tenta como "Nº do pedido"
+ *    (o `numero_ecommerce` que aparece na tela do Shopee) em vez de NF:
+ *    `pedidos.pesquisa.php?numeroEcommerce=X` → `pedido.obter.php?id=Y` →
+ *    lê `id_nota_fiscal` e segue o fluxo normal a partir daí. Isso existe
+ *    pra quem está na tela de devolução do Shopee (só tem o "Nº do pedido"
+ *    à mão, não a NF) não precisar ir no Tiny achar a NF antes de buscar aqui.
  * 2. `nota.fiscal.obter.php?id=Y` traz cliente, itens e o pedido de origem
  *    (`id_venda`).
  * 3. Pra achar o marketplace: se tiver `id_venda`, `pedido.obter.php?id=Z`
@@ -131,6 +137,40 @@ async function pesquisarNotasFiscais(numero: string): Promise<{ escolhida: NotaF
   return { escolhida, outras };
 }
 
+interface PedidoResumoBusca {
+  id: string;
+}
+
+interface PedidosPesquisaResponse {
+  retorno: RetornoComErro & { pedidos?: { pedido: PedidoResumoBusca }[] };
+}
+
+interface PedidoComNotaFiscal {
+  id_nota_fiscal?: string;
+}
+
+interface PedidoObterParaNotaResponse {
+  retorno: { status: string; pedido?: PedidoComNotaFiscal };
+}
+
+/**
+ * Fallback quando o código digitado não é uma NF, mas o "Nº do pedido" que aparece na tela do
+ * Shopee (numero_ecommerce). Devolve null em qualquer passo que não achar — quem chama decide o
+ * que fazer (aqui: reportar que não achou nem por NF nem por pedido).
+ */
+async function buscarIdNotaFiscalPorNumeroPedido(numeroEcommerce: string): Promise<string | null> {
+  const pesquisa = await tinyGet<PedidosPesquisaResponse>("pedidos.pesquisa.php", { numeroEcommerce });
+  if (pesquisa.retorno.status !== "OK") return null;
+
+  const idPedido = pesquisa.retorno.pedidos?.[0]?.pedido.id;
+  if (!idPedido) return null;
+
+  const detalhe = await tinyGet<PedidoObterParaNotaResponse>("pedido.obter.php", { id: idPedido });
+  if (detalhe.retorno.status !== "OK") return null;
+
+  return detalhe.retorno.pedido?.id_nota_fiscal ?? null;
+}
+
 interface ClienteNota {
   nome?: string;
   cpf_cnpj?: string;
@@ -208,6 +248,8 @@ export type DevolucaoShopee = {
   descricaoCliente?: string;
   valorReembolso?: number;
   valorCompensacao?: number;
+  /** Campo "Opção" do Shopee (ex.: "110V") — só informativo, pra conferir contra o PRODUTO do Tiny. */
+  variacaoShopee?: string;
 };
 
 export type DevolucaoPreview = {
@@ -225,17 +267,36 @@ export type DevolucaoPreview = {
 
 export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<DevolucaoPreview> {
   const numero = numeroBruto.trim();
-  if (!numero) throw new Error("Informe o número da nota fiscal.");
+  if (!numero) throw new Error("Informe o número da nota fiscal ou do pedido.");
 
-  const { escolhida, outras } = await pesquisarNotasFiscais(numero);
-  const detalhe = await obterNotaFiscal(escolhida.id);
+  let idNota: string;
+  let outras: NotaFiscalResumo[] = [];
+  let dataEmissaoResumo: string | undefined;
+
+  try {
+    const resultado = await pesquisarNotasFiscais(numero);
+    idNota = resultado.escolhida.id;
+    outras = resultado.outras;
+    dataEmissaoResumo = resultado.escolhida.data_emissao;
+  } catch (error) {
+    if (!(error instanceof NfNaoEncontradaError)) throw error;
+
+    // Não é uma NF — tenta como "Nº do pedido" (o que aparece na tela de devolução do Shopee).
+    const idPorPedido = await buscarIdNotaFiscalPorNumeroPedido(numero);
+    if (!idPorPedido) {
+      throw new NfNaoEncontradaError(`Nenhuma nota fiscal ou pedido encontrado com "${numero}".`);
+    }
+    idNota = idPorPedido;
+  }
+
+  const detalhe = await obterNotaFiscal(idNota);
   const marketplace = await resolverMarketplace(detalhe);
   const idPedido = detalhe.numero_ecommerce ?? "";
   const importacaoShopee = buscarImportacaoShopee(idPedido);
 
   return {
     nf: detalhe.numero,
-    dataEmissao: detalhe.data_emissao ?? escolhida.data_emissao,
+    dataEmissao: detalhe.data_emissao ?? dataEmissaoResumo ?? "",
     cliente: formatarNomeTitulo(detalhe.cliente?.nome ?? ""),
     cpf: formatarDocumento(detalhe.cliente?.cpf_cnpj ?? ""),
     idPedido,
@@ -266,6 +327,7 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
           descricaoCliente: importacaoShopee.descricaoCliente,
           valorReembolso: importacaoShopee.valorReembolso,
           valorCompensacao: importacaoShopee.valorCompensacao,
+          variacaoShopee: importacaoShopee.variacaoShopee,
         }
       : undefined,
   };

@@ -111,6 +111,54 @@ describe("buscarDevolucaoPorNf", () => {
     await expect(buscarDevolucaoPorNf("000000")).rejects.toBeInstanceOf(NfNaoEncontradaError);
   });
 
+  it("quando o código não é NF, tenta como Nº do pedido (numeroEcommerce) e acha a nota via id_nota_fiscal", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      switch (endpointDe(input)) {
+        case "notas.fiscais.pesquisa.php":
+          expect(url.searchParams.get("numero")).toBe("260913UJGQT69B");
+          return jsonResponse({ retorno: { status: "Erro", codigo_erro: 32 } }); // não é NF
+        case "pedidos.pesquisa.php":
+          expect(url.searchParams.get("numeroEcommerce")).toBe("260913UJGQT69B");
+          return jsonResponse({ retorno: { status: "OK", pedidos: [{ pedido: { id: "700" } }] } });
+        case "pedido.obter.php":
+          if (url.searchParams.get("id") === "700") {
+            return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: "940457856" } } });
+          }
+          return jsonResponse({ retorno: { status: "OK", pedido: { ecommerce: { nomeEcommerce: "Shopee" } } } });
+        case "nota.fiscal.obter.php":
+          expect(url.searchParams.get("id")).toBe("940457856");
+          return jsonResponse({
+            retorno: { status: "OK", nota_fiscal: { numero: "339999", data_emissao: "08/09/2026", cliente: {}, itens: [] } },
+          });
+        default:
+          throw new Error(`endpoint inesperado: ${String(input)}`);
+      }
+    });
+
+    const { buscarDevolucaoPorNf } = await freshDevolucao();
+    const preview = await buscarDevolucaoPorNf("260913UJGQT69B");
+
+    expect(preview.nf).toBe("339999");
+  });
+
+  it("quando não acha nem como NF nem como pedido, lanca NfNaoEncontradaError", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      if (endpointDe(input) === "notas.fiscais.pesquisa.php") {
+        return jsonResponse({ retorno: { status: "Erro", codigo_erro: 32 } });
+      }
+      if (endpointDe(input) === "pedidos.pesquisa.php") {
+        return jsonResponse({ retorno: { status: "Erro", codigo_erro: 32 } });
+      }
+      throw new Error(`nao deveria chamar ${String(input)}`);
+    });
+
+    const { buscarDevolucaoPorNf, NfNaoEncontradaError } = await freshDevolucao();
+    await expect(buscarDevolucaoPorNf("NAO-EXISTE-EM-LUGAR-NENHUM")).rejects.toBeInstanceOf(NfNaoEncontradaError);
+  });
+
   it("limite de taxa (codigo_erro 6) lanca TinyLimiteTaxaError", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async () => jsonResponse({ retorno: { status: "Erro", codigo_erro: 6 } }));
