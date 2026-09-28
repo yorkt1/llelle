@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLE Importadora — Devolução Shopee -> llelle
 // @namespace    lle-importadora
-// @version      0.2.0
+// @version      0.3.0
 // @description  Raspa a lista/detalhe de devolução do Shopee Seller e manda pro backend do llelle (aba Devoluções)
 // @match        https://seller.shopee.com.br/portal/sale/returnrefundcancel*
 // @match        https://seller.shopee.com.br/portal/sale/return/*
@@ -10,13 +10,22 @@
 // ==/UserScript==
 
 /**
- * Rótulos confirmados numa tela real de devolução (print, não só texto colado):
- *   "Nº da solicitação", "Nº do pedido", "Motivo da devolução", "Descrição",
- *   "Valor do reembolso", e um campo "Opção" (a variação exata do item, ex.: "110V") —
- *   bem mais confiável que tentar adivinhar a voltagem pela descrição do produto.
+ * v0.3.0: trocou a raspagem por DOM (achar o elemento do rótulo e olhar o "irmão") por raspagem
+ * em cima de `document.body.innerText` — o texto puro da tela, na ordem visual, sem CSS/script
+ * no meio. Motivo do troca: na tela real, o número do pedido e o link "Ver pedido relacionado"
+ * ficam em elementos DOM vizinhos mas SEM espaço entre os textContent, então a raspagem por
+ * "elemento irmão" colava os dois ("260916792USJJXVer pedido relacionado"). No innerText eles
+ * viram linhas separadas, então dá pra pegar só a linha seguinte ao rótulo e parar aí.
  *
- * A tela de LISTA (/returnrefundcancel) ainda não tem seletor confirmado — o card de cada
- * solicitação continua marcado como TODO. Pra achar: botão direito num card > Inspecionar.
+ * Confirmado num innerText real colado pelo usuário (tela de detalhe de uma devolução):
+ *   "Nº da solicitação" / "Nº do pedido" -> rótulo numa linha, valor na linha seguinte.
+ *   "Motivo da devolução: ..." / "Descrição: ..." / "Opção: Vermelho,110V" -> rótulo e valor na
+ *     MESMA linha, separados por ": ".
+ *   "Valor do reembolso:" -> rótulo numa linha (com dois pontos no final), valor na linha seguinte.
+ *   "Comprador solicitou Devolução/ Reembolso" -> cabeçalho do início da linha do tempo; a
+ *     data/hora da solicitação é a linha seguinte (ex.: "21-09-2026 10:44").
+ *
+ * A tela de LISTA (/returnrefundcancel) ainda não tem seletor de card confirmado — TODO.
  */
 (function () {
   "use strict";
@@ -37,54 +46,46 @@
     });
   }
 
+  function escapeRegExp(texto) {
+    return texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function linhasNaoVazias(texto) {
+    return texto
+      .split("\n")
+      .map((linha) => linha.trim())
+      .filter(Boolean);
+  }
+
   /**
-   * Acha o valor associado a um rótulo, tentando 3 formas comuns de a tela montar isso — sem
-   * precisar saber de antemão qual delas o Shopee usa:
-   * 1. Rótulo é o texto exato de um elemento, valor é o elemento irmão seguinte.
-   * 2. Rótulo e valor estão em blocos separados (o irmão seguinte do PAI do rótulo).
-   * 3. Rótulo e valor são o mesmo nó de texto (ex.: "Nº do pedido\n260913...") — devolve o que
-   *    vem depois do rótulo dentro do mesmo elemento.
+   * Aceita os 2 formatos confirmados na tela real:
+   * 1. "Rótulo: valor" na mesma linha.
+   * 2. "Rótulo" (sozinho, com ou sem ":" no final) numa linha, valor na linha seguinte não vazia.
    */
-  function acharValor(raiz, testeTexto, comprimentoParaCortar) {
-    const elementos = [...raiz.querySelectorAll("*")];
-    for (const el of elementos) {
-      if (el.children.length !== 0) continue;
-      const texto = el.textContent?.trim() ?? "";
-      if (!testeTexto(texto)) continue;
+  function valorDoRotulo(texto, rotulo) {
+    const escapado = escapeRegExp(rotulo);
 
-      const valorIrmao = el.nextElementSibling?.textContent?.trim();
-      if (valorIrmao) return valorIrmao;
+    const inline = texto.match(new RegExp(`${escapado}:\\s*([^\\n]+)`));
+    if (inline) return inline[1].trim();
 
-      const valorIrmaoDoPai = el.parentElement?.nextElementSibling?.textContent?.trim();
-      if (valorIrmaoDoPai) return valorIrmaoDoPai;
+    const linhas = linhasNaoVazias(texto);
+    const idx = linhas.findIndex((linha) => linha === rotulo || linha === `${rotulo}:`);
+    if (idx !== -1 && idx + 1 < linhas.length) return linhas[idx + 1];
 
-      if (comprimentoParaCortar != null && texto.length > comprimentoParaCortar) {
-        return texto.slice(comprimentoParaCortar).trim();
-      }
-    }
     return null;
-  }
-
-  function valorAposRotulo(raiz, rotulo) {
-    // Tenta com e sem ":" no final — não deu pra confirmar se o rótulo real inclui o dois-pontos.
-    return (
-      acharValor(raiz, (texto) => texto === rotulo, rotulo.length) ??
-      acharValor(raiz, (texto) => texto === `${rotulo}:`, rotulo.length + 1)
-    );
-  }
-
-  function valorProximoDoTextoQueContem(raiz, trecho) {
-    return acharValor(raiz, (texto) => texto.includes(trecho), null);
   }
 
   function paraNumero(texto) {
     if (!texto) return undefined;
-    const limpo = texto.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3},)/g, "").replace(",", ".");
+    const limpo = texto
+      .replace(/[^\d,.-]/g, "")
+      .replace(/\.(?=\d{3},)/g, "")
+      .replace(",", ".");
     const numero = Number(limpo);
     return Number.isFinite(numero) ? numero : undefined;
   }
 
-  /** "12-09-2026 10:36" ou "12/09/2026" -> "2026-09-12". */
+  /** "21-09-2026 10:44" ou "21/09/2026" -> "2026-09-21". */
   function paraIso(dataBrasileira) {
     const match = dataBrasileira?.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
     if (!match) return undefined;
@@ -104,14 +105,15 @@
 
     const registros = [...cards]
       .map((card) => {
-        const idPedido = valorAposRotulo(card, "Nº do pedido");
+        const texto = card.innerText;
+        const idPedido = valorDoRotulo(texto, "Nº do pedido");
         if (!idPedido) return null;
         return {
           idPedido,
-          idDevolucaoShopee: valorAposRotulo(card, "Nº da solicitação") ?? undefined,
-          motivoDevolucao: valorAposRotulo(card, "Motivo de Devolução") ?? undefined,
-          valorReembolso: paraNumero(valorAposRotulo(card, "Reembolso")),
-          valorCompensacao: paraNumero(valorAposRotulo(card, "Compensação")),
+          idDevolucaoShopee: valorDoRotulo(texto, "Nº da solicitação") ?? undefined,
+          motivoDevolucao: valorDoRotulo(texto, "Motivo da devolução") ?? undefined,
+          valorReembolso: paraNumero(valorDoRotulo(texto, "Valor do reembolso")),
+          valorCompensacao: paraNumero(valorDoRotulo(texto, "Compensação")),
         };
       })
       .filter((registro) => registro != null);
@@ -122,16 +124,19 @@
 
   // ===== Tela de DETALHE (/return/:id) =====
   function rasparDetalhe() {
-    const idPedido = valorAposRotulo(document.body, "Nº do pedido") ?? undefined;
-    const idDevolucaoShopee =
-      valorAposRotulo(document.body, "Nº da solicitação") ?? location.pathname.split("/").filter(Boolean).pop();
+    const texto = document.body.innerText;
 
-    const dataSolicitacao = paraIso(valorProximoDoTextoQueContem(document.body, "solicitou Devolução"));
-    const motivoDevolucao = valorAposRotulo(document.body, "Motivo da devolução") ?? undefined;
-    const descricaoCliente = valorAposRotulo(document.body, "Descrição") ?? undefined;
-    const valorReembolso = paraNumero(valorAposRotulo(document.body, "Valor do reembolso"));
-    // "Opção" é a variação exata do item (ex.: "110V") — mais confiável que adivinhar pela descrição.
-    const variacaoShopee = valorAposRotulo(document.body, "Opção") ?? undefined;
+    const idPedido = valorDoRotulo(texto, "Nº do pedido") ?? undefined;
+    const idDevolucaoShopee =
+      valorDoRotulo(texto, "Nº da solicitação") ?? location.pathname.split("/").filter(Boolean).pop();
+
+    const dataSolicitacao = paraIso(valorDoRotulo(texto, "Comprador solicitou Devolução/ Reembolso"));
+    const motivoDevolucao = valorDoRotulo(texto, "Motivo da devolução") ?? undefined;
+    const descricaoCliente = valorDoRotulo(texto, "Descrição") ?? undefined;
+    const valorReembolso = paraNumero(valorDoRotulo(texto, "Valor do reembolso"));
+    // "Opção" é a variação exata do item (ex.: "Vermelho,110V") — mais confiável que adivinhar
+    // a voltagem/cor pela descrição do produto no Tiny.
+    const variacaoShopee = valorDoRotulo(texto, "Opção") ?? undefined;
 
     if (!idPedido) {
       console.warn("[llelle] não achei o Nº do pedido nessa tela de detalhe — ajuste rasparDetalhe().");
