@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLE Importadora — Devolução Shopee -> llelle
 // @namespace    lle-importadora
-// @version      0.4.0
+// @version      0.5.0
 // @description  Raspa a lista/detalhe de devolução do Shopee Seller e manda pro backend do llelle (aba Devoluções)
 // @match        https://seller.shopee.com.br/portal/sale/returnrefundcancel*
 // @match        https://seller.shopee.com.br/portal/sale/return/*
@@ -27,6 +27,12 @@
  *   "Pedido devolvido" -> evento da linha do tempo de rastreio; a data/hora seguinte (ex.:
  *     "2026-09-25 15:11:10", já em ISO) é quando o produto devolvido chegou de volta na loja —
  *     vira a coluna DATA RECEBIMENTO PRODUTO na planilha.
+ *
+ * v0.5.0: tirou o botão "Enviar p/ llelle" — agora é 100% automático. Em vez de um
+ * `setTimeout` de tempo fixo (que podia disparar antes do React terminar de desenhar a tela),
+ * fica num loop de verificação (`setInterval`) que só raspa quando o "Nº do pedido" já apareceu
+ * de verdade no texto da página, e detecta troca de URL (inclusive sem reload de página, comum
+ * em SPA) pra resetar e tentar de novo na devolução seguinte.
  *
  * A tela de LISTA (/returnrefundcancel) ainda não tem seletor de card confirmado — TODO.
  */
@@ -171,20 +177,35 @@
     enviar(payload);
   }
 
-  function rasparAgora() {
-    if (location.pathname.startsWith("/portal/sale/return/")) rasparDetalhe();
-    else rasparLista();
+  // Sem botão — 100% automático. A tela do Shopee é React (o conteúdo aparece um tempo depois do
+  // HTML inicial, e navegar de uma devolução pra outra às vezes nem recarrega a página), então em
+  // vez de esperar um tempo fixo, fica checando em loop: só raspa a tela de detalhe quando o
+  // "Nº do pedido" já apareceu de verdade no texto, e reseta o controle sempre que a URL muda —
+  // assim funciona tanto no carregamento inicial quanto ao trocar de devolução sem recarregar.
+  let ultimaUrlVista = null;
+  let jaEnviadoNestaUrl = false;
+
+  function verificarEEnviar() {
+    const urlAtual = location.pathname + location.search;
+    if (urlAtual !== ultimaUrlVista) {
+      ultimaUrlVista = urlAtual;
+      jaEnviadoNestaUrl = false;
+    }
+    if (jaEnviadoNestaUrl) return;
+
+    if (location.pathname.startsWith("/portal/sale/return/")) {
+      if (!document.body.innerText.includes("Nº do pedido")) return; // React ainda carregando
+      rasparDetalhe();
+      jaEnviadoNestaUrl = true;
+      return;
+    }
+
+    if (location.pathname.startsWith("/portal/sale/returnrefundcancel")) {
+      rasparLista();
+      jaEnviadoNestaUrl = true; // não repete o aviso de seletor faltando toda hora nessa tela
+    }
   }
 
-  // Botão flutuante — a tela do Shopee é React (carrega os dados depois do HTML inicial), então o
-  // disparo automático abaixo pode rodar cedo demais; o botão deixa repetir manualmente quando der.
-  const botao = document.createElement("button");
-  botao.textContent = "Enviar p/ llelle";
-  botao.style.cssText =
-    "position:fixed;bottom:16px;right:16px;z-index:99999;padding:10px 16px;background:#111;color:#fff;border:none;border-radius:999px;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3);";
-  botao.onclick = rasparAgora;
-  document.body.appendChild(botao);
-
-  // Tenta uma vez sozinho, alguns segundos depois de carregar.
-  setTimeout(rasparAgora, 3000);
+  setInterval(verificarEEnviar, 800);
+  verificarEEnviar();
 })();
