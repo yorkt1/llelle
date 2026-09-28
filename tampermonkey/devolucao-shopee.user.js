@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLE Importadora — Devolução Shopee -> llelle
 // @namespace    lle-importadora
-// @version      0.5.0
+// @version      0.6.0
 // @description  Raspa a lista/detalhe de devolução do Shopee Seller e manda pro backend do llelle (aba Devoluções)
 // @match        https://seller.shopee.com.br/portal/sale/returnrefundcancel*
 // @match        https://seller.shopee.com.br/portal/sale/return/*
@@ -34,6 +34,10 @@
  * de verdade no texto da página, e detecta troca de URL (inclusive sem reload de página, comum
  * em SPA) pra resetar e tentar de novo na devolução seguinte.
  *
+ * v0.6.0: sem botão, precisava de algum feedback visual — agora aparece um avisinho flutuante
+ * verde ("✔ Enviado pro llelle") ou vermelho (erro) por 2,5s depois de cada envio, sem precisar
+ * abrir o Console pra saber se funcionou.
+ *
  * A tela de LISTA (/returnrefundcancel) ainda não tem seletor de card confirmado — TODO.
  */
 (function () {
@@ -44,14 +48,41 @@
   const IMPORT_TOKEN = "COLE_AQUI_O_MESMO_VALOR_DE_SHOPEE_IMPORT_TOKEN_DO_RENDER";
   // ================================================
 
+  // Avisinho flutuante que aparece e some sozinho — sem botão, precisa de algum jeito de saber
+  // que o envio aconteceu (ou falhou) sem precisar abrir o Console.
+  function mostrarAviso(texto, cor) {
+    const aviso = document.createElement("div");
+    aviso.textContent = texto;
+    aviso.style.cssText = `
+      position:fixed;bottom:16px;right:16px;z-index:99999;padding:10px 16px;
+      background:${cor};color:#fff;border-radius:8px;font-size:13px;font-family:sans-serif;
+      box-shadow:0 2px 8px rgba(0,0,0,.3);transition:opacity .4s;opacity:1;
+    `;
+    document.body.appendChild(aviso);
+    setTimeout(() => {
+      aviso.style.opacity = "0";
+      setTimeout(() => aviso.remove(), 400);
+    }, 2500);
+  }
+
   function enviar(payload) {
     GM_xmlhttpRequest({
       method: "POST",
       url: BACKEND_URL,
       headers: { "Content-Type": "application/json", "x-import-token": IMPORT_TOKEN },
       data: JSON.stringify(payload),
-      onload: (resposta) => console.log("[llelle] enviado:", resposta.status, resposta.responseText),
-      onerror: (erro) => console.error("[llelle] falha ao enviar pro backend:", erro),
+      onload: (resposta) => {
+        console.log("[llelle] enviado:", resposta.status, resposta.responseText);
+        if (resposta.status >= 200 && resposta.status < 300) {
+          mostrarAviso("✔ Enviado pro llelle", "#1a7d3a");
+        } else {
+          mostrarAviso(`✕ Erro ao enviar (${resposta.status})`, "#b3261e");
+        }
+      },
+      onerror: (erro) => {
+        console.error("[llelle] falha ao enviar pro backend:", erro);
+        mostrarAviso("✕ Falha ao enviar pro llelle", "#b3261e");
+      },
     });
   }
 
