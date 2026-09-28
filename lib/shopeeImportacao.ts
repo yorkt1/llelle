@@ -87,10 +87,11 @@ function normaliza(texto: string): string {
  *   observação já cadastrada pra essa ocorrência)
  * - "Mudei de ideia" → ARREPENDIMENTO
  * - "Recebi um produto com defeito funcional (...)" → DEFEITO
+ * - "Recebi um produto errado (...)" → ERRO OPERACIONAL
  *
- * ERRO OPERACIONAL e CANCELAMENTO ainda não têm frase confirmada do Shopee — por enquanto sempre
- * devolvem null (deixa o atendente escolher na mão) até aparecer um exemplo real. Nunca adivinha
- * sem evidência — mesma lição do bug de voltagem em lib/produtoPlanilha.ts.
+ * CANCELAMENTO ainda não tem frase confirmada do Shopee — por enquanto sempre devolve null (deixa
+ * o atendente escolher na mão) até aparecer um exemplo real. Nunca adivinha sem evidência — mesma
+ * lição do bug de voltagem em lib/produtoPlanilha.ts.
  */
 export function mapearMotivoParaOcorrencia(motivoBruto: string | undefined): Ocorrencia | null {
   if (!motivoBruto) return null;
@@ -100,5 +101,6 @@ export function mapearMotivoParaOcorrencia(motivoBruto: string | undefined): Oco
   if (motivo.startsWith("demais tipos de dano")) return "DANIFICADO";
   if (motivo.startsWith("mudei de ideia") || motivo.startsWith("mudou de ideia")) return "ARREPENDIMENTO";
   if (motivo.startsWith("recebi um produto com defeito funcional")) return "DEFEITO";
+  if (motivo.startsWith("recebi um produto errado")) return "ERRO OPERACIONAL";
   return null;
 }

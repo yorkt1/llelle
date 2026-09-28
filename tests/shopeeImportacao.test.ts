@@ -14,6 +14,9 @@ describe("mapearMotivoParaOcorrencia", () => {
     expect(mapearMotivoParaOcorrencia("Recebi um produto com defeito funcional (não liga ou com mau funcionamento)")).toBe(
       "DEFEITO",
     );
+    expect(
+      mapearMotivoParaOcorrencia("Recebi um produto errado (outro item, ou item certo mas com a cor, tamanho ou modelo errados)"),
+    ).toBe("ERRO OPERACIONAL");
   });
 
   it("ignora acento/caixa no reconhecimento", async () => {
