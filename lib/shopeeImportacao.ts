@@ -31,6 +31,9 @@ export type ShopeeImportacao = {
    * adivinhar pela descrição do produto, mas ainda só informativo — não substitui o PRODUTO que
    * vem do Tiny, só ajuda a confirmar/conferir. */
   variacaoShopee?: string;
+  /** Data em que o produto devolvido chegou de volta na loja ("Pedido devolvido" na linha do
+   * tempo do Shopee), formato ISO (yyyy-mm-dd). Vira a coluna DATA RECEBIMENTO PRODUTO. */
+  dataRecebimento?: string;
   recebidoEm: string;
 };
 

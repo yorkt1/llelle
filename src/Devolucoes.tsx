@@ -22,6 +22,7 @@ interface DevolucaoShopee {
   valorReembolso?: number;
   valorCompensacao?: number;
   variacaoShopee?: string;
+  dataRecebimento?: string; // ISO yyyy-mm-dd
 }
 
 interface DevolucaoPreview {
@@ -186,7 +187,7 @@ export function Devolucoes() {
             observacoes: ocorrenciaInicial ? (OBSERVACAO_PADRAO[ocorrenciaInicial] ?? "") : "",
             produto: item.produtoPlanilha,
             quantidade: item.quantidade,
-            dataRecebimento: "",
+            dataRecebimento: shopee?.dataRecebimento ? isoParaBr(shopee.dataRecebimento) : "",
             defeito: shopee?.descricaoCliente ?? "",
             codigoFabricante: "",
             status: "",
@@ -291,6 +292,7 @@ export function Devolucoes() {
               {preview.shopee.valorReembolso != null ? ` · reembolso ao cliente: ${formatarReal(preview.shopee.valorReembolso)}` : ""}
               {preview.shopee.valorCompensacao != null ? ` · compensação ao vendedor: ${formatarReal(preview.shopee.valorCompensacao)}` : ""}
               {preview.shopee.variacaoShopee ? ` · variação no Shopee: ${preview.shopee.variacaoShopee} (confira contra o PRODUTO abaixo)` : ""}
+              {preview.shopee.dataRecebimento ? ` · recebido de volta em: ${isoParaBr(preview.shopee.dataRecebimento)}` : ""}
             </p>
           )}
 

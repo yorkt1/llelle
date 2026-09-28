@@ -250,6 +250,8 @@ export type DevolucaoShopee = {
   valorCompensacao?: number;
   /** Campo "Opção" do Shopee (ex.: "110V") — só informativo, pra conferir contra o PRODUTO do Tiny. */
   variacaoShopee?: string;
+  /** ISO (yyyy-mm-dd) — data em que o produto devolvido chegou de volta na loja. */
+  dataRecebimento?: string;
 };
 
 export type DevolucaoPreview = {
@@ -328,6 +330,7 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
           valorReembolso: importacaoShopee.valorReembolso,
           valorCompensacao: importacaoShopee.valorCompensacao,
           variacaoShopee: importacaoShopee.variacaoShopee,
+          dataRecebimento: importacaoShopee.dataRecebimento,
         }
       : undefined,
   };

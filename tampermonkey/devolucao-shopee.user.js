@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LLE Importadora — Devolução Shopee -> llelle
 // @namespace    lle-importadora
-// @version      0.3.0
+// @version      0.4.0
 // @description  Raspa a lista/detalhe de devolução do Shopee Seller e manda pro backend do llelle (aba Devoluções)
 // @match        https://seller.shopee.com.br/portal/sale/returnrefundcancel*
 // @match        https://seller.shopee.com.br/portal/sale/return/*
@@ -24,6 +24,9 @@
  *   "Valor do reembolso:" -> rótulo numa linha (com dois pontos no final), valor na linha seguinte.
  *   "Comprador solicitou Devolução/ Reembolso" -> cabeçalho do início da linha do tempo; a
  *     data/hora da solicitação é a linha seguinte (ex.: "21-09-2026 10:44").
+ *   "Pedido devolvido" -> evento da linha do tempo de rastreio; a data/hora seguinte (ex.:
+ *     "2026-09-25 15:11:10", já em ISO) é quando o produto devolvido chegou de volta na loja —
+ *     vira a coluna DATA RECEBIMENTO PRODUTO na planilha.
  *
  * A tela de LISTA (/returnrefundcancel) ainda não tem seletor de card confirmado — TODO.
  */
@@ -85,11 +88,20 @@
     return Number.isFinite(numero) ? numero : undefined;
   }
 
-  /** "21-09-2026 10:44" ou "21/09/2026" -> "2026-09-21". */
-  function paraIso(dataBrasileira) {
-    const match = dataBrasileira?.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
-    if (!match) return undefined;
-    const [, dia, mes, ano] = match;
+  /**
+   * A tela mistura dois formatos de data: "21-09-2026 10:44" (brasileiro, no início da linha do
+   * tempo) e "2026-09-25 15:11:10" (já ISO, nos eventos de rastreio como "Pedido devolvido").
+   * Tenta ISO primeiro — senão dá pra confundir "21-09-2026" com ano=21 se checasse na ordem errada.
+   */
+  function paraIso(data) {
+    if (!data) return undefined;
+
+    const iso = data.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+    const brasileira = data.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
+    if (!brasileira) return undefined;
+    const [, dia, mes, ano] = brasileira;
     return `${ano}-${mes}-${dia}`;
   }
 
@@ -137,13 +149,24 @@
     // "Opção" é a variação exata do item (ex.: "Vermelho,110V") — mais confiável que adivinhar
     // a voltagem/cor pela descrição do produto no Tiny.
     const variacaoShopee = valorDoRotulo(texto, "Opção") ?? undefined;
+    // "Pedido devolvido" na linha do tempo de rastreio = quando o produto chegou de volta na loja.
+    const dataRecebimento = paraIso(valorDoRotulo(texto, "Pedido devolvido"));
 
     if (!idPedido) {
       console.warn("[llelle] não achei o Nº do pedido nessa tela de detalhe — ajuste rasparDetalhe().");
       return;
     }
 
-    const payload = { idPedido, idDevolucaoShopee, dataSolicitacao, motivoDevolucao, descricaoCliente, valorReembolso, variacaoShopee };
+    const payload = {
+      idPedido,
+      idDevolucaoShopee,
+      dataSolicitacao,
+      motivoDevolucao,
+      descricaoCliente,
+      valorReembolso,
+      variacaoShopee,
+      dataRecebimento,
+    };
     console.log("[llelle] raspado da tela de detalhe:", payload);
     enviar(payload);
   }
