@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 interface ItemDevolucao {
   codigo: string;
@@ -157,6 +157,24 @@ export function Devolucoes() {
   const [linhas, setLinhas] = useState<LinhaEditavel[]>([]);
   const [avisoCopia, setAvisoCopia] = useState<string | null>(null);
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(() => lerBuscasRecentes());
+  const tabelaRef = useRef<HTMLTableElement>(null);
+
+  // Enter pula pro próximo campo da tabela (input ou select), igual planilha — evita ter que
+  // pegar o mouse ou usar Tab pra preencher várias linhas seguidas.
+  const irParaProximoCampo = useCallback((event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    const tabela = tabelaRef.current;
+    if (!tabela) return;
+
+    event.preventDefault();
+    const campos = Array.from(tabela.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select"));
+    const atual = campos.indexOf(event.target as HTMLInputElement | HTMLSelectElement);
+    if (atual === -1) return;
+
+    const proximo = campos[(atual + 1) % campos.length];
+    proximo.focus();
+    if (proximo instanceof HTMLInputElement) proximo.select();
+  }, []);
 
   const buscar = useCallback(
     async (event?: FormEvent, numeroForcado?: string) => {
@@ -297,7 +315,7 @@ export function Devolucoes() {
           )}
 
           <div className="tabela-wrap">
-            <table className="tabela">
+            <table className="tabela" ref={tabelaRef} onKeyDown={irParaProximoCampo}>
               <thead>
                 <tr>
                   <th>Data pedido SAC</th>
