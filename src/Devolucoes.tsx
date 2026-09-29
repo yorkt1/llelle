@@ -100,6 +100,97 @@ function formatarReal(valor: number): string {
   return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+// Só interessa o valor do "Número de Série" (ou variações) — não o resto do texto da etiqueta
+// (ex.: "USO DOMÉSTICO"). Procura a linha que menciona "série"/"serial"/"s/n" e devolve só o
+// que vem depois dos dois-pontos; sem achar isso, devolve o texto inteiro reconhecido (melhor
+// dar pra corrigir na mão do que devolver vazio).
+function extrairNumeroDeSerie(textoOcr: string): string {
+  const linhas = textoOcr
+    .split("\n")
+    .map((linha) => linha.trim())
+    .filter(Boolean);
+
+  for (const linha of linhas) {
+    const normalizada = linha
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase();
+    if (!normalizada.includes("serie") && !normalizada.includes("serial") && !normalizada.includes("s/n")) continue;
+
+    const depoisDosDoisPontos = linha.split(":").slice(1).join(":").trim();
+    return depoisDosDoisPontos || linha;
+  }
+
+  return textoOcr.trim().replace(/\s+/g, " ");
+}
+
+// Otsu: acha automaticamente o ponto de corte entre "claro" e "escuro" a partir do histograma —
+// se adapta à iluminação de cada foto, diferente de um limiar fixo.
+function limiarOtsu(histograma: number[], total: number): number {
+  let somaTotal = 0;
+  for (let i = 0; i < 256; i++) somaTotal += i * histograma[i];
+
+  let somaFundo = 0;
+  let pesoFundo = 0;
+  let maiorVariancia = 0;
+  let limiar = 0;
+  for (let i = 0; i < 256; i++) {
+    pesoFundo += histograma[i];
+    if (pesoFundo === 0) continue;
+    const pesoObjeto = total - pesoFundo;
+    if (pesoObjeto === 0) break;
+
+    somaFundo += i * histograma[i];
+    const mediaFundo = somaFundo / pesoFundo;
+    const mediaObjeto = (somaTotal - somaFundo) / pesoObjeto;
+    const variancia = pesoFundo * pesoObjeto * (mediaFundo - mediaObjeto) ** 2;
+    if (variancia > maiorVariancia) {
+      maiorVariancia = variancia;
+      limiar = i;
+    }
+  }
+  return limiar;
+}
+
+// Fotos de etiqueta costumam vir pequenas e com fundo cinza/reflexo — aumenta a resolução e
+// converte pra preto-e-branco puro (limiar automático), o que ajuda bastante o OCR a diferenciar
+// o texto do fundo.
+async function prepararImagemParaOcr(arquivo: File | Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(arquivo);
+  const escala = Math.min(4, Math.max(1, 1200 / bitmap.width));
+  const largura = Math.round(bitmap.width * escala);
+  const altura = Math.round(bitmap.height * escala);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = largura;
+  canvas.height = altura;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return arquivo;
+  ctx.drawImage(bitmap, 0, 0, largura, altura);
+
+  const imagem = ctx.getImageData(0, 0, largura, altura);
+  const pixels = imagem.data;
+  const totalPixels = largura * altura;
+  const cinzas = new Uint8ClampedArray(totalPixels);
+  const histograma = new Array(256).fill(0);
+  for (let i = 0, p = 0; i < pixels.length; i += 4, p += 1) {
+    const cinza = Math.round(0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]);
+    cinzas[p] = cinza;
+    histograma[cinza] += 1;
+  }
+
+  const limiar = limiarOtsu(histograma, totalPixels);
+  for (let i = 0, p = 0; i < pixels.length; i += 4, p += 1) {
+    const valor = cinzas[p] < limiar ? 0 : 255;
+    pixels[i] = pixels[i + 1] = pixels[i + 2] = valor;
+  }
+  ctx.putImageData(imagem, 0, 0);
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob ?? arquivo), "image/png");
+  });
+}
+
 function lerBuscasRecentes(): BuscaRecente[] {
   try {
     const raw = localStorage.getItem(BUSCAS_STORAGE_KEY);
@@ -241,18 +332,22 @@ export function Devolucoes() {
   }, []);
 
   // Lê o texto de uma imagem por OCR (roda no navegador, sem backend) e preenche o Cód.
-  // fabricante sozinho. Não é 100% confiável com fotos de etiqueta, então o campo continua
-  // editável. Compartilhado entre colar (Ctrl+V) e arrastar-e-soltar a imagem no campo.
+  // fabricante sozinho com só o número de série encontrado. Não é 100% confiável com fotos de
+  // etiqueta, então o campo continua editável. Compartilhado entre colar (Ctrl+V) e
+  // arrastar-e-soltar a imagem no campo.
   const lerCodigoDaImagem = useCallback(
     async (arquivo: File, index: number) => {
       setErro(null);
       definirLendoImagem(index, true);
       try {
+        const imagemPreparada = await prepararImagemParaOcr(arquivo);
         const modulo = await import("tesseract.js");
         const Tesseract = modulo.default ?? modulo;
-        const resultado = await Tesseract.recognize(arquivo, "eng");
-        const texto = resultado.data.text.trim().replace(/\s+/g, " ");
-        atualizarLinha(index, "codigoFabricante", texto);
+        const worker = await Tesseract.createWorker("eng");
+        await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK });
+        const resultado = await worker.recognize(imagemPreparada);
+        await worker.terminate();
+        atualizarLinha(index, "codigoFabricante", extrairNumeroDeSerie(resultado.data.text));
       } catch {
         setErro("Não consegui ler o código dessa imagem — digite manualmente.");
       } finally {

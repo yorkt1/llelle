@@ -174,8 +174,13 @@ na planilha de controle de devoluções.
   (texto livre — normalmente só dão pra preencher depois que o produto
   físico chega, mas ficam disponíveis desde já; CÓDIGO FABRICANTE também
   aceita colar (`Ctrl+V`) ou arrastar-e-soltar uma imagem — ex.: copiada do
-  WhatsApp Web — e lê o texto por OCR via `tesseract.js`, que roda no
-  navegador e busca o
+  WhatsApp Web — pra tirar o **número de série**. Antes do OCR, a imagem
+  passa por `prepararImagemParaOcr` (aumenta a resolução e binariza pra
+  preto-e-branco com limiar automático — Otsu — pra apagar fundo
+  cinza/reflexo de foto de etiqueta), e depois do OCR `extrairNumeroDeSerie`
+  procura a linha com "série"/"serial"/"s/n" e devolve só o valor depois dos
+  dois-pontos (cai pro texto inteiro se não achar esse rótulo). Roda via
+  `tesseract.js`, no navegador, e busca o
   core/dados de idioma de um CDN na hora do uso; não é 100% confiável com
   fotos de etiqueta, então o campo continua editável pra corrigir) e
   STATUS/REEMBOLSOS (dois
