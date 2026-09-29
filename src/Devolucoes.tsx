@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
 
 interface ItemDevolucao {
   codigo: string;
@@ -240,18 +240,11 @@ export function Devolucoes() {
     setLinhas((atuais) => atuais.map((linha, i) => (i === index ? { ...linha, lendoImagemCodigo: valor } : linha)));
   }, []);
 
-  // Cola (Ctrl+V) uma imagem copiada de outro lugar (ex.: WhatsApp Web) direto no campo Cód.
-  // fabricante — lê o texto da imagem por OCR (roda no navegador, sem backend) e preenche o campo
-  // sozinho. Não é 100% confiável com fotos de etiqueta, então o campo continua editável.
-  const lerCodigoDaImagemColada = useCallback(
-    async (event: ClipboardEvent<HTMLInputElement>, index: number) => {
-      const item = [...event.clipboardData.items].find((i) => i.type.startsWith("image/"));
-      if (!item) return; // colou texto normal — deixa o comportamento padrão do input acontecer
-
-      event.preventDefault();
-      const arquivo = item.getAsFile();
-      if (!arquivo) return;
-
+  // Lê o texto de uma imagem por OCR (roda no navegador, sem backend) e preenche o Cód.
+  // fabricante sozinho. Não é 100% confiável com fotos de etiqueta, então o campo continua
+  // editável. Compartilhado entre colar (Ctrl+V) e arrastar-e-soltar a imagem no campo.
+  const lerCodigoDaImagem = useCallback(
+    async (arquivo: File, index: number) => {
       setErro(null);
       definirLendoImagem(index, true);
       try {
@@ -267,6 +260,27 @@ export function Devolucoes() {
       }
     },
     [atualizarLinha, definirLendoImagem],
+  );
+
+  const aoColarNoCampoCodigo = useCallback(
+    (event: ClipboardEvent<HTMLInputElement>, index: number) => {
+      const item = [...event.clipboardData.items].find((i) => i.type.startsWith("image/"));
+      if (!item) return; // colou texto normal — deixa o comportamento padrão do input acontecer
+
+      event.preventDefault();
+      const arquivo = item.getAsFile();
+      if (arquivo) void lerCodigoDaImagem(arquivo, index);
+    },
+    [lerCodigoDaImagem],
+  );
+
+  const aoSoltarNoCampoCodigo = useCallback(
+    (event: DragEvent<HTMLInputElement>, index: number) => {
+      event.preventDefault();
+      const arquivo = [...event.dataTransfer.files].find((f) => f.type.startsWith("image/"));
+      if (arquivo) void lerCodigoDaImagem(arquivo, index);
+    },
+    [lerCodigoDaImagem],
   );
 
   const copiar = useCallback(async () => {
@@ -412,9 +426,11 @@ export function Devolucoes() {
                       <input
                         value={linha.codigoFabricante}
                         onChange={(event) => atualizarLinha(index, "codigoFabricante", event.target.value)}
-                        onPaste={(event) => void lerCodigoDaImagemColada(event, index)}
+                        onPaste={(event) => aoColarNoCampoCodigo(event, index)}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => aoSoltarNoCampoCodigo(event, index)}
                         disabled={linha.lendoImagemCodigo}
-                        placeholder={linha.lendoImagemCodigo ? "Lendo imagem..." : "Cole a imagem aqui (Ctrl+V)"}
+                        placeholder={linha.lendoImagemCodigo ? "Lendo imagem..." : "Cole ou arraste a imagem aqui"}
                       />
                     </td>
                     <td>
