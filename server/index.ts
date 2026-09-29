@@ -15,7 +15,9 @@ config({ path: path.resolve(__dirname, "../.env.local") });
 config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
-app.use(express.json());
+// Padrão do express.json() é 100kb — pequeno demais pra uma foto em base64 (rota de OCR de
+// devolução, POST /api/devolucao/ler-numero-serie).
+app.use(express.json({ limit: "10mb" }));
 
 // Só precisa disso quando o front roda num domínio separado do backend (ex:
 // front na Vercel, API no Render) — mesma origem (front servido pelo próprio

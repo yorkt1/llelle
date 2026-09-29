@@ -191,6 +191,45 @@ async function prepararImagemParaOcr(arquivo: File | Blob): Promise<Blob> {
   });
 }
 
+function arquivoParaDataUri(arquivo: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(leitor.result as string);
+    leitor.onerror = () => reject(leitor.error);
+    leitor.readAsDataURL(arquivo);
+  });
+}
+
+/**
+ * Tentativa 1: manda a foto original (sem tratamento — um modelo de visão lida melhor com foto
+ * real do que com a binarização usada no OCR local) pro backend, que chama a Groq. Lança erro se
+ * o backend não tiver GROQ_API_KEY configurado (503) ou se a Groq falhar — quem chama decide o
+ * que fazer (aqui: cair pro OCR local, ver `lerCodigoDaImagem`).
+ */
+async function lerViaGroq(arquivo: File): Promise<string> {
+  const dataUri = await arquivoParaDataUri(arquivo);
+  const resposta = await fetch(`${API_URL}/api/devolucao/ler-numero-serie`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imagem: dataUri }),
+  });
+  if (!resposta.ok) throw new Error("Groq indisponível");
+  const json = (await resposta.json()) as { numeroSerie: string };
+  return json.numeroSerie;
+}
+
+/** Tentativa 2 (fallback): OCR local via tesseract.js — roda inteiro no navegador, sem custo nem chave. */
+async function lerViaOcrLocal(arquivo: File): Promise<string> {
+  const imagemPreparada = await prepararImagemParaOcr(arquivo);
+  const modulo = await import("tesseract.js");
+  const Tesseract = modulo.default ?? modulo;
+  const worker = await Tesseract.createWorker("eng");
+  await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK });
+  const resultado = await worker.recognize(imagemPreparada);
+  await worker.terminate();
+  return extrairNumeroDeSerie(resultado.data.text);
+}
+
 function lerBuscasRecentes(): BuscaRecente[] {
   try {
     const raw = localStorage.getItem(BUSCAS_STORAGE_KEY);
@@ -331,23 +370,18 @@ export function Devolucoes() {
     setLinhas((atuais) => atuais.map((linha, i) => (i === index ? { ...linha, lendoImagemCodigo: valor } : linha)));
   }, []);
 
-  // Lê o texto de uma imagem por OCR (roda no navegador, sem backend) e preenche o Cód.
-  // fabricante sozinho com só o número de série encontrado. Não é 100% confiável com fotos de
-  // etiqueta, então o campo continua editável. Compartilhado entre colar (Ctrl+V) e
+  // Lê o número de série de uma imagem e preenche o Cód. fabricante sozinho. Tenta primeiro a
+  // Groq (mais acertiva com foto real, mas exige GROQ_API_KEY no backend); se isso não estiver
+  // configurado ou falhar, cai pro OCR local (tesseract.js, sem custo nem configuração). Não é
+  // 100% confiável, então o campo continua editável. Compartilhado entre colar (Ctrl+V) e
   // arrastar-e-soltar a imagem no campo.
   const lerCodigoDaImagem = useCallback(
     async (arquivo: File, index: number) => {
       setErro(null);
       definirLendoImagem(index, true);
       try {
-        const imagemPreparada = await prepararImagemParaOcr(arquivo);
-        const modulo = await import("tesseract.js");
-        const Tesseract = modulo.default ?? modulo;
-        const worker = await Tesseract.createWorker("eng");
-        await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK });
-        const resultado = await worker.recognize(imagemPreparada);
-        await worker.terminate();
-        atualizarLinha(index, "codigoFabricante", extrairNumeroDeSerie(resultado.data.text));
+        const numeroSerie = await lerViaGroq(arquivo).catch(() => lerViaOcrLocal(arquivo));
+        atualizarLinha(index, "codigoFabricante", numeroSerie);
       } catch {
         setErro("Não consegui ler o código dessa imagem — digite manualmente.");
       } finally {

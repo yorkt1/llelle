@@ -2,6 +2,7 @@ import { Router } from "express";
 import { OlistConfigError } from "../../lib/olist";
 import { buscarDevolucaoPorNf, NfNaoEncontradaError, TinyLimiteTaxaError } from "../../lib/devolucao";
 import { salvarImportacaoShopee, type ShopeeImportacaoEntrada } from "../../lib/shopeeImportacao";
+import { GroqConfigError, lerNumeroSerieComGroq } from "../../lib/groqOcr";
 
 export const devolucaoRouter = Router();
 
@@ -87,4 +88,29 @@ devolucaoRouter.post("/shopee", (req, res) => {
 
   const salvos = validas.map((entrada) => salvarImportacaoShopee(entrada).idPedido);
   res.status(201).json({ ok: true, salvos: salvos.length, ignorados: entradas.length - validas.length, idPedidos: salvos });
+});
+
+/**
+ * Lê o número de série de uma foto de etiqueta via Groq (ver lib/groqOcr.ts). 503 quando
+ * GROQ_API_KEY não está configurado — o front trata isso como "sem Groq disponível" e cai pro
+ * OCR local, não como um erro pro usuário.
+ */
+devolucaoRouter.post("/ler-numero-serie", async (req, res) => {
+  const imagem = req.body?.imagem;
+  if (typeof imagem !== "string" || !imagem.startsWith("data:image/")) {
+    res.status(400).json({ erro: "Envie a imagem em base64 (data URI)." });
+    return;
+  }
+
+  try {
+    const numeroSerie = await lerNumeroSerieComGroq(imagem);
+    res.status(200).json({ numeroSerie });
+  } catch (error) {
+    if (error instanceof GroqConfigError) {
+      res.status(503).json({ erro: error.message });
+      return;
+    }
+    const mensagem = error instanceof Error ? error.message : "Erro inesperado ao ler a imagem.";
+    res.status(502).json({ erro: mensagem });
+  }
 });
