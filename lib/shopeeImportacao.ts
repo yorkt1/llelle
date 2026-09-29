@@ -75,7 +75,7 @@ export function buscarImportacaoShopee(idPedido: string): ShopeeImportacao | nul
   return importacoes.get(normalizarChave(idPedido)) ?? null;
 }
 
-export const OCORRENCIAS = ["DANIFICADO", "ARREPENDIMENTO", "ERRO OPERACIONAL", "CANCELAMENTO", "DEFEITO"] as const;
+export const OCORRENCIAS = ["DANIFICADO", "ARREPENDIMENTO", "ERRO OPERACIONAL", "CANCELAMENTO", "DEFEITO", "EXTRAVIO"] as const;
 export type Ocorrencia = (typeof OCORRENCIAS)[number];
 
 function normaliza(texto: string): string {
@@ -87,7 +87,7 @@ function normaliza(texto: string): string {
 }
 
 /**
- * Mapeia o "Motivo de Devolução" do Shopee pra uma das 5 ocorrências fixas da planilha.
+ * Mapeia o "Motivo de Devolução" do Shopee pra uma das 6 ocorrências fixas da planilha.
  * Baseado em frases REAIS vistas na tela do Shopee (não é uma lista oficial completa deles):
  *
  * - "Demais tipos de dano (quebrado, amassado, riscado, etc.)" → DANIFICADO (frase idêntica à
@@ -96,9 +96,9 @@ function normaliza(texto: string): string {
  * - "Recebi um produto com defeito funcional (...)" → DEFEITO
  * - "Recebi um produto errado (...)" → ERRO OPERACIONAL
  *
- * CANCELAMENTO ainda não tem frase confirmada do Shopee — por enquanto sempre devolve null (deixa
- * o atendente escolher na mão) até aparecer um exemplo real. Nunca adivinha sem evidência — mesma
- * lição do bug de voltagem em lib/produtoPlanilha.ts.
+ * CANCELAMENTO e EXTRAVIO ainda não têm frase confirmada do Shopee — por enquanto sempre devolvem
+ * null (deixa o atendente escolher na mão) até aparecer um exemplo real. Nunca adivinha sem
+ * evidência — mesma lição do bug de voltagem em lib/produtoPlanilha.ts.
  */
 export function mapearMotivoParaOcorrencia(motivoBruto: string | undefined): Ocorrencia | null {
   if (!motivoBruto) return null;

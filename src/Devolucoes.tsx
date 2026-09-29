@@ -62,7 +62,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? "";
 const BUSCAS_STORAGE_KEY = "devolucao:buscasRecentes";
 const MAX_BUSCAS_RECENTES = 10;
 
-const OCORRENCIAS = ["DANIFICADO", "ARREPENDIMENTO", "ERRO OPERACIONAL", "CANCELAMENTO", "DEFEITO"] as const;
+const OCORRENCIAS = ["DANIFICADO", "ARREPENDIMENTO", "ERRO OPERACIONAL", "CANCELAMENTO", "DEFEITO", "EXTRAVIO"] as const;
 
 // Mesmas listas fixas do dropdown de validação da planilha (colunas STATUS e REEMBOLSOS).
 const STATUS_OPCOES = ["TESTE", "ESTOQUE", "PERDA", "AGUARDANDO PRODUTO"] as const;
