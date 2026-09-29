@@ -213,7 +213,10 @@ async function lerViaGroq(arquivo: File): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imagem: dataUri }),
   });
-  if (!resposta.ok) throw new Error("Groq indisponível");
+  if (!resposta.ok) {
+    const corpo = await resposta.json().catch(() => null);
+    throw new Error(`Groq indisponível (${resposta.status}): ${corpo?.erro ?? "sem detalhe"}`);
+  }
   const json = (await resposta.json()) as { numeroSerie: string };
   return json.numeroSerie;
 }
@@ -380,9 +383,13 @@ export function Devolucoes() {
       setErro(null);
       definirLendoImagem(index, true);
       try {
-        const numeroSerie = await lerViaGroq(arquivo).catch(() => lerViaOcrLocal(arquivo));
+        const numeroSerie = await lerViaGroq(arquivo).catch((erroGroq) => {
+          console.warn("[llelle] Groq não disponível, caindo pro OCR local:", erroGroq);
+          return lerViaOcrLocal(arquivo);
+        });
         atualizarLinha(index, "codigoFabricante", numeroSerie);
-      } catch {
+      } catch (erro) {
+        console.error("[llelle] falha ao ler o código da imagem:", erro);
         setErro("Não consegui ler o código dessa imagem — digite manualmente.");
       } finally {
         definirLendoImagem(index, false);
