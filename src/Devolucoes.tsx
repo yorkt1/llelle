@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 
 interface ItemDevolucao {
   codigo: string;
@@ -46,6 +46,7 @@ interface LinhaEditavel {
   dataRecebimento: string;
   defeito: string;
   codigoFabricante: string;
+  lendoImagemCodigo: boolean;
   status: string;
   reembolso: string;
 }
@@ -208,6 +209,7 @@ export function Devolucoes() {
             dataRecebimento: shopee?.dataRecebimento ? isoParaBr(shopee.dataRecebimento) : "",
             defeito: shopee?.descricaoCliente ?? "",
             codigoFabricante: "",
+            lendoImagemCodigo: false,
             status: "",
             reembolso: "",
           })),
@@ -233,6 +235,39 @@ export function Devolucoes() {
       }),
     );
   }, []);
+
+  const definirLendoImagem = useCallback((index: number, valor: boolean) => {
+    setLinhas((atuais) => atuais.map((linha, i) => (i === index ? { ...linha, lendoImagemCodigo: valor } : linha)));
+  }, []);
+
+  // Cola (Ctrl+V) uma imagem copiada de outro lugar (ex.: WhatsApp Web) direto no campo Cód.
+  // fabricante — lê o texto da imagem por OCR (roda no navegador, sem backend) e preenche o campo
+  // sozinho. Não é 100% confiável com fotos de etiqueta, então o campo continua editável.
+  const lerCodigoDaImagemColada = useCallback(
+    async (event: ClipboardEvent<HTMLInputElement>, index: number) => {
+      const item = [...event.clipboardData.items].find((i) => i.type.startsWith("image/"));
+      if (!item) return; // colou texto normal — deixa o comportamento padrão do input acontecer
+
+      event.preventDefault();
+      const arquivo = item.getAsFile();
+      if (!arquivo) return;
+
+      setErro(null);
+      definirLendoImagem(index, true);
+      try {
+        const modulo = await import("tesseract.js");
+        const Tesseract = modulo.default ?? modulo;
+        const resultado = await Tesseract.recognize(arquivo, "eng");
+        const texto = resultado.data.text.trim().replace(/\s+/g, " ");
+        atualizarLinha(index, "codigoFabricante", texto);
+      } catch {
+        setErro("Não consegui ler o código dessa imagem — digite manualmente.");
+      } finally {
+        definirLendoImagem(index, false);
+      }
+    },
+    [atualizarLinha, definirLendoImagem],
+  );
 
   const copiar = useCallback(async () => {
     if (!preview || linhas.length === 0) return;
@@ -377,6 +412,9 @@ export function Devolucoes() {
                       <input
                         value={linha.codigoFabricante}
                         onChange={(event) => atualizarLinha(index, "codigoFabricante", event.target.value)}
+                        onPaste={(event) => void lerCodigoDaImagemColada(event, index)}
+                        disabled={linha.lendoImagemCodigo}
+                        placeholder={linha.lendoImagemCodigo ? "Lendo imagem..." : "Cole a imagem aqui (Ctrl+V)"}
                       />
                     </td>
                     <td>

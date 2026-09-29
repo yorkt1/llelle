@@ -172,7 +172,12 @@ na planilha de controle de devoluções.
   opções fixas que preenche OBSERVAÇÕES automaticamente, mas o texto
   continua editável depois), DATA RECEBIMENTO/DEFEITO/CÓDIGO FABRICANTE
   (texto livre — normalmente só dão pra preencher depois que o produto
-  físico chega, mas ficam disponíveis desde já) e STATUS/REEMBOLSOS (dois
+  físico chega, mas ficam disponíveis desde já; CÓDIGO FABRICANTE também
+  aceita colar (`Ctrl+V`) uma imagem — ex.: copiada do WhatsApp Web — e lê o
+  texto por OCR via `tesseract.js`, que roda no navegador e busca o
+  core/dados de idioma de um CDN na hora do uso; não é 100% confiável com
+  fotos de etiqueta, então o campo continua editável pra corrigir) e
+  STATUS/REEMBOLSOS (dois
   selects com as mesmas listas fixas da validação de dados da planilha).
   Tudo fica vazio por padrão exceto o que o Tiny já traz — nada é
   obrigatório além da OCORRÊNCIA. Botão "Copiar p/ planilha"
