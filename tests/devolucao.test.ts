@@ -292,14 +292,21 @@ describe("buscarCandidatosPorNomeCliente", () => {
     vi.unstubAllGlobals();
   });
 
-  it("busca com o parâmetro cliente, devolve candidatos com nome/NF/data/produtos, mais recente primeiro", async () => {
+  it("busca com o parâmetro cliente + janela de data (dd/mm/yyyy), devolve candidatos com nome/NF/data/produtos, mais recente primeiro", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input) => {
       const url = new URL(String(input));
       switch (endpointDe(input)) {
-        case "notas.fiscais.pesquisa.php":
+        case "notas.fiscais.pesquisa.php": {
           expect(url.searchParams.get("cliente")).toBe("Maria");
           expect(url.searchParams.get("tipoNota")).toBe("S");
+          const formatoBr = /^\d{2}\/\d{2}\/\d{4}$/;
+          const dataInicial = url.searchParams.get("dataInicial")!;
+          const dataFinal = url.searchParams.get("dataFinal")!;
+          expect(dataInicial).toMatch(formatoBr);
+          expect(dataFinal).toMatch(formatoBr);
+          // dataInicial é ~180 dias antes de dataFinal, não o próprio dia.
+          expect(dataInicial).not.toBe(dataFinal);
           return jsonResponse({
             retorno: {
               status: "OK",
@@ -309,6 +316,7 @@ describe("buscarCandidatosPorNomeCliente", () => {
               ],
             },
           });
+        }
         case "nota.fiscal.obter.php": {
           const id = url.searchParams.get("id");
           if (id === "1") {

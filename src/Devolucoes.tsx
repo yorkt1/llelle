@@ -524,11 +524,15 @@ export function Devolucoes() {
       {candidatos && (
         <div className="candidatos-lista">
           {candidatos.length === 0 ? (
-            <p className="nota-info">Nenhum resultado encontrado com esse nome. Confere a grafia ou tenta só o primeiro nome.</p>
+            <p className="nota-info">
+              Nenhum resultado encontrado com esse nome nos últimos 6 meses. Confere a grafia, tenta só o primeiro nome, ou a venda
+              pode ser mais antiga que isso.
+            </p>
           ) : (
             <>
               <p className="nota-info">
-                {candidatos.length} resultado(s) encontrado(s){podeTerMaisCandidatos ? " (mostrando os 5 mais recentes — refine o nome se não for nenhum desses)" : ""}:
+                {candidatos.length} resultado(s) encontrado(s) nos últimos 6 meses
+                {podeTerMaisCandidatos ? " (mostrando os 5 mais recentes — refine o nome se não for nenhum desses)" : ""}:
               </p>
               {candidatos.map((candidato) => (
                 <button key={candidato.nf} className="candidato-item" onClick={() => void buscar(undefined, candidato.nf)}>

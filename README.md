@@ -159,12 +159,16 @@ de controle de devoluções.
   cai pro `intermediador.nome` da própria nota. `codigo_erro: 6` do Tiny
   (limite de taxa) vira uma mensagem clara em vez de erro genérico.
   `buscarCandidatosPorNomeCliente` busca por
-  `notas.fiscais.pesquisa.php?cliente=X&tipoNota=S`, devolve só os 5 mais
-  recentes (busca o detalhe — inclusive itens — de cada um, então limitar
-  evita inflar em chamadas ao Tiny pra um nome comum). **O parâmetro
-  `cliente` não foi confirmado contra a documentação ao vivo do Tiny**
-  (mesma limitação de rede de sempre) — teste com um nome real antes de
-  confiar em produção.
+  `notas.fiscais.pesquisa.php?cliente=X&tipoNota=S&dataInicial=...&dataFinal=...`
+  (janela dos últimos 180 dias — `JANELA_BUSCA_POR_NOME_DIAS`), devolve só
+  os 5 mais recentes (busca o detalhe — inclusive itens — de cada um, então
+  limitar evita inflar em chamadas ao Tiny pra um nome comum). O filtro de
+  data foi adicionado depois de um erro real em produção buscando um nome
+  comum ("Ocorreu um erro ao executar a consulta") — hipótese de que sem
+  filtro a busca varria todas as notas já emitidas e o Tiny não aguentava;
+  **não deu pra confirmar isso nem o parâmetro `cliente` contra a
+  documentação ao vivo do Tiny** (mesma limitação de rede de sempre) — teste
+  com um nome real antes de confiar em produção.
 - `src/Devolucoes.tsx` decide sozinho se o que foi digitado é um nome (sem
   nenhum dígito, ex.: "Maria Silva") ou NF/pedido (sempre tem dígito) —
   `pareceNomeDeCliente`. Não tem um botão/modo separado pra isso, é só

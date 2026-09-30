@@ -34,14 +34,21 @@ import { buscarImportacaoShopee, mapearMotivoParaOcorrencia } from "./shopeeImpo
  *
  * `buscarCandidatosPorNomeCliente`: pacote chegado pelos Correios costuma só
  * ter o NOME do cliente escrito, sem NF nem nº de pedido — essa função busca
- * `notas.fiscais.pesquisa.php?cliente=X&tipoNota=S` e devolve até 5
- * candidatos (nome, NF, data, produtos) pro atendente escolher qual é.
- * **O parâmetro `cliente` não foi confirmado contra a documentação ao vivo
- * do Tiny** (mesma limitação de rede de sempre) — é o nome mais comum pra
- * "filtrar por nome do cliente" nessa família de endpoints, mas teste com um
- * nome real antes de confiar em produção; se o Tiny não aceitar esse
- * parâmetro, a busca vai devolver "nenhum resultado" mesmo com clientes
- * reais cadastrados.
+ * `notas.fiscais.pesquisa.php?cliente=X&tipoNota=S&dataInicial=...&dataFinal=...`
+ * e devolve até 5 candidatos (nome, NF, data, produtos) pro atendente
+ * escolher qual é. **O parâmetro `cliente` não foi confirmado contra a
+ * documentação ao vivo do Tiny** (mesma limitação de rede de sempre) — é o
+ * nome mais comum pra "filtrar por nome do cliente" nessa família de
+ * endpoints, mas teste com um nome real antes de confiar em produção.
+ *
+ * O filtro de `dataInicial`/`dataFinal` (janela de `JANELA_BUSCA_POR_NOME_DIAS`
+ * dias pra trás) foi adicionado depois de um erro real em produção buscando
+ * um nome comum: "Ocorreu um erro ao executar a consulta" — sem filtro de
+ * data, a busca por nome provavelmente vira uma varredura pesada em cima de
+ * TODAS as notas fiscais já emitidas, não só as recentes, e o Tiny não
+ * aguenta. Isso é uma HIPÓTESE (não deu pra confirmar contra o Tiny de
+ * verdade) — se o erro persistir mesmo com o filtro, o problema pode ser
+ * simplesmente o parâmetro `cliente` não existir nesse endpoint.
  */
 
 const SEM_REGISTROS_ERROR_CODE = 32;
@@ -348,6 +355,22 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
 }
 
 const MAX_CANDIDATOS_POR_NOME = 5;
+// ~6 meses — devolução raramente chega bem depois disso, e estreita bastante a consulta no Tiny
+// (ver aviso no topo do arquivo sobre o erro real que motivou esse filtro).
+const JANELA_BUSCA_POR_NOME_DIAS = 180;
+
+/** dd/mm/yyyy no fuso do Brasil — mesmo formato que dataInicial/dataFinal já usam em lib/olist.ts. */
+function dataEmSaoPauloBr(data: Date): string {
+  return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" }).format(
+    data,
+  );
+}
+
+function diasAtrasEmSaoPauloBr(dias: number): string {
+  const data = new Date();
+  data.setUTCDate(data.getUTCDate() - dias);
+  return dataEmSaoPauloBr(data);
+}
 
 export type CandidatoDevolucao = {
   nf: string;
@@ -369,7 +392,12 @@ export async function buscarCandidatosPorNomeCliente(
   const nome = nomeBruto.trim();
   if (!nome) throw new Error("Informe o nome do cliente.");
 
-  const json = await tinyGet<NotasFiscaisPesquisaResponse>("notas.fiscais.pesquisa.php", { cliente: nome, tipoNota: "S" });
+  const json = await tinyGet<NotasFiscaisPesquisaResponse>("notas.fiscais.pesquisa.php", {
+    cliente: nome,
+    tipoNota: "S",
+    dataInicial: diasAtrasEmSaoPauloBr(JANELA_BUSCA_POR_NOME_DIAS),
+    dataFinal: dataEmSaoPauloBr(new Date()),
+  });
   const { retorno } = json;
   if (retorno.status !== "OK") {
     if (retorno.codigo_erro === SEM_REGISTROS_ERROR_CODE) {
