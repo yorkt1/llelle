@@ -310,6 +310,16 @@ export function Estoque() {
         )}
       </div>
 
+      {!ruaAtiva && (
+        <div className="estoque-vazio">
+          <p className="estoque-vazio-titulo">Nenhuma rua cadastrada ainda</p>
+          <p className="field-value--muted">
+            Clique em <strong>"+ Nova rua"</strong> acima pra criar a primeira e começar a registrar as posições do
+            galpão — rua e posição são criadas na hora, direto daqui, sem precisar configurar nada antes.
+          </p>
+        </div>
+      )}
+
       {ruaAtiva && (
         <div className="estoque-grid">
           {posicoesDaRuaAtiva.map((posicao) => {
