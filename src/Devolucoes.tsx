@@ -502,7 +502,7 @@ export function Devolucoes() {
           />
         </label>
         <button className="refresh-btn" type="submit" disabled={buscando || !numero.trim()}>
-          {buscando ? "Buscando..." : "Buscar"}
+          {buscando ? (pareceNomeDeCliente(numero) ? "Buscando (pode levar alguns segundos)..." : "Buscando...") : "Buscar"}
         </button>
       </form>
 
@@ -525,13 +525,13 @@ export function Devolucoes() {
         <div className="candidatos-lista">
           {candidatos.length === 0 ? (
             <p className="nota-info">
-              Nenhum resultado encontrado com esse nome nos últimos 6 meses. Confere a grafia, tenta só o primeiro nome, ou a venda
+              Nenhum resultado encontrado com esse nome nos últimos 14 dias. Confere a grafia, tenta só o primeiro nome, ou a venda
               pode ser mais antiga que isso.
             </p>
           ) : (
             <>
               <p className="nota-info">
-                {candidatos.length} resultado(s) encontrado(s) nos últimos 6 meses
+                {candidatos.length} resultado(s) encontrado(s) nos últimos 14 dias
                 {podeTerMaisCandidatos ? " (mostrando os 5 mais recentes — refine o nome se não for nenhum desses)" : ""}:
               </p>
               {candidatos.map((candidato) => (

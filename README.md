@@ -128,6 +128,10 @@ Crie o Render **primeiro** (é de lá que sai a URL que a Vercel vai usar).
    build, porque o Vite lê em build-time, não em runtime.
 3. Deploy. Se a URL da Vercel não bater com o que você colocou em
    `CORS_ORIGIN` no Render, volte lá e corrija (redeploy o Render depois).
+   **Deploys de preview da Vercel** (URL nova a cada deploy, tipo
+   `llelle-xxxxx-seu-time.vercel.app`) são liberados automaticamente pelo
+   backend (`server/index.ts`, `PADRAO_PREVIEW_VERCEL`) sem precisar tocar em
+   `CORS_ORIGIN` pra cada um — só a URL de produção fixa precisa estar lá.
 
 Como o token não expira sozinho (diferente de um OAuth), não tem limitação de
 "reconectar depois de X tempo fora do ar" — o serviço do Render volta a
@@ -158,17 +162,21 @@ de controle de devoluções.
   `pedido.obter.php?id=Z` e lê `pedido.ecommerce.nomeEcommerce`; sem isso,
   cai pro `intermediador.nome` da própria nota. `codigo_erro: 6` do Tiny
   (limite de taxa) vira uma mensagem clara em vez de erro genérico.
-  `buscarCandidatosPorNomeCliente` busca por
-  `notas.fiscais.pesquisa.php?cliente=X&tipoNota=S&dataInicial=...&dataFinal=...`
-  (janela dos últimos 180 dias — `JANELA_BUSCA_POR_NOME_DIAS`), devolve só
-  os 5 mais recentes (busca o detalhe — inclusive itens — de cada um, então
-  limitar evita inflar em chamadas ao Tiny pra um nome comum). O filtro de
-  data foi adicionado depois de um erro real em produção buscando um nome
-  comum ("Ocorreu um erro ao executar a consulta") — hipótese de que sem
-  filtro a busca varria todas as notas já emitidas e o Tiny não aguentava;
-  **não deu pra confirmar isso nem o parâmetro `cliente` contra a
-  documentação ao vivo do Tiny** (mesma limitação de rede de sempre) — teste
-  com um nome real antes de confiar em produção.
+  `buscarCandidatosPorNomeCliente`: duas tentativas anteriores usaram um
+  parâmetro `cliente` em `notas.fiscais.pesquisa.php` pra filtrar por nome
+  no servidor — deram dois erros reais em produção (indício de que esse
+  parâmetro não existe nesse endpoint). Versão atual só usa peças já
+  confirmadas: varre `pedidos.pesquisa.php?dataInicial=...&dataFinal=...&pagina=N`
+  (mesmo endpoint+parâmetros de `lib/relatorioVendas.ts`) na janela dos
+  últimos 14 dias (`JANELA_BUSCA_POR_NOME_DIAS` — curta de propósito, porque
+  sem filtro no servidor a busca varre pedido por pedido, e o volume real
+  desse negócio é alto), casa o nome contra QUALQUER campo de texto de cada
+  pedido (não precisa adivinhar se a chave se chama `nome`, `cliente` etc.),
+  e resolve os até 5 mais recentes que bateram via `pedido.obter.php` →
+  `id_nota_fiscal` → `nota.fiscal.obter.php` (mesma cadeia do fallback de
+  "Nº do pedido" acima) pra pegar NF, cliente e itens de verdade. Teto de
+  segurança em `MAX_PEDIDOS_ESCANEADOS_POR_NOME` pra nunca escanear o
+  período inteiro numa busca que devia ser rápida.
 - `src/Devolucoes.tsx` decide sozinho se o que foi digitado é um nome (sem
   nenhum dígito, ex.: "Maria Silva") ou NF/pedido (sempre tem dígito) —
   `pareceNomeDeCliente`. Não tem um botão/modo separado pra isso, é só

@@ -292,34 +292,40 @@ describe("buscarCandidatosPorNomeCliente", () => {
     vi.unstubAllGlobals();
   });
 
-  it("busca com o parâmetro cliente + janela de data (dd/mm/yyyy), devolve candidatos com nome/NF/data/produtos, mais recente primeiro", async () => {
+  it("varre pedidos.pesquisa.php por data (não notas.fiscais.pesquisa.php?cliente=), casa o nome em QUALQUER campo do resumo, e resolve NF via pedido.obter.php + nota.fiscal.obter.php", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input) => {
       const url = new URL(String(input));
       switch (endpointDe(input)) {
-        case "notas.fiscais.pesquisa.php": {
-          expect(url.searchParams.get("cliente")).toBe("Maria");
-          expect(url.searchParams.get("tipoNota")).toBe("S");
+        case "pedidos.pesquisa.php": {
           const formatoBr = /^\d{2}\/\d{2}\/\d{4}$/;
           const dataInicial = url.searchParams.get("dataInicial")!;
           const dataFinal = url.searchParams.get("dataFinal")!;
           expect(dataInicial).toMatch(formatoBr);
           expect(dataFinal).toMatch(formatoBr);
-          // dataInicial é ~180 dias antes de dataFinal, não o próprio dia.
-          expect(dataInicial).not.toBe(dataFinal);
+          expect(dataInicial).not.toBe(dataFinal); // janela real (14 dias), não o mesmo dia
+          expect(url.searchParams.get("pagina")).toBe("1");
           return jsonResponse({
             retorno: {
               status: "OK",
-              notas_fiscais: [
-                { nota_fiscal: { id: "1", numero: "100", data_emissao: "01/01/2026" } },
-                { nota_fiscal: { id: "2", numero: "200", data_emissao: "15/09/2026" } },
+              numero_paginas: 1,
+              pedidos: [
+                // Campo com nome inventado (não "cliente" nem "nome") — prova que não depende de
+                // adivinhar a chave certa, só que o texto apareça em algum lugar do resumo.
+                { pedido: { id: "10", data_pedido: "01/01/2026", nomeDoContato: "Maria da Silva" } },
+                { pedido: { id: "20", data_pedido: "15/09/2026", nomeDoContato: "Maria Oliveira" } },
+                { pedido: { id: "30", data_pedido: "20/09/2026", nomeDoContato: "João Pereira" } }, // não bate com "Maria"
               ],
             },
           });
         }
+        case "pedido.obter.php": {
+          const id = url.searchParams.get("id");
+          return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: `nf-${id}` } } });
+        }
         case "nota.fiscal.obter.php": {
           const id = url.searchParams.get("id");
-          if (id === "1") {
+          if (id === "nf-10") {
             return jsonResponse({
               retorno: {
                 status: "OK",
@@ -348,14 +354,50 @@ describe("buscarCandidatosPorNomeCliente", () => {
     const resultado = await buscarCandidatosPorNomeCliente("Maria");
 
     expect(resultado.podeTerMais).toBe(false);
-    expect(resultado.candidatos).toHaveLength(2);
-    // Mais recente (15/09/2026) primeiro, mesmo tendo vindo em segundo na resposta da pesquisa.
+    expect(resultado.candidatos).toHaveLength(2); // "João Pereira" não devia entrar
+    // Mais recente (pedido de 15/09) primeiro, mesmo tendo vindo em segundo na resposta da pesquisa.
     expect(resultado.candidatos[0]).toMatchObject({ nf: "200", cliente: "Maria Oliveira", dataEmissao: "15/09/2026" });
     expect(resultado.candidatos[1]).toMatchObject({
       nf: "100",
       cliente: "Maria Da Silva",
       produtos: ["CHALEIRA MODERN PRETA 127V"],
     });
+  });
+
+  it("pula pedido sem NF emitida ainda (sem id_nota_fiscal) em vez de quebrar", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      switch (endpointDe(input)) {
+        case "pedidos.pesquisa.php":
+          return jsonResponse({
+            retorno: {
+              status: "OK",
+              numero_paginas: 1,
+              pedidos: [
+                { pedido: { id: "1", data_pedido: "01/01/2026", cliente: "Maria Sem Nota" } },
+                { pedido: { id: "2", data_pedido: "02/01/2026", cliente: "Maria Com Nota" } },
+              ],
+            },
+          });
+        case "pedido.obter.php": {
+          const id = new URL(String(input)).searchParams.get("id");
+          if (id === "1") return jsonResponse({ retorno: { status: "OK", pedido: {} } }); // sem id_nota_fiscal
+          return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: "nf-2" } } });
+        }
+        case "nota.fiscal.obter.php":
+          return jsonResponse({
+            retorno: { status: "OK", nota_fiscal: { numero: "200", data_emissao: "02/01/2026", cliente: { nome: "Maria Com Nota" }, itens: [] } },
+          });
+        default:
+          throw new Error(`endpoint inesperado: ${String(input)}`);
+      }
+    });
+
+    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
+    const resultado = await buscarCandidatosPorNomeCliente("Maria");
+
+    expect(resultado.candidatos).toHaveLength(1);
+    expect(resultado.candidatos[0]).toMatchObject({ nf: "200" });
   });
 
   it("nenhum resultado (codigo_erro 32) devolve lista vazia, não lança erro", async () => {
@@ -367,18 +409,50 @@ describe("buscarCandidatosPorNomeCliente", () => {
     expect(resultado).toEqual({ candidatos: [], podeTerMais: false });
   });
 
+  it("junta páginas de pedidos.pesquisa.php (numero_paginas > 1) antes de decidir os candidatos", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (endpointDe(input) === "pedidos.pesquisa.php") {
+        const pagina = url.searchParams.get("pagina");
+        if (pagina === "1") {
+          return jsonResponse({
+            retorno: { status: "OK", numero_paginas: 2, pedidos: [{ pedido: { id: "1", data_pedido: "01/01/2026", cliente: "Fulano" } }] },
+          });
+        }
+        return jsonResponse({
+          retorno: { status: "OK", numero_paginas: 2, pedidos: [{ pedido: { id: "2", data_pedido: "02/01/2026", cliente: "Fulano" } }] },
+        });
+      }
+      if (endpointDe(input) === "pedido.obter.php") {
+        const id = url.searchParams.get("id");
+        return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: `nf-${id}` } } });
+      }
+      return jsonResponse({ retorno: { status: "OK", nota_fiscal: { numero: "1", data_emissao: "01/01/2026", cliente: { nome: "Fulano" }, itens: [] } } });
+    });
+
+    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
+    const resultado = await buscarCandidatosPorNomeCliente("Fulano");
+
+    expect(resultado.candidatos).toHaveLength(2); // achou o das duas páginas, não só da primeira
+  });
+
   it("mais de 5 encontrados: devolve só os 5 mais recentes e avisa que pode ter mais", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input) => {
-      if (endpointDe(input) === "notas.fiscais.pesquisa.php") {
-        const notas = Array.from({ length: 7 }, (_, i) => ({
-          nota_fiscal: { id: String(i + 1), numero: String(100 + i), data_emissao: `0${(i % 9) + 1}/01/2026` },
+      const url = new URL(String(input));
+      if (endpointDe(input) === "pedidos.pesquisa.php") {
+        const pedidos = Array.from({ length: 7 }, (_, i) => ({
+          pedido: { id: String(i + 1), data_pedido: `0${(i % 9) + 1}/01/2026`, cliente: "Fulano" },
         }));
-        return jsonResponse({ retorno: { status: "OK", notas_fiscais: notas } });
+        return jsonResponse({ retorno: { status: "OK", numero_paginas: 1, pedidos } });
       }
-      const id = new URL(String(input)).searchParams.get("id");
+      if (endpointDe(input) === "pedido.obter.php") {
+        const id = url.searchParams.get("id");
+        return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: `nf-${id}` } } });
+      }
       return jsonResponse({
-        retorno: { status: "OK", nota_fiscal: { numero: id, data_emissao: "01/01/2026", cliente: { nome: "Fulano" }, itens: [] } },
+        retorno: { status: "OK", nota_fiscal: { numero: "1", data_emissao: "01/01/2026", cliente: { nome: "Fulano" }, itens: [] } },
       });
     });
 

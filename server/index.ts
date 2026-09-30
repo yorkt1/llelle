@@ -23,11 +23,29 @@ app.use(express.json({ limit: "10mb" }));
 // Só precisa disso quando o front roda num domínio separado do backend (ex:
 // front na Vercel, API no Render) — mesma origem (front servido pelo próprio
 // Express) não usa nem precisa. CORS_ORIGIN aceita uma URL ou várias separadas
-// por vírgula (ex: preview + produção da Vercel).
-const corsOrigin = process.env.CORS_ORIGIN;
-if (corsOrigin) {
-  app.use(cors({ origin: corsOrigin.split(",").map((origin) => origin.trim()) }));
-}
+// por vírgula (ex: produção da Vercel).
+//
+// Além disso libera automaticamente qualquer deploy de PREVIEW da Vercel deste
+// projeto (ex.: llelle-ceaakvkta-guilhermes-projects-9aabc385.vercel.app) — a
+// Vercel gera uma URL nova a cada deploy de preview, então colocar isso fixo
+// em CORS_ORIGIN significaria atualizar a variável de ambiente no Render toda
+// vez (já aconteceu: um teste numa URL de preview deu erro de CORS bloqueado).
+const origensFixas = (process.env.CORS_ORIGIN ?? "")
+  .split(",")
+  .map((origem) => origem.trim())
+  .filter(Boolean);
+const PADRAO_PREVIEW_VERCEL = /^https:\/\/llelle-[a-z0-9-]+\.vercel\.app$/i;
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Sem Origin = não é uma chamada de navegador (curl, chamada server-to-server) — CORS não
+      // se aplica, sempre libera.
+      if (!origin) return callback(null, true);
+      callback(null, origensFixas.includes(origin) || PADRAO_PREVIEW_VERCEL.test(origin));
+    },
+  }),
+);
 
 app.use("/api/separacao", separacaoRouter);
 app.use("/api/relatorios", relatoriosRouter);

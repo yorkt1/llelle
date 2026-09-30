@@ -33,22 +33,27 @@ import { buscarImportacaoShopee, mapearMotivoParaOcorrencia } from "./shopeeImpo
  * tinyGet (lib/tinyClient.ts) pra incluir `{ method: "POST" }`.
  *
  * `buscarCandidatosPorNomeCliente`: pacote chegado pelos Correios costuma só
- * ter o NOME do cliente escrito, sem NF nem nº de pedido — essa função busca
- * `notas.fiscais.pesquisa.php?cliente=X&tipoNota=S&dataInicial=...&dataFinal=...`
- * e devolve até 5 candidatos (nome, NF, data, produtos) pro atendente
- * escolher qual é. **O parâmetro `cliente` não foi confirmado contra a
- * documentação ao vivo do Tiny** (mesma limitação de rede de sempre) — é o
- * nome mais comum pra "filtrar por nome do cliente" nessa família de
- * endpoints, mas teste com um nome real antes de confiar em produção.
- *
- * O filtro de `dataInicial`/`dataFinal` (janela de `JANELA_BUSCA_POR_NOME_DIAS`
- * dias pra trás) foi adicionado depois de um erro real em produção buscando
- * um nome comum: "Ocorreu um erro ao executar a consulta" — sem filtro de
- * data, a busca por nome provavelmente vira uma varredura pesada em cima de
- * TODAS as notas fiscais já emitidas, não só as recentes, e o Tiny não
- * aguenta. Isso é uma HIPÓTESE (não deu pra confirmar contra o Tiny de
- * verdade) — se o erro persistir mesmo com o filtro, o problema pode ser
- * simplesmente o parâmetro `cliente` não existir nesse endpoint.
+ * ter o NOME do cliente escrito, sem NF nem nº de pedido. Tentativas
+ * anteriores usaram um parâmetro `cliente` em `notas.fiscais.pesquisa.php`
+ * pra filtrar por nome direto no servidor — deu dois erros reais em
+ * produção (primeiro "erro ao executar a consulta", depois um 500 mesmo
+ * com filtro de data), sinal forte de que esse parâmetro não existe nesse
+ * endpoint. Trocado por uma estratégia que só usa peças JÁ CONFIRMADAS
+ * funcionando neste projeto:
+ * 1. `pedidos.pesquisa.php?dataInicial=X&dataFinal=Y&pagina=N` — mesmo
+ *    endpoint+parâmetros já comprovados em lib/relatorioVendas.ts — busca
+ *    TODOS os pedidos dos últimos `JANELA_BUSCA_POR_NOME_DIAS` dias.
+ * 2. Compara o nome buscado contra QUALQUER campo de texto de cada pedido
+ *    (`algumCampoContemTexto`) — não precisa adivinhar se o campo se chama
+ *    `nome`, `cliente` etc.
+ * 3. Pros até 5 pedidos mais recentes que bateram: `pedido.obter.php?id=X`
+ *    → `id_nota_fiscal` → `nota.fiscal.obter.php?id=Y` (mesma cadeia já
+ *    usada no fallback de "Nº do pedido" acima) pra pegar NF, cliente e
+ *    itens de verdade.
+ * Mais lento que um filtro no servidor (varre pedido por pedido em vez de
+ * só os que baterem), por isso a janela é curta (14 dias, não meses) — teto
+ * de segurança em `MAX_PEDIDOS_ESCANEADOS_POR_NOME` pra nunca escanear o
+ * período inteiro numa busca que devia ser rápida.
  */
 
 const SEM_REGISTROS_ERROR_CODE = 32;
@@ -355,9 +360,20 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
 }
 
 const MAX_CANDIDATOS_POR_NOME = 5;
-// ~6 meses — devolução raramente chega bem depois disso, e estreita bastante a consulta no Tiny
-// (ver aviso no topo do arquivo sobre o erro real que motivou esse filtro).
-const JANELA_BUSCA_POR_NOME_DIAS = 180;
+// Curta de propósito: sem confirmação de que o Tiny filtra por nome no servidor, a busca varre
+// TODOS os pedidos do período e casa o nome no nosso próprio código (ver doc do topo do arquivo).
+// No volume real desse negócio (~630 pedidos/dia, visto em lib/relatorioVendas.ts), uma janela
+// maior varreria milhares de pedidos numa busca que devia ser rápida — 14 dias fica em torno de
+// ~9 mil pedidos no pior caso, ainda alto mas tolerável pra uma busca ocasional.
+const JANELA_BUSCA_POR_NOME_DIAS = 14;
+// Teto de segurança: para de escanear páginas de pedidos depois disso, mesmo sem ter achado nada —
+// existe só pra nunca deixar uma busca por nome rodar por minutos varrendo o período inteiro.
+const MAX_PEDIDOS_ESCANEADOS_POR_NOME = 3000;
+const RATE_LIMIT_DELAY_MS_NOME = 120;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** dd/mm/yyyy no fuso do Brasil — mesmo formato que dataInicial/dataFinal já usam em lib/olist.ts. */
 function dataEmSaoPauloBr(data: Date): string {
@@ -372,6 +388,28 @@ function diasAtrasEmSaoPauloBr(dias: number): string {
   return dataEmSaoPauloBr(data);
 }
 
+/** Pedido "in natura" da pesquisa — não sabemos o nome exato do campo do cliente, então guarda tudo. */
+interface PedidoResumoGenerico {
+  id: string;
+  data_pedido?: string;
+  [chave: string]: unknown;
+}
+
+interface PedidosPesquisaGenericaResponse {
+  retorno: RetornoComErro & { numero_paginas?: number; pedidos?: { pedido: PedidoResumoGenerico }[] };
+}
+
+/**
+ * Em vez de apostar em qual chave o Tiny usa pro nome do cliente na lista de pedidos (`nome`?
+ * `cliente`? `nomeCliente`?), procura o termo em QUALQUER campo de texto do registro — funciona
+ * seja qual for o nome do campo, desde que o nome do cliente apareça em algum lugar do resumo
+ * (o que precisa ser verdade de qualquer forma, senão a própria tela de pedidos do Tiny não
+ * daria pra escanear visualmente por cliente).
+ */
+function algumCampoContemTexto(objeto: Record<string, unknown>, termoNormalizado: string): boolean {
+  return Object.values(objeto).some((valor) => typeof valor === "string" && normalizarBusca(valor).includes(termoNormalizado));
+}
+
 export type CandidatoDevolucao = {
   nf: string;
   cliente: string;
@@ -381,53 +419,74 @@ export type CandidatoDevolucao = {
 };
 
 /**
- * Busca por NOME do cliente em vez de NF/pedido — ver doc do topo do arquivo pra o porquê e pro
- * aviso de que o parâmetro `cliente` não foi confirmado contra a documentação ao vivo do Tiny.
- * Devolve só os `MAX_CANDIDATOS_POR_NOME` mais recentes (busca o detalhe de cada um, incluindo os
- * itens, então limitar isso também evita inflar em chamadas ao Tiny pra um nome muito comum).
+ * Busca por NOME do cliente em vez de NF/pedido — ver doc do topo do arquivo pra o porquê. Devolve
+ * só os `MAX_CANDIDATOS_POR_NOME` mais recentes dentro da janela escaneada, pulando pedidos que
+ * ainda não têm nota fiscal emitida (não tem NF pra abrir na prévia de devolução mesmo).
  */
 export async function buscarCandidatosPorNomeCliente(
   nomeBruto: string,
 ): Promise<{ candidatos: CandidatoDevolucao[]; podeTerMais: boolean }> {
   const nome = nomeBruto.trim();
   if (!nome) throw new Error("Informe o nome do cliente.");
+  const termo = normalizarBusca(nome);
 
-  const json = await tinyGet<NotasFiscaisPesquisaResponse>("notas.fiscais.pesquisa.php", {
-    cliente: nome,
-    tipoNota: "S",
-    dataInicial: diasAtrasEmSaoPauloBr(JANELA_BUSCA_POR_NOME_DIAS),
-    dataFinal: dataEmSaoPauloBr(new Date()),
-  });
-  const { retorno } = json;
-  if (retorno.status !== "OK") {
-    if (retorno.codigo_erro === SEM_REGISTROS_ERROR_CODE) {
-      return { candidatos: [], podeTerMais: false };
+  const dataInicial = diasAtrasEmSaoPauloBr(JANELA_BUSCA_POR_NOME_DIAS);
+  const dataFinal = dataEmSaoPauloBr(new Date());
+
+  const encontrados: PedidoResumoGenerico[] = [];
+  let pagina = 1;
+  let totalPaginas = 1;
+  let escaneados = 0;
+
+  do {
+    const json = await tinyGet<PedidosPesquisaGenericaResponse>("pedidos.pesquisa.php", {
+      dataInicial,
+      dataFinal,
+      pagina: String(pagina),
+    });
+    const { retorno } = json;
+    if (retorno.status !== "OK") {
+      if (retorno.codigo_erro === SEM_REGISTROS_ERROR_CODE) break;
+      throw falhaTiny("Tiny recusou a busca de pedidos do período", retorno);
     }
-    throw falhaTiny("Tiny recusou a busca por nome", retorno);
+
+    for (const registro of retorno.pedidos ?? []) {
+      escaneados++;
+      if (algumCampoContemTexto(registro.pedido, termo)) encontrados.push(registro.pedido);
+    }
+
+    totalPaginas = retorno.numero_paginas ?? 1;
+    pagina++;
+    if (escaneados >= MAX_PEDIDOS_ESCANEADOS_POR_NOME) break;
+    if (pagina <= totalPaginas) await sleep(RATE_LIMIT_DELAY_MS_NOME);
+  } while (pagina <= totalPaginas);
+
+  const maisRecentesPrimeiro = [...encontrados].sort(
+    (a, b) => paraDataOrdenavel(typeof b.data_pedido === "string" ? b.data_pedido : "") -
+      paraDataOrdenavel(typeof a.data_pedido === "string" ? a.data_pedido : ""),
+  );
+
+  const candidatos: CandidatoDevolucao[] = [];
+  for (const pedidoResumo of maisRecentesPrimeiro) {
+    if (candidatos.length >= MAX_CANDIDATOS_POR_NOME) break;
+
+    const pedidoDetalhe = await tinyGet<PedidoObterParaNotaResponse>("pedido.obter.php", { id: pedidoResumo.id });
+    const idNotaFiscal = pedidoDetalhe.retorno.pedido?.id_nota_fiscal;
+    if (pedidoDetalhe.retorno.status !== "OK" || !idNotaFiscal) continue; // pedido sem NF emitida — nada pra abrir na prévia
+
+    const nota = await obterNotaFiscal(idNotaFiscal);
+    const produtos = (nota.itens ?? [])
+      .map((registro) => registro.item)
+      .filter((item): item is NonNullable<typeof item> => item != null)
+      .map((item) => nomeProdutoPlanilha(item.codigo ?? "", item.descricao ?? ""));
+
+    candidatos.push({
+      nf: nota.numero,
+      cliente: formatarNomeTitulo(nota.cliente?.nome ?? ""),
+      dataEmissao: nota.data_emissao ?? "",
+      produtos,
+    });
   }
 
-  const encontradas = (retorno.notas_fiscais ?? []).map((registro) => registro.nota_fiscal);
-  const maisRecentesPrimeiro = [...encontradas].sort(
-    (a, b) => paraDataOrdenavel(b.data_emissao) - paraDataOrdenavel(a.data_emissao),
-  );
-  const top = maisRecentesPrimeiro.slice(0, MAX_CANDIDATOS_POR_NOME);
-
-  const candidatos = await Promise.all(
-    top.map(async (resumo): Promise<CandidatoDevolucao> => {
-      const detalhe = await obterNotaFiscal(resumo.id);
-      const produtos = (detalhe.itens ?? [])
-        .map((registro) => registro.item)
-        .filter((item): item is NonNullable<typeof item> => item != null)
-        .map((item) => nomeProdutoPlanilha(item.codigo ?? "", item.descricao ?? ""));
-
-      return {
-        nf: detalhe.numero,
-        cliente: formatarNomeTitulo(detalhe.cliente?.nome ?? ""),
-        dataEmissao: detalhe.data_emissao ?? resumo.data_emissao,
-        produtos,
-      };
-    }),
-  );
-
-  return { candidatos, podeTerMais: encontradas.length > MAX_CANDIDATOS_POR_NOME };
+  return { candidatos, podeTerMais: encontrados.length > MAX_CANDIDATOS_POR_NOME };
 }
