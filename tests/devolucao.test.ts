@@ -471,3 +471,91 @@ describe("buscarCandidatosPorNomeCliente", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("buscarCandidatosPorCpfCliente", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("acha o CPF mesmo formatado com pontuação no resumo do pedido (compara só os dígitos)", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      switch (endpointDe(input)) {
+        case "pedidos.pesquisa.php":
+          return jsonResponse({
+            retorno: {
+              status: "OK",
+              numero_paginas: 1,
+              pedidos: [
+                // CPF formatado com pontuação — o dígito puro buscado é "03777947083".
+                { pedido: { id: "10", data_pedido: "01/01/2026", cpfContato: "037.779.470-83" } },
+                { pedido: { id: "20", data_pedido: "02/01/2026", cpfContato: "111.111.111-11" } }, // não bate
+              ],
+            },
+          });
+        case "pedido.obter.php":
+          expect(url.searchParams.get("id")).toBe("10");
+          return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: "nf-10" } } });
+        case "nota.fiscal.obter.php":
+          return jsonResponse({
+            retorno: { status: "OK", nota_fiscal: { numero: "500", data_emissao: "01/01/2026", cliente: { nome: "SENILDA MATTE" }, itens: [] } },
+          });
+        default:
+          throw new Error(`endpoint inesperado: ${String(input)}`);
+      }
+    });
+
+    const { buscarCandidatosPorCpfCliente } = await freshDevolucao();
+    const resultado = await buscarCandidatosPorCpfCliente("037.779.470-83");
+
+    expect(resultado.candidatos).toHaveLength(1);
+    expect(resultado.candidatos[0]).toMatchObject({ nf: "500", cliente: "Senilda Matte" });
+  });
+
+  it("aceita o CPF buscado só com dígitos, mesmo resultado que formatado", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      switch (endpointDe(input)) {
+        case "pedidos.pesquisa.php":
+          return jsonResponse({
+            retorno: { status: "OK", numero_paginas: 1, pedidos: [{ pedido: { id: "10", data_pedido: "01/01/2026", cpfContato: "03777947083" } }] },
+          });
+        case "pedido.obter.php":
+          return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: "nf-10" } } });
+        case "nota.fiscal.obter.php":
+          return jsonResponse({
+            retorno: { status: "OK", nota_fiscal: { numero: "500", data_emissao: "01/01/2026", cliente: { nome: "SENILDA MATTE" }, itens: [] } },
+          });
+        default:
+          throw new Error(`endpoint inesperado: ${String(input)}`);
+      }
+    });
+
+    const { buscarCandidatosPorCpfCliente } = await freshDevolucao();
+    const resultado = await buscarCandidatosPorCpfCliente("03777947083");
+
+    expect(resultado.candidatos).toHaveLength(1);
+  });
+
+  it("CPF com menos de 11 dígitos lança erro sem chamar o Tiny", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const { buscarCandidatosPorCpfCliente } = await freshDevolucao();
+
+    await expect(buscarCandidatosPorCpfCliente("123.456.789")).rejects.toThrow(/11 dígitos/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("nenhum resultado (codigo_erro 32) devolve lista vazia, não lança erro", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ retorno: { status: "Erro", codigo_erro: 32 } }));
+
+    const { buscarCandidatosPorCpfCliente } = await freshDevolucao();
+    const resultado = await buscarCandidatosPorCpfCliente("00000000000");
+
+    expect(resultado).toEqual({ candidatos: [], podeTerMais: false });
+  });
+});

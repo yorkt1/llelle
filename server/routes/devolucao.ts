@@ -1,6 +1,12 @@
 import { Router } from "express";
 import { OlistConfigError } from "../../lib/olist";
-import { buscarCandidatosPorNomeCliente, buscarDevolucaoPorNf, NfNaoEncontradaError, TinyLimiteTaxaError } from "../../lib/devolucao";
+import {
+  buscarCandidatosPorCpfCliente,
+  buscarCandidatosPorNomeCliente,
+  buscarDevolucaoPorNf,
+  NfNaoEncontradaError,
+  TinyLimiteTaxaError,
+} from "../../lib/devolucao";
 import { salvarImportacaoShopee, type ShopeeImportacaoEntrada } from "../../lib/shopeeImportacao";
 import { GroqConfigError, lerNumeroSerieComGroq } from "../../lib/groqOcr";
 
@@ -49,6 +55,29 @@ devolucaoRouter.get("/nome/:nome", async (req, res) => {
       return;
     }
     const mensagem = error instanceof Error ? error.message : "Erro inesperado ao buscar pelo nome.";
+    res.status(500).json({ erro: mensagem });
+  }
+});
+
+/**
+ * Busca por CPF do cliente (lido na etiqueta DACE dos Correios) — mesma ideia da busca por nome,
+ * mas com um identificador exato em vez de um nome que pode ter homônimos. Ver
+ * `buscarCandidatosPorCpfCliente` em lib/devolucao.ts.
+ */
+devolucaoRouter.get("/cpf/:cpf", async (req, res) => {
+  try {
+    const resultado = await buscarCandidatosPorCpfCliente(String(req.params.cpf));
+    res.status(200).json(resultado);
+  } catch (error) {
+    if (error instanceof TinyLimiteTaxaError) {
+      res.status(429).json({ erro: error.message });
+      return;
+    }
+    if (error instanceof OlistConfigError) {
+      res.status(503).json({ erro: error.message });
+      return;
+    }
+    const mensagem = error instanceof Error ? error.message : "Erro inesperado ao buscar pelo CPF.";
     res.status(500).json({ erro: mensagem });
   }
 });

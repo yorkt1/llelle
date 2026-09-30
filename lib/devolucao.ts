@@ -410,6 +410,15 @@ function algumCampoContemTexto(objeto: Record<string, unknown>, termoNormalizado
   return Object.values(objeto).some((valor) => typeof valor === "string" && normalizarBusca(valor).includes(termoNormalizado));
 }
 
+/**
+ * Mesma ideia de `algumCampoContemTexto`, mas pra CPF: compara só os DÍGITOS de cada campo contra
+ * os dígitos buscados, ignorando pontuação — assim funciona tanto se o Tiny guarda o CPF formatado
+ * ("037.779.470-83") quanto só os números, sem precisar adivinhar qual dos dois.
+ */
+function algumCampoContemDigitos(objeto: Record<string, unknown>, digitosBuscados: string): boolean {
+  return Object.values(objeto).some((valor) => typeof valor === "string" && valor.replace(/\D/g, "").includes(digitosBuscados));
+}
+
 export type CandidatoDevolucao = {
   nf: string;
   cliente: string;
@@ -419,17 +428,14 @@ export type CandidatoDevolucao = {
 };
 
 /**
- * Busca por NOME do cliente em vez de NF/pedido — ver doc do topo do arquivo pra o porquê. Devolve
- * só os `MAX_CANDIDATOS_POR_NOME` mais recentes dentro da janela escaneada, pulando pedidos que
- * ainda não têm nota fiscal emitida (não tem NF pra abrir na prévia de devolução mesmo).
+ * Motor compartilhado por busca-por-nome e busca-por-CPF: varre `pedidos.pesquisa.php` na janela
+ * de `JANELA_BUSCA_POR_NOME_DIAS` dias, aplica `bate` em cada resumo de pedido, e resolve os até
+ * `MAX_CANDIDATOS_POR_NOME` mais recentes que passaram em NF de verdade (pedido.obter.php →
+ * id_nota_fiscal → nota.fiscal.obter.php) — pulando pedido sem NF emitida ainda.
  */
-export async function buscarCandidatosPorNomeCliente(
-  nomeBruto: string,
+async function buscarCandidatosPorPredicado(
+  bate: (pedido: PedidoResumoGenerico) => boolean,
 ): Promise<{ candidatos: CandidatoDevolucao[]; podeTerMais: boolean }> {
-  const nome = nomeBruto.trim();
-  if (!nome) throw new Error("Informe o nome do cliente.");
-  const termo = normalizarBusca(nome);
-
   const dataInicial = diasAtrasEmSaoPauloBr(JANELA_BUSCA_POR_NOME_DIAS);
   const dataFinal = dataEmSaoPauloBr(new Date());
 
@@ -452,7 +458,7 @@ export async function buscarCandidatosPorNomeCliente(
 
     for (const registro of retorno.pedidos ?? []) {
       escaneados++;
-      if (algumCampoContemTexto(registro.pedido, termo)) encontrados.push(registro.pedido);
+      if (bate(registro.pedido)) encontrados.push(registro.pedido);
     }
 
     totalPaginas = retorno.numero_paginas ?? 1;
@@ -489,4 +495,27 @@ export async function buscarCandidatosPorNomeCliente(
   }
 
   return { candidatos, podeTerMais: encontrados.length > MAX_CANDIDATOS_POR_NOME };
+}
+
+/** Busca por NOME do cliente em vez de NF/pedido — ver doc do topo do arquivo pra o porquê. */
+export async function buscarCandidatosPorNomeCliente(
+  nomeBruto: string,
+): Promise<{ candidatos: CandidatoDevolucao[]; podeTerMais: boolean }> {
+  const nome = nomeBruto.trim();
+  if (!nome) throw new Error("Informe o nome do cliente.");
+  const termo = normalizarBusca(nome);
+  return buscarCandidatosPorPredicado((pedido) => algumCampoContemTexto(pedido, termo));
+}
+
+/**
+ * Busca por CPF do cliente — a etiqueta de devolução dos Correios (DACE) traz o CPF do
+ * REMETENTE bem visível, e é um dado exato (sem ambiguidade de "qual Maria é essa"), então vale
+ * mais a pena que buscar por nome quando dá pra ler o CPF na etiqueta.
+ */
+export async function buscarCandidatosPorCpfCliente(
+  cpfBruto: string,
+): Promise<{ candidatos: CandidatoDevolucao[]; podeTerMais: boolean }> {
+  const digitos = cpfBruto.replace(/\D/g, "");
+  if (digitos.length !== 11) throw new Error("Informe um CPF com 11 dígitos.");
+  return buscarCandidatosPorPredicado((pedido) => algumCampoContemDigitos(pedido, digitos));
 }

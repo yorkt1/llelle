@@ -273,6 +273,13 @@ function pareceNomeDeCliente(valor: string): boolean {
   return valor.trim() !== "" && !/\d/.test(valor);
 }
 
+// CPF tem exatamente 11 dígitos (com ou sem pontuação: "037.779.470-83" ou "03777947083") — a
+// etiqueta DACE de devolução dos Correios mostra o CPF do remetente, uma alternativa mais exata
+// que o nome quando o pacote só tem isso escrito.
+function pareceCpf(valor: string): boolean {
+  return valor.replace(/\D/g, "").length === 11;
+}
+
 function linhaParaCopia(preview: DevolucaoPreview, linha: LinhaEditavel): string {
   return [
     linha.dataPedidoSac, // A
@@ -306,6 +313,7 @@ export function Devolucoes() {
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(() => lerBuscasRecentes());
   const [candidatos, setCandidatos] = useState<CandidatoDevolucao[] | null>(null);
   const [podeTerMaisCandidatos, setPodeTerMaisCandidatos] = useState(false);
+  const [buscaCandidatosPor, setBuscaCandidatosPor] = useState<"nome" | "cpf">("nome");
   const tabelaRef = useRef<HTMLTableElement>(null);
 
   // Enter pula pro próximo campo da tabela (input ou select), igual planilha — evita ter que
@@ -325,23 +333,26 @@ export function Devolucoes() {
     if (proximo instanceof HTMLInputElement) proximo.select();
   }, []);
 
-  const buscarPorNomeCliente = useCallback(async (nome: string) => {
+  const buscarCandidatos = useCallback(async (tipo: "nome" | "cpf", valorBusca: string) => {
     setBuscando(true);
     setErro(null);
     setAvisoCopia(null);
     setPreview(null);
     setLinhas([]);
     setCandidatos(null);
+    setBuscaCandidatosPor(tipo);
 
     try {
-      const response = await fetch(`${API_URL}/api/devolucao/nome/${encodeURIComponent(nome)}`, { cache: "no-store" });
+      const response = await fetch(`${API_URL}/api/devolucao/${tipo}/${encodeURIComponent(valorBusca)}`, { cache: "no-store" });
       const json = await response.json();
-      if (!response.ok) throw new Error(extrairErro(json, "Não consegui buscar por esse nome."));
+      const mensagemPadrao = tipo === "cpf" ? "Não consegui buscar por esse CPF." : "Não consegui buscar por esse nome.";
+      if (!response.ok) throw new Error(extrairErro(json, mensagemPadrao));
 
       setCandidatos(json.candidatos ?? []);
       setPodeTerMaisCandidatos(Boolean(json.podeTerMais));
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui buscar por esse nome.");
+      const mensagemPadrao = tipo === "cpf" ? "Não consegui buscar por esse CPF." : "Não consegui buscar por esse nome.";
+      setErro(error instanceof Error ? error.message : mensagemPadrao);
     } finally {
       setBuscando(false);
     }
@@ -353,11 +364,19 @@ export function Devolucoes() {
       const valor = (numeroForcado ?? numero).trim();
       if (!valor) return;
 
-      // Pacote dos Correios muitas vezes só tem o NOME do cliente, sem NF nem nº de pedido —
-      // nesse caso a busca não devolve uma prévia já pronta, devolve candidatos pra escolher.
+      // Pacote dos Correios muitas vezes só tem o NOME do cliente (sem NF nem nº de pedido) ou,
+      // na etiqueta DACE de devolução, o CPF do remetente — em ambos os casos a busca não devolve
+      // uma prévia já pronta, devolve candidatos pra escolher. CPF antes de nome porque um CPF só
+      // com dígitos também passaria pela checagem de "nome" (que só exige ausência de dígito) se
+      // invertido — aqui é o contrário, CPF é só dígito, então checa CPF primeiro.
+      if (!numeroForcado && pareceCpf(valor)) {
+        setNumero(valor);
+        await buscarCandidatos("cpf", valor);
+        return;
+      }
       if (!numeroForcado && pareceNomeDeCliente(valor)) {
         setNumero(valor);
-        await buscarPorNomeCliente(valor);
+        await buscarCandidatos("nome", valor);
         return;
       }
 
@@ -400,7 +419,7 @@ export function Devolucoes() {
         setBuscando(false);
       }
     },
-    [numero, buscarPorNomeCliente],
+    [numero, buscarCandidatos],
   );
 
   const atualizarLinha = useCallback((index: number, campo: keyof LinhaEditavel, valor: string) => {
@@ -492,17 +511,17 @@ export function Devolucoes() {
 
       <form className="busca-linha" onSubmit={buscar}>
         <label className="field">
-          <span className="field-label">Nº da NF, nº do pedido ou nome do cliente</span>
+          <span className="field-label">Nº da NF, nº do pedido, nome ou CPF do cliente</span>
           <input
             className="field-input"
             value={numero}
             onChange={(event) => setNumero(event.target.value)}
-            placeholder="Ex: 338894 (NF), 260913UJGQT69B (pedido) ou Maria Silva (nome, se só tiver isso no pacote)"
+            placeholder="Ex: 338894 (NF), 260913UJGQT69B (pedido), Maria Silva (nome) ou 037.779.470-83 (CPF do remetente na etiqueta DACE)"
             autoFocus
           />
         </label>
         <button className="refresh-btn" type="submit" disabled={buscando || !numero.trim()}>
-          {buscando ? (pareceNomeDeCliente(numero) ? "Buscando (pode levar alguns segundos)..." : "Buscando...") : "Buscar"}
+          {buscando ? (pareceNomeDeCliente(numero) || pareceCpf(numero) ? "Buscando (pode levar alguns segundos)..." : "Buscando...") : "Buscar"}
         </button>
       </form>
 
@@ -525,14 +544,19 @@ export function Devolucoes() {
         <div className="candidatos-lista">
           {candidatos.length === 0 ? (
             <p className="nota-info">
-              Nenhum resultado encontrado com esse nome nos últimos 14 dias. Confere a grafia, tenta só o primeiro nome, ou a venda
-              pode ser mais antiga que isso.
+              Nenhum resultado encontrado com {buscaCandidatosPor === "cpf" ? "esse CPF" : "esse nome"} nos últimos 14 dias.{" "}
+              {buscaCandidatosPor === "cpf"
+                ? "Confere os dígitos, ou a venda pode ser mais antiga que isso."
+                : "Confere a grafia, tenta só o primeiro nome, ou a venda pode ser mais antiga que isso."}
             </p>
           ) : (
             <>
               <p className="nota-info">
                 {candidatos.length} resultado(s) encontrado(s) nos últimos 14 dias
-                {podeTerMaisCandidatos ? " (mostrando os 5 mais recentes — refine o nome se não for nenhum desses)" : ""}:
+                {podeTerMaisCandidatos
+                  ? ` (mostrando os 5 mais recentes — refine ${buscaCandidatosPor === "cpf" ? "o CPF" : "o nome"} se não for nenhum desses)`
+                  : ""}
+                :
               </p>
               {candidatos.map((candidato) => (
                 <button key={candidato.nf} className="candidato-item" onClick={() => void buscar(undefined, candidato.nf)}>

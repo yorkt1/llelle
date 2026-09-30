@@ -141,13 +141,15 @@ sincronizar sozinho assim que o processo sobe de novo, nas duas opções.
 
 Segunda aba (`#devolucoes`) pro setor de devolução: digita o **número da nota
 fiscal de venda, o "Nº do pedido"** (o número que aparece na tela do
-Shopee, quando você não tem a NF em mãos) **ou o nome do cliente** (pacote
-chegado pelos Correios muitas vezes só tem o nome escrito, sem NF nem
-pedido), clica em Buscar (ou aperta Enter). Por NF/pedido aparece direto a
-prévia editável; por nome aparece uma lista de até 5 candidatos (nome, NF,
-data, produtos comprados) pra escolher qual é — aí sim abre a prévia. A
-prévia é editável, linha por item, pra copiar (`Ctrl+V`) direto na planilha
-de controle de devoluções.
+Shopee, quando você não tem a NF em mãos), **o nome do cliente** ou **o CPF
+do cliente** (pacote chegado pelos Correios muitas vezes só tem o nome
+escrito, sem NF nem pedido — e, no caso de uma devolução via Correios, a
+etiqueta **DACE** mostra o **CPF do remetente**, um dado exato, sem a
+ambiguidade de homônimos que o nome tem), clica em Buscar (ou aperta Enter).
+Por NF/pedido aparece direto a prévia editável; por nome ou CPF aparece uma
+lista de até 5 candidatos (nome, NF, data, produtos comprados) pra escolher
+qual é — aí sim abre a prévia. A prévia é editável, linha por item, pra
+copiar (`Ctrl+V`) direto na planilha de controle de devoluções.
 
 - `lib/devolucao.ts` — busca no Tiny (só leitura, nunca escreve nada lá):
   `notas.fiscais.pesquisa.php?numero=X&tipoNota=S` acha a nota; se tiver mais
@@ -177,10 +179,18 @@ de controle de devoluções.
   "Nº do pedido" acima) pra pegar NF, cliente e itens de verdade. Teto de
   segurança em `MAX_PEDIDOS_ESCANEADOS_POR_NOME` pra nunca escanear o
   período inteiro numa busca que devia ser rápida.
-- `src/Devolucoes.tsx` decide sozinho se o que foi digitado é um nome (sem
-  nenhum dígito, ex.: "Maria Silva") ou NF/pedido (sempre tem dígito) —
-  `pareceNomeDeCliente`. Não tem um botão/modo separado pra isso, é só
-  olhar o que foi digitado.
+  `buscarCandidatosPorCpfCliente` usa exatamente o mesmo motor
+  (`buscarCandidatosPorPredicado`, compartilhado com a busca por nome), só
+  troca o comparador: em vez de casar texto normalizado, casa só os DÍGITOS
+  do CPF buscado contra os dígitos de cada campo (`algumCampoContemDigitos`)
+  — assim funciona tanto se o Tiny guarda o CPF formatado
+  ("037.779.470-83") quanto só os números, sem precisar adivinhar qual dos
+  dois.
+- `src/Devolucoes.tsx` decide sozinho o que foi digitado: CPF (11 dígitos,
+  com ou sem pontuação — `pareceCpf`), nome (sem nenhum dígito, ex.: "Maria
+  Silva" — `pareceNomeDeCliente`) ou NF/pedido (o resto). Checa CPF antes de
+  nome, já que CPF sempre tem dígito. Não tem um botão/modo separado pra
+  isso, é só olhar o que foi digitado.
 - `lib/produtoPlanilha.ts` + `lib/data/produtos.json` — nome do produto no
   formato curto da planilha (coluna PRODUTO). Primeiro tenta o mapa editável
   (`data/produtos.json`, código Tiny → nome exato — fica vazio de propósito,
@@ -188,7 +198,8 @@ de controle de devoluções.
   TIPO + LINHA + COR + VOLTAGEM a partir da descrição do Tiny (ex.: "Chaleira
   Modern Preta 127V" → "CHALEIRA MODERN PRETA 127V"). 110V e 127V caem no
   mesmo rótulo "127V", seguindo a regra pedida.
-- `server/routes/devolucao.ts` — `GET /api/devolucao/nf/:numero`. Responde
+- `server/routes/devolucao.ts` — `GET /api/devolucao/nf/:numero`,
+  `GET /api/devolucao/nome/:nome`, `GET /api/devolucao/cpf/:cpf`. Responde
   `{ erro: "..." }` (não `{ error }`, diferente do resto da API — por pedido
   explícito de quem for consumir isso) com 404 pra NF não encontrada, 429 pro
   limite de taxa do Tiny.
