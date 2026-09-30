@@ -7,6 +7,7 @@ import express from "express";
 import { separacaoRouter } from "./routes/separacao";
 import { relatoriosRouter } from "./routes/relatorios";
 import { devolucaoRouter } from "./routes/devolucao";
+import { estoqueRouter } from "./routes/estoque";
 import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,7 +17,7 @@ config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
 // Padrão do express.json() é 100kb — pequeno demais pra uma foto em base64 (rota de OCR de
-// devolução, POST /api/devolucao/ler-numero-serie).
+// devolução, POST /api/devolucao/ler-numero-serie, e pras fotos de contagem de estoque).
 app.use(express.json({ limit: "10mb" }));
 
 // Só precisa disso quando o front roda num domínio separado do backend (ex:
@@ -31,6 +32,7 @@ if (corsOrigin) {
 app.use("/api/separacao", separacaoRouter);
 app.use("/api/relatorios", relatoriosRouter);
 app.use("/api/devolucao", devolucaoRouter);
+app.use("/api/estoque", estoqueRouter);
 
 // Quando existe um build do Vite (dist/), o backend tambem serve o front — assim "npm start" sobe tudo.
 const staticDir = path.resolve(__dirname, "../dist");

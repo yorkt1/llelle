@@ -318,6 +318,53 @@ Pontos de atenção pra quem for usar em volume alto:
   Tiny representa isso — mesma ressalva de sempre). Confira o total contra o
   relatório de vendas do próprio Tiny antes de usar os números pra decisão.
 
+## Estoque
+
+Aba (`#estoque`): registro visual e manual do galpão, organizado pela
+estrutura física real — Rua (letra) > Posição/longarina (código, ex.: "A5").
+Substitui controle informal (mensagem, planilha solta) por um card por
+posição com foto, quantidade contada e quem contou.
+
+**100% manual de propósito nesta fase** — sem nenhuma lógica de visão
+computacional. O formulário mostra uma nota fixa avisando que uma etapa
+futura vai usar IA pra sugerir a contagem pela foto, sempre com confirmação
+humana antes de salvar — por enquanto é só a nota, nenhuma função real por
+trás.
+
+- `lib/estoque.ts` — modelo de dados: cada posição guarda um **histórico**
+  de contagens (nunca sobrescreve, só acrescenta — mais recente primeiro),
+  persistido via `lib/store.ts` (mesmo JSON em disco do resto do app). Foto
+  fica como arquivo separado em `<DATA_DIR>/estoque-fotos/`, não dentro do
+  JSON — só o nome do arquivo é guardado junto do registro. **Foto é
+  obrigatória em toda contagem, mesmo recontagem** — o ponto do sistema é um
+  registro visual auditável por evento, não um número solto ou uma foto
+  velha reaproveitada.
+- `lib/store.ts` ganhou `update()` — leitura+modificação+escrita atômica
+  (dentro da mesma fila do `set`/`get` já existentes), necessário porque
+  `set()` sozinho tem uma janela onde duas contagens em posições diferentes,
+  quase simultâneas, podiam se atropelar (uma sobrescrevendo o resultado da
+  outra, já que as duas partiam do mesmo estado lido antes).
+- `server/routes/estoque.ts` — `GET /api/estoque` (tudo agrupado por rua,
+  só a contagem mais recente de cada posição), `GET /api/estoque/:rua/:codigo/historico`
+  (histórico completo de uma posição), `POST /api/estoque/:rua/:codigo`
+  (registra uma contagem — cria a rua/posição na hora, se não existir
+  ainda), `GET /api/estoque/foto/:arquivo` (serve o arquivo da foto,
+  validando o nome contra path traversal).
+- `src/Estoque.tsx` — abas por rua (com "+ Nova rua", cria na hora — não
+  tem lista fixa de ruas/posições no código, já que isso é a organização
+  física real do galpão de cada um); grid de cards por posição, cada um
+  clicável abrindo um formulário: tirar/escolher foto (`capture="environment"`,
+  usa a câmera no celular), quantidade, quem contou. Foto é comprimida no
+  navegador antes de enviar (`comprimirFoto`, reduz pra até 1600px de lado
+  maior, JPEG) — foto de celular sai de 3-8MB, pesado demais pra mandar sem
+  isso. Atualiza a lista a cada 30s (mesmo padrão "quase tempo real" do
+  painel de separação).
+
+**Não implementado nesta fase** (fora do escopo pedido): nenhuma integração
+com o Tiny pra pré-preencher produtos esperados por posição — seria um
+facilitador puramente opcional, e a contagem continuaria sendo sempre manual
+mesmo com isso.
+
 ## Desenvolvimento
 
 ```bash

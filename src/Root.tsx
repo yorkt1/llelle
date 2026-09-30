@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { App } from "@/App";
 import { Devolucoes } from "@/Devolucoes";
+import { Estoque } from "@/Estoque";
 import { Relatorios } from "@/Relatorios";
 import { Suporte } from "@/Suporte";
 
-type View = "separacao" | "devolucoes" | "relatorios" | "suporte";
+type View = "separacao" | "devolucoes" | "estoque" | "relatorios" | "suporte";
 
 const VIEWS: { key: View; label: string; hash: string }[] = [
   { key: "separacao", label: "Painel", hash: "" },
   { key: "devolucoes", label: "Devoluções", hash: "devolucoes" },
+  { key: "estoque", label: "Estoque", hash: "estoque" },
   { key: "relatorios", label: "Relatórios", hash: "relatorios" },
   { key: "suporte", label: "Suporte", hash: "suporte" },
 ];
@@ -58,6 +60,7 @@ export function Root() {
     <>
       {view === "separacao" && <App />}
       {view === "devolucoes" && <Devolucoes />}
+      {view === "estoque" && <Estoque />}
       {view === "relatorios" && <Relatorios />}
       {view === "suporte" && <Suporte />}
       <NavCorner view={view} onChange={go} />

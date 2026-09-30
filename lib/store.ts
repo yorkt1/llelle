@@ -13,7 +13,7 @@ import path from "node:path";
  * .env.local depois que os imports de server/index.ts já rodaram (import é
  * hoisted), então um const de topo aqui sempre veria o valor padrão antes disso.
  */
-function dataDir(): string {
+export function dataDir(): string {
   return process.env.DATA_DIR ?? "./data";
 }
 function storeFile(): string {
@@ -63,6 +63,22 @@ export async function set(key: string, value: unknown): Promise<void> {
     const data = await readAll();
     data[key] = value;
     await writeAll(data);
+  });
+}
+
+/**
+ * Leitura+modificação+escrita atômica (dentro da mesma fila do `enqueue`) — diferente de fazer
+ * `get` seguido de `set` na mão, que tem uma janela onde duas chamadas concorrentes podem ler o
+ * mesmo estado antigo e uma sobrescrever o resultado da outra. Necessário pra estoque.ts, onde
+ * duas contagens em posições diferentes podem chegar quase juntas.
+ */
+export async function update<T>(key: string, updater: (atual: T | null) => T): Promise<T> {
+  return enqueue(async () => {
+    const data = await readAll();
+    const novo = updater((data[key] as T | undefined) ?? null);
+    data[key] = novo;
+    await writeAll(data);
+    return novo;
   });
 }
 
