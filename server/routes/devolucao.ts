@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { OlistConfigError } from "../../lib/olist";
-import { buscarDevolucaoPorNf, NfNaoEncontradaError, TinyLimiteTaxaError } from "../../lib/devolucao";
+import { buscarCandidatosPorNomeCliente, buscarDevolucaoPorNf, NfNaoEncontradaError, TinyLimiteTaxaError } from "../../lib/devolucao";
 import { salvarImportacaoShopee, type ShopeeImportacaoEntrada } from "../../lib/shopeeImportacao";
 import { GroqConfigError, lerNumeroSerieComGroq } from "../../lib/groqOcr";
 
@@ -26,6 +26,29 @@ devolucaoRouter.get("/nf/:numero", async (req, res) => {
       return;
     }
     const mensagem = error instanceof Error ? error.message : "Erro inesperado ao buscar a nota fiscal.";
+    res.status(500).json({ erro: mensagem });
+  }
+});
+
+/**
+ * Busca por NOME do cliente (pacote dos Correios só com o nome escrito, sem NF/pedido) — devolve
+ * até 5 candidatos pro atendente escolher, não uma prévia já pronta. Ver aviso sobre o parâmetro
+ * `cliente` não confirmado no topo de lib/devolucao.ts.
+ */
+devolucaoRouter.get("/nome/:nome", async (req, res) => {
+  try {
+    const resultado = await buscarCandidatosPorNomeCliente(String(req.params.nome));
+    res.status(200).json(resultado);
+  } catch (error) {
+    if (error instanceof TinyLimiteTaxaError) {
+      res.status(429).json({ erro: error.message });
+      return;
+    }
+    if (error instanceof OlistConfigError) {
+      res.status(503).json({ erro: error.message });
+      return;
+    }
+    const mensagem = error instanceof Error ? error.message : "Erro inesperado ao buscar pelo nome.";
     res.status(500).json({ erro: mensagem });
   }
 });

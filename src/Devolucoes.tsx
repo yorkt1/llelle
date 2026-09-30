@@ -37,6 +37,13 @@ interface DevolucaoPreview {
   shopee?: DevolucaoShopee;
 }
 
+interface CandidatoDevolucao {
+  nf: string;
+  cliente: string;
+  dataEmissao: string;
+  produtos: string[];
+}
+
 interface LinhaEditavel {
   dataPedidoSac: string;
   ocorrencia: string;
@@ -260,6 +267,12 @@ function extrairErro(json: unknown, fallback: string): string {
   return fallback;
 }
 
+// NF é só número, "Nº do pedido" do Shopee é número+letra — nome de cliente não tem dígito.
+// Pacote chegado pelos Correios muitas vezes só tem o nome escrito, sem NF nem nº de pedido.
+function pareceNomeDeCliente(valor: string): boolean {
+  return valor.trim() !== "" && !/\d/.test(valor);
+}
+
 function linhaParaCopia(preview: DevolucaoPreview, linha: LinhaEditavel): string {
   return [
     linha.dataPedidoSac, // A
@@ -291,6 +304,8 @@ export function Devolucoes() {
   const [linhas, setLinhas] = useState<LinhaEditavel[]>([]);
   const [avisoCopia, setAvisoCopia] = useState<string | null>(null);
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(() => lerBuscasRecentes());
+  const [candidatos, setCandidatos] = useState<CandidatoDevolucao[] | null>(null);
+  const [podeTerMaisCandidatos, setPodeTerMaisCandidatos] = useState(false);
   const tabelaRef = useRef<HTMLTableElement>(null);
 
   // Enter pula pro próximo campo da tabela (input ou select), igual planilha — evita ter que
@@ -310,17 +325,48 @@ export function Devolucoes() {
     if (proximo instanceof HTMLInputElement) proximo.select();
   }, []);
 
+  const buscarPorNomeCliente = useCallback(async (nome: string) => {
+    setBuscando(true);
+    setErro(null);
+    setAvisoCopia(null);
+    setPreview(null);
+    setLinhas([]);
+    setCandidatos(null);
+
+    try {
+      const response = await fetch(`${API_URL}/api/devolucao/nome/${encodeURIComponent(nome)}`, { cache: "no-store" });
+      const json = await response.json();
+      if (!response.ok) throw new Error(extrairErro(json, "Não consegui buscar por esse nome."));
+
+      setCandidatos(json.candidatos ?? []);
+      setPodeTerMaisCandidatos(Boolean(json.podeTerMais));
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não consegui buscar por esse nome.");
+    } finally {
+      setBuscando(false);
+    }
+  }, []);
+
   const buscar = useCallback(
     async (event?: FormEvent, numeroForcado?: string) => {
       event?.preventDefault();
       const valor = (numeroForcado ?? numero).trim();
       if (!valor) return;
 
+      // Pacote dos Correios muitas vezes só tem o NOME do cliente, sem NF nem nº de pedido —
+      // nesse caso a busca não devolve uma prévia já pronta, devolve candidatos pra escolher.
+      if (!numeroForcado && pareceNomeDeCliente(valor)) {
+        setNumero(valor);
+        await buscarPorNomeCliente(valor);
+        return;
+      }
+
       setBuscando(true);
       setErro(null);
       setAvisoCopia(null);
       setPreview(null);
       setLinhas([]);
+      setCandidatos(null);
       setNumero(valor);
 
       try {
@@ -354,7 +400,7 @@ export function Devolucoes() {
         setBuscando(false);
       }
     },
-    [numero],
+    [numero, buscarPorNomeCliente],
   );
 
   const atualizarLinha = useCallback((index: number, campo: keyof LinhaEditavel, valor: string) => {
@@ -446,12 +492,12 @@ export function Devolucoes() {
 
       <form className="busca-linha" onSubmit={buscar}>
         <label className="field">
-          <span className="field-label">Nº da NF ou Nº do pedido</span>
+          <span className="field-label">Nº da NF, nº do pedido ou nome do cliente</span>
           <input
             className="field-input"
             value={numero}
             onChange={(event) => setNumero(event.target.value)}
-            placeholder="Ex: 338894 (NF) ou 260913UJGQT69B (nº do pedido)"
+            placeholder="Ex: 338894 (NF), 260913UJGQT69B (pedido) ou Maria Silva (nome, se só tiver isso no pacote)"
             autoFocus
           />
         </label>
@@ -472,6 +518,29 @@ export function Devolucoes() {
               {busca.numero}
             </button>
           ))}
+        </div>
+      )}
+
+      {candidatos && (
+        <div className="candidatos-lista">
+          {candidatos.length === 0 ? (
+            <p className="nota-info">Nenhum resultado encontrado com esse nome. Confere a grafia ou tenta só o primeiro nome.</p>
+          ) : (
+            <>
+              <p className="nota-info">
+                {candidatos.length} resultado(s) encontrado(s){podeTerMaisCandidatos ? " (mostrando os 5 mais recentes — refine o nome se não for nenhum desses)" : ""}:
+              </p>
+              {candidatos.map((candidato) => (
+                <button key={candidato.nf} className="candidato-item" onClick={() => void buscar(undefined, candidato.nf)}>
+                  <span className="candidato-cliente">{candidato.cliente}</span>
+                  <span className="candidato-meta">
+                    NF {candidato.nf} · {candidato.dataEmissao}
+                  </span>
+                  {candidato.produtos.length > 0 && <span className="candidato-produtos">{candidato.produtos.join(", ")}</span>}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
 

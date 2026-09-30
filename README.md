@@ -136,10 +136,14 @@ sincronizar sozinho assim que o processo sobe de novo, nas duas opções.
 ## Devoluções
 
 Segunda aba (`#devolucoes`) pro setor de devolução: digita o **número da nota
-fiscal de venda OU o "Nº do pedido"** (o número que aparece na tela do
-Shopee, quando você não tem a NF em mãos), clica em Buscar (ou aperta Enter)
-e aparece uma prévia editável, linha por item, pra copiar (`Ctrl+V`) direto
-na planilha de controle de devoluções.
+fiscal de venda, o "Nº do pedido"** (o número que aparece na tela do
+Shopee, quando você não tem a NF em mãos) **ou o nome do cliente** (pacote
+chegado pelos Correios muitas vezes só tem o nome escrito, sem NF nem
+pedido), clica em Buscar (ou aperta Enter). Por NF/pedido aparece direto a
+prévia editável; por nome aparece uma lista de até 5 candidatos (nome, NF,
+data, produtos comprados) pra escolher qual é — aí sim abre a prévia. A
+prévia é editável, linha por item, pra copiar (`Ctrl+V`) direto na planilha
+de controle de devoluções.
 
 - `lib/devolucao.ts` — busca no Tiny (só leitura, nunca escreve nada lá):
   `notas.fiscais.pesquisa.php?numero=X&tipoNota=S` acha a nota; se tiver mais
@@ -154,6 +158,17 @@ na planilha de controle de devoluções.
   `pedido.obter.php?id=Z` e lê `pedido.ecommerce.nomeEcommerce`; sem isso,
   cai pro `intermediador.nome` da própria nota. `codigo_erro: 6` do Tiny
   (limite de taxa) vira uma mensagem clara em vez de erro genérico.
+  `buscarCandidatosPorNomeCliente` busca por
+  `notas.fiscais.pesquisa.php?cliente=X&tipoNota=S`, devolve só os 5 mais
+  recentes (busca o detalhe — inclusive itens — de cada um, então limitar
+  evita inflar em chamadas ao Tiny pra um nome comum). **O parâmetro
+  `cliente` não foi confirmado contra a documentação ao vivo do Tiny**
+  (mesma limitação de rede de sempre) — teste com um nome real antes de
+  confiar em produção.
+- `src/Devolucoes.tsx` decide sozinho se o que foi digitado é um nome (sem
+  nenhum dígito, ex.: "Maria Silva") ou NF/pedido (sempre tem dígito) —
+  `pareceNomeDeCliente`. Não tem um botão/modo separado pra isso, é só
+  olhar o que foi digitado.
 - `lib/produtoPlanilha.ts` + `lib/data/produtos.json` — nome do produto no
   formato curto da planilha (coluna PRODUTO). Primeiro tenta o mapa editável
   (`data/produtos.json`, código Tiny → nome exato — fica vazio de propósito,

@@ -31,6 +31,17 @@ import { buscarImportacaoShopee, mapearMotivoParaOcorrencia } from "./shopeeImpo
  * teste com uma NF real antes de confiar em produção. Se o Tiny exigir POST
  * pra esses dois endpoints especificamente, é só trocar o `fetch` dentro de
  * tinyGet (lib/tinyClient.ts) pra incluir `{ method: "POST" }`.
+ *
+ * `buscarCandidatosPorNomeCliente`: pacote chegado pelos Correios costuma só
+ * ter o NOME do cliente escrito, sem NF nem nº de pedido — essa função busca
+ * `notas.fiscais.pesquisa.php?cliente=X&tipoNota=S` e devolve até 5
+ * candidatos (nome, NF, data, produtos) pro atendente escolher qual é.
+ * **O parâmetro `cliente` não foi confirmado contra a documentação ao vivo
+ * do Tiny** (mesma limitação de rede de sempre) — é o nome mais comum pra
+ * "filtrar por nome do cliente" nessa família de endpoints, mas teste com um
+ * nome real antes de confiar em produção; se o Tiny não aceitar esse
+ * parâmetro, a busca vai devolver "nenhum resultado" mesmo com clientes
+ * reais cadastrados.
  */
 
 const SEM_REGISTROS_ERROR_CODE = 32;
@@ -334,4 +345,61 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
         }
       : undefined,
   };
+}
+
+const MAX_CANDIDATOS_POR_NOME = 5;
+
+export type CandidatoDevolucao = {
+  nf: string;
+  cliente: string;
+  dataEmissao: string;
+  /** Nomes curtos (coluna PRODUTO da planilha) dos itens da nota — ajuda a reconhecer o pacote sem abrir nada. */
+  produtos: string[];
+};
+
+/**
+ * Busca por NOME do cliente em vez de NF/pedido — ver doc do topo do arquivo pra o porquê e pro
+ * aviso de que o parâmetro `cliente` não foi confirmado contra a documentação ao vivo do Tiny.
+ * Devolve só os `MAX_CANDIDATOS_POR_NOME` mais recentes (busca o detalhe de cada um, incluindo os
+ * itens, então limitar isso também evita inflar em chamadas ao Tiny pra um nome muito comum).
+ */
+export async function buscarCandidatosPorNomeCliente(
+  nomeBruto: string,
+): Promise<{ candidatos: CandidatoDevolucao[]; podeTerMais: boolean }> {
+  const nome = nomeBruto.trim();
+  if (!nome) throw new Error("Informe o nome do cliente.");
+
+  const json = await tinyGet<NotasFiscaisPesquisaResponse>("notas.fiscais.pesquisa.php", { cliente: nome, tipoNota: "S" });
+  const { retorno } = json;
+  if (retorno.status !== "OK") {
+    if (retorno.codigo_erro === SEM_REGISTROS_ERROR_CODE) {
+      return { candidatos: [], podeTerMais: false };
+    }
+    throw falhaTiny("Tiny recusou a busca por nome", retorno);
+  }
+
+  const encontradas = (retorno.notas_fiscais ?? []).map((registro) => registro.nota_fiscal);
+  const maisRecentesPrimeiro = [...encontradas].sort(
+    (a, b) => paraDataOrdenavel(b.data_emissao) - paraDataOrdenavel(a.data_emissao),
+  );
+  const top = maisRecentesPrimeiro.slice(0, MAX_CANDIDATOS_POR_NOME);
+
+  const candidatos = await Promise.all(
+    top.map(async (resumo): Promise<CandidatoDevolucao> => {
+      const detalhe = await obterNotaFiscal(resumo.id);
+      const produtos = (detalhe.itens ?? [])
+        .map((registro) => registro.item)
+        .filter((item): item is NonNullable<typeof item> => item != null)
+        .map((item) => nomeProdutoPlanilha(item.codigo ?? "", item.descricao ?? ""));
+
+      return {
+        nf: detalhe.numero,
+        cliente: formatarNomeTitulo(detalhe.cliente?.nome ?? ""),
+        dataEmissao: detalhe.data_emissao ?? resumo.data_emissao,
+        produtos,
+      };
+    }),
+  );
+
+  return { candidatos, podeTerMais: encontradas.length > MAX_CANDIDATOS_POR_NOME };
 }

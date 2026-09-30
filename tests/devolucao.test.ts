@@ -282,3 +282,110 @@ describe("buscarDevolucaoPorNf", () => {
     expect(preview.shopee).toBeUndefined();
   });
 });
+
+describe("buscarCandidatosPorNomeCliente", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("busca com o parâmetro cliente, devolve candidatos com nome/NF/data/produtos, mais recente primeiro", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      switch (endpointDe(input)) {
+        case "notas.fiscais.pesquisa.php":
+          expect(url.searchParams.get("cliente")).toBe("Maria");
+          expect(url.searchParams.get("tipoNota")).toBe("S");
+          return jsonResponse({
+            retorno: {
+              status: "OK",
+              notas_fiscais: [
+                { nota_fiscal: { id: "1", numero: "100", data_emissao: "01/01/2026" } },
+                { nota_fiscal: { id: "2", numero: "200", data_emissao: "15/09/2026" } },
+              ],
+            },
+          });
+        case "nota.fiscal.obter.php": {
+          const id = url.searchParams.get("id");
+          if (id === "1") {
+            return jsonResponse({
+              retorno: {
+                status: "OK",
+                nota_fiscal: {
+                  numero: "100",
+                  data_emissao: "01/01/2026",
+                  cliente: { nome: "MARIA DA SILVA" },
+                  itens: [{ item: { codigo: "LLECP-110", descricao: "Chaleira Modern Preta 127V", quantidade: "1" } }],
+                },
+              },
+            });
+          }
+          return jsonResponse({
+            retorno: {
+              status: "OK",
+              nota_fiscal: { numero: "200", data_emissao: "15/09/2026", cliente: { nome: "MARIA OLIVEIRA" }, itens: [] },
+            },
+          });
+        }
+        default:
+          throw new Error(`endpoint inesperado: ${String(input)}`);
+      }
+    });
+
+    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
+    const resultado = await buscarCandidatosPorNomeCliente("Maria");
+
+    expect(resultado.podeTerMais).toBe(false);
+    expect(resultado.candidatos).toHaveLength(2);
+    // Mais recente (15/09/2026) primeiro, mesmo tendo vindo em segundo na resposta da pesquisa.
+    expect(resultado.candidatos[0]).toMatchObject({ nf: "200", cliente: "Maria Oliveira", dataEmissao: "15/09/2026" });
+    expect(resultado.candidatos[1]).toMatchObject({
+      nf: "100",
+      cliente: "Maria Da Silva",
+      produtos: ["CHALEIRA MODERN PRETA 127V"],
+    });
+  });
+
+  it("nenhum resultado (codigo_erro 32) devolve lista vazia, não lança erro", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ retorno: { status: "Erro", codigo_erro: 32 } }));
+
+    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
+    const resultado = await buscarCandidatosPorNomeCliente("NomeQueNaoExiste");
+
+    expect(resultado).toEqual({ candidatos: [], podeTerMais: false });
+  });
+
+  it("mais de 5 encontrados: devolve só os 5 mais recentes e avisa que pode ter mais", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) => {
+      if (endpointDe(input) === "notas.fiscais.pesquisa.php") {
+        const notas = Array.from({ length: 7 }, (_, i) => ({
+          nota_fiscal: { id: String(i + 1), numero: String(100 + i), data_emissao: `0${(i % 9) + 1}/01/2026` },
+        }));
+        return jsonResponse({ retorno: { status: "OK", notas_fiscais: notas } });
+      }
+      const id = new URL(String(input)).searchParams.get("id");
+      return jsonResponse({
+        retorno: { status: "OK", nota_fiscal: { numero: id, data_emissao: "01/01/2026", cliente: { nome: "Fulano" }, itens: [] } },
+      });
+    });
+
+    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
+    const resultado = await buscarCandidatosPorNomeCliente("Fulano");
+
+    expect(resultado.candidatos).toHaveLength(5);
+    expect(resultado.podeTerMais).toBe(true);
+  });
+
+  it("nome vazio lança erro sem chamar o Tiny", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
+
+    await expect(buscarCandidatosPorNomeCliente("   ")).rejects.toThrow(/informe o nome/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
