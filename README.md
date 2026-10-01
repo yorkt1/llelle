@@ -140,57 +140,36 @@ sincronizar sozinho assim que o processo sobe de novo, nas duas opções.
 ## Devoluções
 
 Segunda aba (`#devolucoes`) pro setor de devolução: digita o **número da nota
-fiscal de venda, o "Nº do pedido"** (o número que aparece na tela do
-Shopee, quando você não tem a NF em mãos), **o nome do cliente** ou **o CPF
-do cliente** (pacote chegado pelos Correios muitas vezes só tem o nome
-escrito, sem NF nem pedido — e, no caso de uma devolução via Correios, a
-etiqueta **DACE** mostra o **CPF do remetente**, um dado exato, sem a
-ambiguidade de homônimos que o nome tem), clica em Buscar (ou aperta Enter).
-Por NF/pedido aparece direto a prévia editável; por nome ou CPF aparece uma
-lista de até 5 candidatos (nome, NF, data, produtos comprados) pra escolher
-qual é — aí sim abre a prévia. A prévia é editável, linha por item, pra
-copiar (`Ctrl+V`) direto na planilha de controle de devoluções.
+fiscal de venda** ou o **"Nº do pedido"**/**"Venda #"** (o número que aparece
+na tela do Shopee ou do Mercado Livre, quando você não tem a NF em mãos),
+clica em Buscar (ou aperta Enter), e aparece a prévia editável, linha por
+item, pra copiar (`Ctrl+V`) direto na planilha de controle de devoluções.
+
+> **Busca por nome/CPF do cliente foi tentada e abandonada.** Pacote de
+> devolução dos Correios costuma só ter o nome (ou, na etiqueta DACE, o CPF)
+> do cliente escrito — mas a API pública do Tiny não expõe um filtro de
+> busca por cliente indexado (duas tentativas com um parâmetro `cliente` em
+> `notas.fiscais.pesquisa.php` deram erro real em produção; varrer
+> `pedidos.pesquisa.php` por data e comparar campo por campo no próprio
+> código também não se mostrou confiável — ou achava rápido demais pra não
+> ficar lento, ou simplesmente não achava). Só a tela do Tiny consegue isso,
+> porque consulta o banco interno deles direto. Sem um filtro de servidor
+> confirmado, essa busca ficou de fora por ora.
 
 - `lib/devolucao.ts` — busca no Tiny (só leitura, nunca escreve nada lá):
   `notas.fiscais.pesquisa.php?numero=X&tipoNota=S` acha a nota; se tiver mais
   de uma com o mesmo número (séries diferentes), usa a de emissão mais
   recente e devolve o resto em `outras`. Se não achar nenhuma NF com esse
-  número, tenta como **"Nº do pedido"** do Shopee (`numero_ecommerce`):
+  número, tenta como **"Nº do pedido"** (Shopee) ou **"Venda #"** (Mercado
+  Livre) — ambos guardados por Tiny no mesmo campo `numero_ecommerce`:
   `pedidos.pesquisa.php?numeroEcommerce=X` → `pedido.obter.php?id=Y` → lê
   `id_nota_fiscal` e segue o fluxo normal a partir daí — assim quem está na
-  tela de devolução do Shopee (só tem o "Nº do pedido" à mão) não precisa ir
-  no Tiny achar a NF antes de buscar aqui. `nota.fiscal.obter.php?id=Y` traz
-  cliente e itens. Pro marketplace: se a nota tiver `id_venda`,
+  tela de devolução do Shopee/ML (só tem o "Nº do pedido"/"Venda #" à mão)
+  não precisa ir no Tiny achar a NF antes de buscar aqui. `nota.fiscal.obter.php?id=Y`
+  traz cliente e itens. Pro marketplace: se a nota tiver `id_venda`,
   `pedido.obter.php?id=Z` e lê `pedido.ecommerce.nomeEcommerce`; sem isso,
   cai pro `intermediador.nome` da própria nota. `codigo_erro: 6` do Tiny
   (limite de taxa) vira uma mensagem clara em vez de erro genérico.
-  `buscarCandidatosPorNomeCliente`: duas tentativas anteriores usaram um
-  parâmetro `cliente` em `notas.fiscais.pesquisa.php` pra filtrar por nome
-  no servidor — deram dois erros reais em produção (indício de que esse
-  parâmetro não existe nesse endpoint). Versão atual só usa peças já
-  confirmadas: varre `pedidos.pesquisa.php?dataInicial=...&dataFinal=...&pagina=N`
-  (mesmo endpoint+parâmetros de `lib/relatorioVendas.ts`) na janela dos
-  últimos 14 dias (`JANELA_BUSCA_POR_NOME_DIAS` — curta de propósito, porque
-  sem filtro no servidor a busca varre pedido por pedido, e o volume real
-  desse negócio é alto), casa o nome contra QUALQUER campo de texto de cada
-  pedido (não precisa adivinhar se a chave se chama `nome`, `cliente` etc.),
-  e resolve os até 5 mais recentes que bateram via `pedido.obter.php` →
-  `id_nota_fiscal` → `nota.fiscal.obter.php` (mesma cadeia do fallback de
-  "Nº do pedido" acima) pra pegar NF, cliente e itens de verdade. Teto de
-  segurança em `MAX_PEDIDOS_ESCANEADOS_POR_NOME` pra nunca escanear o
-  período inteiro numa busca que devia ser rápida.
-  `buscarCandidatosPorCpfCliente` usa exatamente o mesmo motor
-  (`buscarCandidatosPorPredicado`, compartilhado com a busca por nome), só
-  troca o comparador: em vez de casar texto normalizado, casa só os DÍGITOS
-  do CPF buscado contra os dígitos de cada campo (`algumCampoContemDigitos`)
-  — assim funciona tanto se o Tiny guarda o CPF formatado
-  ("037.779.470-83") quanto só os números, sem precisar adivinhar qual dos
-  dois.
-- `src/Devolucoes.tsx` decide sozinho o que foi digitado: CPF (11 dígitos,
-  com ou sem pontuação — `pareceCpf`), nome (sem nenhum dígito, ex.: "Maria
-  Silva" — `pareceNomeDeCliente`) ou NF/pedido (o resto). Checa CPF antes de
-  nome, já que CPF sempre tem dígito. Não tem um botão/modo separado pra
-  isso, é só olhar o que foi digitado.
 - `lib/produtoPlanilha.ts` + `lib/data/produtos.json` — nome do produto no
   formato curto da planilha (coluna PRODUTO). Primeiro tenta o mapa editável
   (`data/produtos.json`, código Tiny → nome exato — fica vazio de propósito,
@@ -198,8 +177,7 @@ copiar (`Ctrl+V`) direto na planilha de controle de devoluções.
   TIPO + LINHA + COR + VOLTAGEM a partir da descrição do Tiny (ex.: "Chaleira
   Modern Preta 127V" → "CHALEIRA MODERN PRETA 127V"). 110V e 127V caem no
   mesmo rótulo "127V", seguindo a regra pedida.
-- `server/routes/devolucao.ts` — `GET /api/devolucao/nf/:numero`,
-  `GET /api/devolucao/nome/:nome`, `GET /api/devolucao/cpf/:cpf`. Responde
+- `server/routes/devolucao.ts` — `GET /api/devolucao/nf/:numero`. Responde
   `{ erro: "..." }` (não `{ error }`, diferente do resto da API — por pedido
   explícito de quem for consumir isso) com 404 pra NF não encontrada, 429 pro
   limite de taxa do Tiny.
@@ -310,6 +288,51 @@ montar rótulo+valor, então tem uma chance razoável de funcionar direto. A
 tela de **lista** (`/returnrefundcancel`) ainda não tem o seletor de cada
 "card" de solicitação confirmado — segue marcado como `TODO` no arquivo. Pra
 achar: abra essa tela, botão direito num card > Inspecionar.
+
+### Importação do Mercado Livre (Tampermonkey)
+
+Mesma ideia da importação do Shopee acima, só que pra devoluções do Mercado
+Livre: `tampermonkey/devolucao-mercadolivre.user.js` roda na tela de
+**detalhe de venda** do ML ("Pós-venda" > "Detalhe da venda" — a mesma tela
+que mostra "Venda #", o status "Devolvido" e os dados do comprador), raspa o
+que dá, e manda pro backend via `POST /api/devolucao/mercadolivre` — casado
+pelo mesmo **"Nº do pedido"** (`numero_ecommerce`) usado pro Shopee, só que
+aqui é o número que aparece em "Venda #2000018413435016" na tela do ML.
+
+- `lib/mercadoLivreImportacao.ts` — mesmo padrão do `shopeeImportacao.ts`
+  (`Map` em memória, expira em 7 dias, faz merge). `mapearMotivoParaOcorrenciaML`
+  reconhece só 1 frase **confirmada numa tela real** por enquanto: "O
+  comprador disse que não é da cor, tamanho ou modelo escolhido" → ERRO
+  OPERACIONAL (equivalente ao "Recebi um produto errado" do Shopee). Qualquer
+  outro "Problema da venda" não reconhecido devolve `null` — o atendente
+  escolhe a ocorrência na mão, nunca adivinha sem evidência real.
+- `POST /api/devolucao/mercadolivre` (`server/routes/devolucao.ts`) — mesmo
+  esquema de segurança do `/shopee`: token próprio
+  (`MERCADOLIVRE_IMPORT_TOKEN`, separado do `SHOPEE_IMPORT_TOKEN` e do
+  `OLIST_API_TOKEN`, ver `.env.example`).
+- Quando o atendente busca uma NF/pedido/venda em `GET /api/devolucao/nf/:numero`,
+  se já existir uma importação do ML pro mesmo "Nº do pedido", ela vem junto
+  no campo `mercadoLivre` da resposta — e `src/Devolucoes.tsx` usa isso pra
+  pré-preencher OCORRÊNCIA (quando reconhecida) + OBSERVAÇÕES e DATA
+  RECEBIMENTO (data do evento "Entregamos o pacote" da linha do tempo de
+  rastreio). Mostra também, só como informação, o nome/CPF do comprador e a
+  cor/SKU do item (pra conferir contra o PRODUTO/CLIENTE que vêm do Tiny).
+
+**Confirmado contra uma tela real** (texto colado pelo usuário, não só
+documentação): "Venda #NÚMERO", o nome do comprador na linha logo antes de
+"USUARIO \| CPF NÚMERO", "Problema da venda:TEXTO" (sem espaço depois dos
+dois-pontos nessa tela, diferente do Shopee), "Cor: X \| SKU Y", e o evento
+"DIA MÊS. HH:MM \| Entregamos o pacote." na linha do tempo de rastreio — esse
+último só tem dia/mês na tela (sem ano), então o script assume o ano corrente
+no momento em que roda.
+
+**Não confirmado ainda**: a URL exata da tela de detalhe de venda (o texto
+colado não trouxe `location.href`) — por isso o `@match` do script é amplo
+(qualquer página do domínio do Mercado Livre) e ele só age ao reconhecer os
+marcadores de texto da tela ("Venda #", "Problema da venda") em vez de
+confiar na URL. Também não há (ainda) um evento confirmado de "data da
+solicitação da devolução" equivalente ao do Shopee — por isso DATA PEDIDO SAC
+continua caindo no padrão (hoje) pra devoluções do ML.
 
 ## Relatórios
 

@@ -25,6 +25,16 @@ interface DevolucaoShopee {
   dataRecebimento?: string; // ISO yyyy-mm-dd
 }
 
+interface DevolucaoMercadoLivre {
+  motivoDevolucao?: string;
+  ocorrenciaSugerida: string | null;
+  clienteML?: string;
+  cpfML?: string;
+  corML?: string;
+  skuML?: string;
+  dataRecebimento?: string; // ISO yyyy-mm-dd
+}
+
 interface DevolucaoPreview {
   nf: string;
   dataEmissao: string;
@@ -35,13 +45,7 @@ interface DevolucaoPreview {
   itens: ItemDevolucao[];
   outras?: OutraNotaFiscal[];
   shopee?: DevolucaoShopee;
-}
-
-interface CandidatoDevolucao {
-  nf: string;
-  cliente: string;
-  dataEmissao: string;
-  produtos: string[];
+  mercadoLivre?: DevolucaoMercadoLivre;
 }
 
 interface LinhaEditavel {
@@ -267,19 +271,6 @@ function extrairErro(json: unknown, fallback: string): string {
   return fallback;
 }
 
-// NF é só número, "Nº do pedido" do Shopee é número+letra — nome de cliente não tem dígito.
-// Pacote chegado pelos Correios muitas vezes só tem o nome escrito, sem NF nem nº de pedido.
-function pareceNomeDeCliente(valor: string): boolean {
-  return valor.trim() !== "" && !/\d/.test(valor);
-}
-
-// CPF tem exatamente 11 dígitos (com ou sem pontuação: "037.779.470-83" ou "03777947083") — a
-// etiqueta DACE de devolução dos Correios mostra o CPF do remetente, uma alternativa mais exata
-// que o nome quando o pacote só tem isso escrito.
-function pareceCpf(valor: string): boolean {
-  return valor.replace(/\D/g, "").length === 11;
-}
-
 function linhaParaCopia(preview: DevolucaoPreview, linha: LinhaEditavel): string {
   return [
     linha.dataPedidoSac, // A
@@ -311,9 +302,6 @@ export function Devolucoes() {
   const [linhas, setLinhas] = useState<LinhaEditavel[]>([]);
   const [avisoCopia, setAvisoCopia] = useState<string | null>(null);
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(() => lerBuscasRecentes());
-  const [candidatos, setCandidatos] = useState<CandidatoDevolucao[] | null>(null);
-  const [podeTerMaisCandidatos, setPodeTerMaisCandidatos] = useState(false);
-  const [buscaCandidatosPor, setBuscaCandidatosPor] = useState<"nome" | "cpf">("nome");
   const tabelaRef = useRef<HTMLTableElement>(null);
 
   // Enter pula pro próximo campo da tabela (input ou select), igual planilha — evita ter que
@@ -333,59 +321,17 @@ export function Devolucoes() {
     if (proximo instanceof HTMLInputElement) proximo.select();
   }, []);
 
-  const buscarCandidatos = useCallback(async (tipo: "nome" | "cpf", valorBusca: string) => {
-    setBuscando(true);
-    setErro(null);
-    setAvisoCopia(null);
-    setPreview(null);
-    setLinhas([]);
-    setCandidatos(null);
-    setBuscaCandidatosPor(tipo);
-
-    try {
-      const response = await fetch(`${API_URL}/api/devolucao/${tipo}/${encodeURIComponent(valorBusca)}`, { cache: "no-store" });
-      const json = await response.json();
-      const mensagemPadrao = tipo === "cpf" ? "Não consegui buscar por esse CPF." : "Não consegui buscar por esse nome.";
-      if (!response.ok) throw new Error(extrairErro(json, mensagemPadrao));
-
-      setCandidatos(json.candidatos ?? []);
-      setPodeTerMaisCandidatos(Boolean(json.podeTerMais));
-    } catch (error) {
-      const mensagemPadrao = tipo === "cpf" ? "Não consegui buscar por esse CPF." : "Não consegui buscar por esse nome.";
-      setErro(error instanceof Error ? error.message : mensagemPadrao);
-    } finally {
-      setBuscando(false);
-    }
-  }, []);
-
   const buscar = useCallback(
     async (event?: FormEvent, numeroForcado?: string) => {
       event?.preventDefault();
       const valor = (numeroForcado ?? numero).trim();
       if (!valor) return;
 
-      // Pacote dos Correios muitas vezes só tem o NOME do cliente (sem NF nem nº de pedido) ou,
-      // na etiqueta DACE de devolução, o CPF do remetente — em ambos os casos a busca não devolve
-      // uma prévia já pronta, devolve candidatos pra escolher. CPF antes de nome porque um CPF só
-      // com dígitos também passaria pela checagem de "nome" (que só exige ausência de dígito) se
-      // invertido — aqui é o contrário, CPF é só dígito, então checa CPF primeiro.
-      if (!numeroForcado && pareceCpf(valor)) {
-        setNumero(valor);
-        await buscarCandidatos("cpf", valor);
-        return;
-      }
-      if (!numeroForcado && pareceNomeDeCliente(valor)) {
-        setNumero(valor);
-        await buscarCandidatos("nome", valor);
-        return;
-      }
-
       setBuscando(true);
       setErro(null);
       setAvisoCopia(null);
       setPreview(null);
       setLinhas([]);
-      setCandidatos(null);
       setNumero(valor);
 
       try {
@@ -395,7 +341,9 @@ export function Devolucoes() {
 
         const dados = json as DevolucaoPreview;
         const shopee = dados.shopee;
-        const ocorrenciaInicial = shopee?.ocorrenciaSugerida ?? "";
+        const mercadoLivre = dados.mercadoLivre;
+        const ocorrenciaInicial = shopee?.ocorrenciaSugerida ?? mercadoLivre?.ocorrenciaSugerida ?? "";
+        const dataRecebimentoIso = shopee?.dataRecebimento ?? mercadoLivre?.dataRecebimento;
         setPreview(dados);
         setLinhas(
           dados.itens.map((item) => ({
@@ -404,7 +352,7 @@ export function Devolucoes() {
             observacoes: ocorrenciaInicial ? (OBSERVACAO_PADRAO[ocorrenciaInicial] ?? "") : "",
             produto: item.produtoPlanilha,
             quantidade: item.quantidade,
-            dataRecebimento: shopee?.dataRecebimento ? isoParaBr(shopee.dataRecebimento) : "",
+            dataRecebimento: dataRecebimentoIso ? isoParaBr(dataRecebimentoIso) : "",
             defeito: shopee?.descricaoCliente ?? "",
             codigoFabricante: "",
             lendoImagemCodigo: false,
@@ -419,7 +367,7 @@ export function Devolucoes() {
         setBuscando(false);
       }
     },
-    [numero, buscarCandidatos],
+    [numero],
   );
 
   const atualizarLinha = useCallback((index: number, campo: keyof LinhaEditavel, valor: string) => {
@@ -511,17 +459,17 @@ export function Devolucoes() {
 
       <form className="busca-linha" onSubmit={buscar}>
         <label className="field">
-          <span className="field-label">Nº da NF, nº do pedido, nome ou CPF do cliente</span>
+          <span className="field-label">Nº da NF ou nº do pedido</span>
           <input
             className="field-input"
             value={numero}
             onChange={(event) => setNumero(event.target.value)}
-            placeholder="Ex: 338894 (NF), 260913UJGQT69B (pedido), Maria Silva (nome) ou 037.779.470-83 (CPF do remetente na etiqueta DACE)"
+            placeholder="Ex: 338894 (NF) ou 260913UJGQT69B (pedido)"
             autoFocus
           />
         </label>
         <button className="refresh-btn" type="submit" disabled={buscando || !numero.trim()}>
-          {buscando ? (pareceNomeDeCliente(numero) || pareceCpf(numero) ? "Buscando (pode levar alguns segundos)..." : "Buscando...") : "Buscar"}
+          {buscando ? "Buscando..." : "Buscar"}
         </button>
       </form>
 
@@ -537,38 +485,6 @@ export function Devolucoes() {
               {busca.numero}
             </button>
           ))}
-        </div>
-      )}
-
-      {candidatos && (
-        <div className="candidatos-lista">
-          {candidatos.length === 0 ? (
-            <p className="nota-info">
-              Nenhum resultado encontrado com {buscaCandidatosPor === "cpf" ? "esse CPF" : "esse nome"} nos últimos 14 dias.{" "}
-              {buscaCandidatosPor === "cpf"
-                ? "Confere os dígitos, ou a venda pode ser mais antiga que isso."
-                : "Confere a grafia, tenta só o primeiro nome, ou a venda pode ser mais antiga que isso."}
-            </p>
-          ) : (
-            <>
-              <p className="nota-info">
-                {candidatos.length} resultado(s) encontrado(s) nos últimos 14 dias
-                {podeTerMaisCandidatos
-                  ? ` (mostrando os 5 mais recentes — refine ${buscaCandidatosPor === "cpf" ? "o CPF" : "o nome"} se não for nenhum desses)`
-                  : ""}
-                :
-              </p>
-              {candidatos.map((candidato) => (
-                <button key={candidato.nf} className="candidato-item" onClick={() => void buscar(undefined, candidato.nf)}>
-                  <span className="candidato-cliente">{candidato.cliente}</span>
-                  <span className="candidato-meta">
-                    NF {candidato.nf} · {candidato.dataEmissao}
-                  </span>
-                  {candidato.produtos.length > 0 && <span className="candidato-produtos">{candidato.produtos.join(", ")}</span>}
-                </button>
-              ))}
-            </>
-          )}
         </div>
       )}
 
@@ -593,6 +509,21 @@ export function Devolucoes() {
               {preview.shopee.valorCompensacao != null ? ` · compensação ao vendedor: ${formatarReal(preview.shopee.valorCompensacao)}` : ""}
               {preview.shopee.variacaoShopee ? ` · variação no Shopee: ${preview.shopee.variacaoShopee} (confira contra o PRODUTO abaixo)` : ""}
               {preview.shopee.dataRecebimento ? ` · recebido de volta em: ${isoParaBr(preview.shopee.dataRecebimento)}` : ""}
+            </p>
+          )}
+
+          {preview.mercadoLivre && (
+            <p className="nota-info">
+              Dados do Mercado Livre aplicados
+              {preview.mercadoLivre.motivoDevolucao ? ` — motivo: "${preview.mercadoLivre.motivoDevolucao}"` : ""}
+              {!preview.mercadoLivre.ocorrenciaSugerida
+                ? " — não reconheci esse motivo automaticamente, escolha a ocorrência na mão."
+                : ""}
+              {preview.mercadoLivre.clienteML ? ` · comprador no ML: ${preview.mercadoLivre.clienteML}` : ""}
+              {preview.mercadoLivre.corML || preview.mercadoLivre.skuML
+                ? ` · variação no ML: ${[preview.mercadoLivre.corML, preview.mercadoLivre.skuML].filter(Boolean).join(" / ")} (confira contra o PRODUTO abaixo)`
+                : ""}
+              {preview.mercadoLivre.dataRecebimento ? ` · recebido de volta em: ${isoParaBr(preview.mercadoLivre.dataRecebimento)}` : ""}
             </p>
           )}
 

@@ -1,6 +1,7 @@
 import { tinyGet } from "./tinyClient";
 import { nomeProdutoPlanilha } from "./produtoPlanilha";
 import { buscarImportacaoShopee, mapearMotivoParaOcorrencia } from "./shopeeImportacao";
+import { buscarImportacaoMercadoLivre, mapearMotivoParaOcorrenciaML } from "./mercadoLivreImportacao";
 
 /**
  * Busca uma nota fiscal de venda no Tiny pelo número e monta a prévia da
@@ -11,11 +12,13 @@ import { buscarImportacaoShopee, mapearMotivoParaOcorrencia } from "./shopeeImpo
  *    venda com esse número. Se vier mais de uma (séries diferentes), usa a
  *    de emissão mais recente e devolve o resto em `outras`.
  * 1b. Se não achar nenhuma NF com esse número, tenta como "Nº do pedido"
- *    (o `numero_ecommerce` que aparece na tela do Shopee) em vez de NF:
+ *    (o `numero_ecommerce` que aparece na tela do Shopee, ou o número depois
+ *    de "Venda #" na tela de detalhe de venda do Mercado Livre) em vez de NF:
  *    `pedidos.pesquisa.php?numeroEcommerce=X` → `pedido.obter.php?id=Y` →
  *    lê `id_nota_fiscal` e segue o fluxo normal a partir daí. Isso existe
- *    pra quem está na tela de devolução do Shopee (só tem o "Nº do pedido"
- *    à mão, não a NF) não precisar ir no Tiny achar a NF antes de buscar aqui.
+ *    pra quem está na tela de devolução do Shopee/ML (só tem o "Nº do
+ *    pedido"/"Venda #" à mão, não a NF) não precisar ir no Tiny achar a NF
+ *    antes de buscar aqui.
  * 2. `nota.fiscal.obter.php?id=Y` traz cliente, itens e o pedido de origem
  *    (`id_venda`).
  * 3. Pra achar o marketplace: se tiver `id_venda`, `pedido.obter.php?id=Z`
@@ -32,28 +35,14 @@ import { buscarImportacaoShopee, mapearMotivoParaOcorrencia } from "./shopeeImpo
  * pra esses dois endpoints especificamente, é só trocar o `fetch` dentro de
  * tinyGet (lib/tinyClient.ts) pra incluir `{ method: "POST" }`.
  *
- * `buscarCandidatosPorNomeCliente`: pacote chegado pelos Correios costuma só
- * ter o NOME do cliente escrito, sem NF nem nº de pedido. Tentativas
- * anteriores usaram um parâmetro `cliente` em `notas.fiscais.pesquisa.php`
- * pra filtrar por nome direto no servidor — deu dois erros reais em
- * produção (primeiro "erro ao executar a consulta", depois um 500 mesmo
- * com filtro de data), sinal forte de que esse parâmetro não existe nesse
- * endpoint. Trocado por uma estratégia que só usa peças JÁ CONFIRMADAS
- * funcionando neste projeto:
- * 1. `pedidos.pesquisa.php?dataInicial=X&dataFinal=Y&pagina=N` — mesmo
- *    endpoint+parâmetros já comprovados em lib/relatorioVendas.ts — busca
- *    TODOS os pedidos dos últimos `JANELA_BUSCA_POR_NOME_DIAS` dias.
- * 2. Compara o nome buscado contra QUALQUER campo de texto de cada pedido
- *    (`algumCampoContemTexto`) — não precisa adivinhar se o campo se chama
- *    `nome`, `cliente` etc.
- * 3. Pros até 5 pedidos mais recentes que bateram: `pedido.obter.php?id=X`
- *    → `id_nota_fiscal` → `nota.fiscal.obter.php?id=Y` (mesma cadeia já
- *    usada no fallback de "Nº do pedido" acima) pra pegar NF, cliente e
- *    itens de verdade.
- * Mais lento que um filtro no servidor (varre pedido por pedido em vez de
- * só os que baterem), por isso a janela é curta (14 dias, não meses) — teto
- * de segurança em `MAX_PEDIDOS_ESCANEADOS_POR_NOME` pra nunca escanear o
- * período inteiro numa busca que devia ser rápida.
+ * Buscar por NOME ou CPF do cliente (pra pacote de Correios sem NF/pedido)
+ * já foi tentado e abandonado: nem um parâmetro `cliente` direto no Tiny
+ * (dois erros reais em produção) nem varrer `pedidos.pesquisa.php` por data
+ * comparando campo por campo (achava rápido demais ou nada, e só tinha
+ * teto/janela pequenos pra não ficar lento) se mostraram confiáveis na
+ * prática. Abandonado por ora — a API pública do Tiny não expõe um filtro
+ * de busca por cliente indexado (só a tela deles, que consulta o banco
+ * interno direto); ver histórico do projeto se for reconsiderar.
  */
 
 const SEM_REGISTROS_ERROR_CODE = 32;
@@ -277,6 +266,19 @@ export type DevolucaoShopee = {
   dataRecebimento?: string;
 };
 
+export type DevolucaoMercadoLivre = {
+  motivoDevolucao?: string;
+  /** null quando `motivoDevolucao` não bateu com nenhuma frase conhecida — o atendente escolhe na mão. */
+  ocorrenciaSugerida: string | null;
+  /** Nome do comprador como apareceu na tela do ML — só cruzamento informativo, o CLIENTE de verdade vem do Tiny. */
+  clienteML?: string;
+  cpfML?: string;
+  corML?: string;
+  skuML?: string;
+  /** ISO (yyyy-mm-dd) — data em que o produto devolvido chegou de volta na loja. */
+  dataRecebimento?: string;
+};
+
 export type DevolucaoPreview = {
   nf: string;
   dataEmissao: string;
@@ -288,6 +290,8 @@ export type DevolucaoPreview = {
   outras?: OutraNotaFiscal[];
   /** Presente só quando o Tampermonkey já raspou esse pedido no Shopee antes do atendente buscar a NF aqui. */
   shopee?: DevolucaoShopee;
+  /** Presente só quando o Tampermonkey já raspou essa venda no Mercado Livre antes do atendente buscar a NF aqui. */
+  mercadoLivre?: DevolucaoMercadoLivre;
 };
 
 export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<DevolucaoPreview> {
@@ -318,6 +322,7 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
   const marketplace = await resolverMarketplace(detalhe);
   const idPedido = detalhe.numero_ecommerce ?? "";
   const importacaoShopee = buscarImportacaoShopee(idPedido);
+  const importacaoMercadoLivre = buscarImportacaoMercadoLivre(idPedido);
 
   return {
     nf: detalhe.numero,
@@ -356,166 +361,17 @@ export async function buscarDevolucaoPorNf(numeroBruto: string): Promise<Devoluc
           dataRecebimento: importacaoShopee.dataRecebimento,
         }
       : undefined,
+    mercadoLivre: importacaoMercadoLivre
+      ? {
+          motivoDevolucao: importacaoMercadoLivre.motivoDevolucao,
+          ocorrenciaSugerida: mapearMotivoParaOcorrenciaML(importacaoMercadoLivre.motivoDevolucao),
+          clienteML: importacaoMercadoLivre.cliente,
+          cpfML: importacaoMercadoLivre.cpf,
+          corML: importacaoMercadoLivre.corML,
+          skuML: importacaoMercadoLivre.skuML,
+          dataRecebimento: importacaoMercadoLivre.dataRecebimento,
+        }
+      : undefined,
   };
 }
 
-const MAX_CANDIDATOS_POR_NOME = 5;
-// Curta de propósito: sem confirmação de que o Tiny filtra por nome no servidor, a busca varre
-// TODOS os pedidos do período e casa o nome no nosso próprio código (ver doc do topo do arquivo).
-// No volume real desse negócio (~630 pedidos/dia, visto em lib/relatorioVendas.ts), uma janela
-// maior varreria milhares de pedidos numa busca que devia ser rápida — 14 dias fica em torno de
-// ~9 mil pedidos no pior caso, ainda alto mas tolerável pra uma busca ocasional.
-const JANELA_BUSCA_POR_NOME_DIAS = 14;
-// Teto de segurança: para de escanear páginas de pedidos depois disso, mesmo sem ter achado nada —
-// existe só pra nunca deixar uma busca por nome rodar por minutos varrendo o período inteiro.
-const MAX_PEDIDOS_ESCANEADOS_POR_NOME = 3000;
-const RATE_LIMIT_DELAY_MS_NOME = 120;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** dd/mm/yyyy no fuso do Brasil — mesmo formato que dataInicial/dataFinal já usam em lib/olist.ts. */
-function dataEmSaoPauloBr(data: Date): string {
-  return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" }).format(
-    data,
-  );
-}
-
-function diasAtrasEmSaoPauloBr(dias: number): string {
-  const data = new Date();
-  data.setUTCDate(data.getUTCDate() - dias);
-  return dataEmSaoPauloBr(data);
-}
-
-/** Pedido "in natura" da pesquisa — não sabemos o nome exato do campo do cliente, então guarda tudo. */
-interface PedidoResumoGenerico {
-  id: string;
-  data_pedido?: string;
-  [chave: string]: unknown;
-}
-
-interface PedidosPesquisaGenericaResponse {
-  retorno: RetornoComErro & { numero_paginas?: number; pedidos?: { pedido: PedidoResumoGenerico }[] };
-}
-
-/**
- * Em vez de apostar em qual chave o Tiny usa pro nome do cliente na lista de pedidos (`nome`?
- * `cliente`? `nomeCliente`?), procura o termo em QUALQUER campo de texto do registro — funciona
- * seja qual for o nome do campo, desde que o nome do cliente apareça em algum lugar do resumo
- * (o que precisa ser verdade de qualquer forma, senão a própria tela de pedidos do Tiny não
- * daria pra escanear visualmente por cliente).
- */
-function algumCampoContemTexto(objeto: Record<string, unknown>, termoNormalizado: string): boolean {
-  return Object.values(objeto).some((valor) => typeof valor === "string" && normalizarBusca(valor).includes(termoNormalizado));
-}
-
-/**
- * Mesma ideia de `algumCampoContemTexto`, mas pra CPF: compara só os DÍGITOS de cada campo contra
- * os dígitos buscados, ignorando pontuação — assim funciona tanto se o Tiny guarda o CPF formatado
- * ("037.779.470-83") quanto só os números, sem precisar adivinhar qual dos dois.
- */
-function algumCampoContemDigitos(objeto: Record<string, unknown>, digitosBuscados: string): boolean {
-  return Object.values(objeto).some((valor) => typeof valor === "string" && valor.replace(/\D/g, "").includes(digitosBuscados));
-}
-
-export type CandidatoDevolucao = {
-  nf: string;
-  cliente: string;
-  dataEmissao: string;
-  /** Nomes curtos (coluna PRODUTO da planilha) dos itens da nota — ajuda a reconhecer o pacote sem abrir nada. */
-  produtos: string[];
-};
-
-/**
- * Motor compartilhado por busca-por-nome e busca-por-CPF: varre `pedidos.pesquisa.php` na janela
- * de `JANELA_BUSCA_POR_NOME_DIAS` dias, aplica `bate` em cada resumo de pedido, e resolve os até
- * `MAX_CANDIDATOS_POR_NOME` mais recentes que passaram em NF de verdade (pedido.obter.php →
- * id_nota_fiscal → nota.fiscal.obter.php) — pulando pedido sem NF emitida ainda.
- */
-async function buscarCandidatosPorPredicado(
-  bate: (pedido: PedidoResumoGenerico) => boolean,
-): Promise<{ candidatos: CandidatoDevolucao[]; podeTerMais: boolean }> {
-  const dataInicial = diasAtrasEmSaoPauloBr(JANELA_BUSCA_POR_NOME_DIAS);
-  const dataFinal = dataEmSaoPauloBr(new Date());
-
-  const encontrados: PedidoResumoGenerico[] = [];
-  let pagina = 1;
-  let totalPaginas = 1;
-  let escaneados = 0;
-
-  do {
-    const json = await tinyGet<PedidosPesquisaGenericaResponse>("pedidos.pesquisa.php", {
-      dataInicial,
-      dataFinal,
-      pagina: String(pagina),
-    });
-    const { retorno } = json;
-    if (retorno.status !== "OK") {
-      if (retorno.codigo_erro === SEM_REGISTROS_ERROR_CODE) break;
-      throw falhaTiny("Tiny recusou a busca de pedidos do período", retorno);
-    }
-
-    for (const registro of retorno.pedidos ?? []) {
-      escaneados++;
-      if (bate(registro.pedido)) encontrados.push(registro.pedido);
-    }
-
-    totalPaginas = retorno.numero_paginas ?? 1;
-    pagina++;
-    if (escaneados >= MAX_PEDIDOS_ESCANEADOS_POR_NOME) break;
-    if (pagina <= totalPaginas) await sleep(RATE_LIMIT_DELAY_MS_NOME);
-  } while (pagina <= totalPaginas);
-
-  const maisRecentesPrimeiro = [...encontrados].sort(
-    (a, b) => paraDataOrdenavel(typeof b.data_pedido === "string" ? b.data_pedido : "") -
-      paraDataOrdenavel(typeof a.data_pedido === "string" ? a.data_pedido : ""),
-  );
-
-  const candidatos: CandidatoDevolucao[] = [];
-  for (const pedidoResumo of maisRecentesPrimeiro) {
-    if (candidatos.length >= MAX_CANDIDATOS_POR_NOME) break;
-
-    const pedidoDetalhe = await tinyGet<PedidoObterParaNotaResponse>("pedido.obter.php", { id: pedidoResumo.id });
-    const idNotaFiscal = pedidoDetalhe.retorno.pedido?.id_nota_fiscal;
-    if (pedidoDetalhe.retorno.status !== "OK" || !idNotaFiscal) continue; // pedido sem NF emitida — nada pra abrir na prévia
-
-    const nota = await obterNotaFiscal(idNotaFiscal);
-    const produtos = (nota.itens ?? [])
-      .map((registro) => registro.item)
-      .filter((item): item is NonNullable<typeof item> => item != null)
-      .map((item) => nomeProdutoPlanilha(item.codigo ?? "", item.descricao ?? ""));
-
-    candidatos.push({
-      nf: nota.numero,
-      cliente: formatarNomeTitulo(nota.cliente?.nome ?? ""),
-      dataEmissao: nota.data_emissao ?? "",
-      produtos,
-    });
-  }
-
-  return { candidatos, podeTerMais: encontrados.length > MAX_CANDIDATOS_POR_NOME };
-}
-
-/** Busca por NOME do cliente em vez de NF/pedido — ver doc do topo do arquivo pra o porquê. */
-export async function buscarCandidatosPorNomeCliente(
-  nomeBruto: string,
-): Promise<{ candidatos: CandidatoDevolucao[]; podeTerMais: boolean }> {
-  const nome = nomeBruto.trim();
-  if (!nome) throw new Error("Informe o nome do cliente.");
-  const termo = normalizarBusca(nome);
-  return buscarCandidatosPorPredicado((pedido) => algumCampoContemTexto(pedido, termo));
-}
-
-/**
- * Busca por CPF do cliente — a etiqueta de devolução dos Correios (DACE) traz o CPF do
- * REMETENTE bem visível, e é um dado exato (sem ambiguidade de "qual Maria é essa"), então vale
- * mais a pena que buscar por nome quando dá pra ler o CPF na etiqueta.
- */
-export async function buscarCandidatosPorCpfCliente(
-  cpfBruto: string,
-): Promise<{ candidatos: CandidatoDevolucao[]; podeTerMais: boolean }> {
-  const digitos = cpfBruto.replace(/\D/g, "");
-  if (digitos.length !== 11) throw new Error("Informe um CPF com 11 dígitos.");
-  return buscarCandidatosPorPredicado((pedido) => algumCampoContemDigitos(pedido, digitos));
-}

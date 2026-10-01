@@ -1,13 +1,8 @@
 import { Router } from "express";
 import { OlistConfigError } from "../../lib/olist";
-import {
-  buscarCandidatosPorCpfCliente,
-  buscarCandidatosPorNomeCliente,
-  buscarDevolucaoPorNf,
-  NfNaoEncontradaError,
-  TinyLimiteTaxaError,
-} from "../../lib/devolucao";
+import { buscarDevolucaoPorNf, NfNaoEncontradaError, TinyLimiteTaxaError } from "../../lib/devolucao";
 import { salvarImportacaoShopee, type ShopeeImportacaoEntrada } from "../../lib/shopeeImportacao";
+import { salvarImportacaoMercadoLivre, type MercadoLivreImportacaoEntrada } from "../../lib/mercadoLivreImportacao";
 import { GroqConfigError, lerNumeroSerieComGroq } from "../../lib/groqOcr";
 
 export const devolucaoRouter = Router();
@@ -32,52 +27,6 @@ devolucaoRouter.get("/nf/:numero", async (req, res) => {
       return;
     }
     const mensagem = error instanceof Error ? error.message : "Erro inesperado ao buscar a nota fiscal.";
-    res.status(500).json({ erro: mensagem });
-  }
-});
-
-/**
- * Busca por NOME do cliente (pacote dos Correios só com o nome escrito, sem NF/pedido) — devolve
- * até 5 candidatos pro atendente escolher, não uma prévia já pronta. Ver aviso sobre o parâmetro
- * `cliente` não confirmado no topo de lib/devolucao.ts.
- */
-devolucaoRouter.get("/nome/:nome", async (req, res) => {
-  try {
-    const resultado = await buscarCandidatosPorNomeCliente(String(req.params.nome));
-    res.status(200).json(resultado);
-  } catch (error) {
-    if (error instanceof TinyLimiteTaxaError) {
-      res.status(429).json({ erro: error.message });
-      return;
-    }
-    if (error instanceof OlistConfigError) {
-      res.status(503).json({ erro: error.message });
-      return;
-    }
-    const mensagem = error instanceof Error ? error.message : "Erro inesperado ao buscar pelo nome.";
-    res.status(500).json({ erro: mensagem });
-  }
-});
-
-/**
- * Busca por CPF do cliente (lido na etiqueta DACE dos Correios) — mesma ideia da busca por nome,
- * mas com um identificador exato em vez de um nome que pode ter homônimos. Ver
- * `buscarCandidatosPorCpfCliente` em lib/devolucao.ts.
- */
-devolucaoRouter.get("/cpf/:cpf", async (req, res) => {
-  try {
-    const resultado = await buscarCandidatosPorCpfCliente(String(req.params.cpf));
-    res.status(200).json(resultado);
-  } catch (error) {
-    if (error instanceof TinyLimiteTaxaError) {
-      res.status(429).json({ erro: error.message });
-      return;
-    }
-    if (error instanceof OlistConfigError) {
-      res.status(503).json({ erro: error.message });
-      return;
-    }
-    const mensagem = error instanceof Error ? error.message : "Erro inesperado ao buscar pelo CPF.";
     res.status(500).json({ erro: mensagem });
   }
 });
@@ -139,6 +88,53 @@ devolucaoRouter.post("/shopee", (req, res) => {
   }
 
   const salvos = validas.map((entrada) => salvarImportacaoShopee(entrada).idPedido);
+  res.status(201).json({ ok: true, salvos: salvos.length, ignorados: entradas.length - validas.length, idPedidos: salvos });
+});
+
+/** null quando o registro não tem nem `idPedido` — não dá pra guardar nada sem saber a que venda pertence. */
+function paraEntradaMercadoLivre(bruto: unknown): MercadoLivreImportacaoEntrada | null {
+  if (!bruto || typeof bruto !== "object") return null;
+  const body = bruto as Record<string, unknown>;
+  const idPedido = paraTexto(body.idPedido);
+  if (!idPedido) return null;
+
+  return {
+    idPedido,
+    motivoDevolucao: paraTexto(body.motivoDevolucao),
+    cliente: paraTexto(body.cliente),
+    cpf: paraTexto(body.cpf),
+    corML: paraTexto(body.corML),
+    skuML: paraTexto(body.skuML),
+    dataRecebimento: paraTexto(body.dataRecebimento),
+  };
+}
+
+/**
+ * Recebe o que o Tampermonkey raspa da tela de detalhe de venda do Mercado Livre (ver
+ * tampermonkey/devolucao-mercadolivre.user.js). Mesmo padrão de segurança do `/shopee`: token
+ * próprio (MERCADOLIVRE_IMPORT_TOKEN), porque essa rota também não fala com o Tiny.
+ */
+devolucaoRouter.post("/mercadolivre", (req, res) => {
+  const tokenConfigurado = process.env.MERCADOLIVRE_IMPORT_TOKEN;
+  if (!tokenConfigurado) {
+    res.status(503).json({ erro: "MERCADOLIVRE_IMPORT_TOKEN não configurado no servidor." });
+    return;
+  }
+  if (req.get("x-import-token") !== tokenConfigurado) {
+    res.status(401).json({ erro: "Token inválido." });
+    return;
+  }
+
+  const bruto = Array.isArray(req.body) ? req.body : [req.body];
+  const entradas = bruto.map(paraEntradaMercadoLivre);
+  const validas = entradas.filter((entrada): entrada is MercadoLivreImportacaoEntrada => entrada != null);
+
+  if (validas.length === 0) {
+    res.status(400).json({ erro: "Nenhum registro válido — cada um precisa de pelo menos idPedido." });
+    return;
+  }
+
+  const salvos = validas.map((entrada) => salvarImportacaoMercadoLivre(entrada).idPedido);
   res.status(201).json({ ok: true, salvos: salvos.length, ignorados: entradas.length - validas.length, idPedidos: salvos });
 });
 

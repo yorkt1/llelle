@@ -281,281 +281,63 @@ describe("buscarDevolucaoPorNf", () => {
 
     expect(preview.shopee).toBeUndefined();
   });
-});
 
-describe("buscarCandidatosPorNomeCliente", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("varre pedidos.pesquisa.php por data (não notas.fiscais.pesquisa.php?cliente=), casa o nome em QUALQUER campo do resumo, e resolve NF via pedido.obter.php + nota.fiscal.obter.php", async () => {
+  it("anexa dados do Mercado Livre já importados (casados pelo idPedido/numero_ecommerce) e sugere a ocorrência", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input) => {
-      const url = new URL(String(input));
-      switch (endpointDe(input)) {
-        case "pedidos.pesquisa.php": {
-          const formatoBr = /^\d{2}\/\d{2}\/\d{4}$/;
-          const dataInicial = url.searchParams.get("dataInicial")!;
-          const dataFinal = url.searchParams.get("dataFinal")!;
-          expect(dataInicial).toMatch(formatoBr);
-          expect(dataFinal).toMatch(formatoBr);
-          expect(dataInicial).not.toBe(dataFinal); // janela real (14 dias), não o mesmo dia
-          expect(url.searchParams.get("pagina")).toBe("1");
-          return jsonResponse({
-            retorno: {
-              status: "OK",
-              numero_paginas: 1,
-              pedidos: [
-                // Campo com nome inventado (não "cliente" nem "nome") — prova que não depende de
-                // adivinhar a chave certa, só que o texto apareça em algum lugar do resumo.
-                { pedido: { id: "10", data_pedido: "01/01/2026", nomeDoContato: "Maria da Silva" } },
-                { pedido: { id: "20", data_pedido: "15/09/2026", nomeDoContato: "Maria Oliveira" } },
-                { pedido: { id: "30", data_pedido: "20/09/2026", nomeDoContato: "João Pereira" } }, // não bate com "Maria"
-              ],
-            },
-          });
-        }
-        case "pedido.obter.php": {
-          const id = url.searchParams.get("id");
-          return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: `nf-${id}` } } });
-        }
-        case "nota.fiscal.obter.php": {
-          const id = url.searchParams.get("id");
-          if (id === "nf-10") {
-            return jsonResponse({
-              retorno: {
-                status: "OK",
-                nota_fiscal: {
-                  numero: "100",
-                  data_emissao: "01/01/2026",
-                  cliente: { nome: "MARIA DA SILVA" },
-                  itens: [{ item: { codigo: "LLECP-110", descricao: "Chaleira Modern Preta 127V", quantidade: "1" } }],
-                },
-              },
-            });
-          }
-          return jsonResponse({
-            retorno: {
-              status: "OK",
-              nota_fiscal: { numero: "200", data_emissao: "15/09/2026", cliente: { nome: "MARIA OLIVEIRA" }, itens: [] },
-            },
-          });
-        }
-        default:
-          throw new Error(`endpoint inesperado: ${String(input)}`);
+      if (endpointDe(input) === "notas.fiscais.pesquisa.php") {
+        return jsonResponse({ retorno: { status: "OK", notas_fiscais: [{ nota_fiscal: { id: "1", numero: "1", data_emissao: "01/01/2026" } }] } });
       }
-    });
-
-    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
-    const resultado = await buscarCandidatosPorNomeCliente("Maria");
-
-    expect(resultado.podeTerMais).toBe(false);
-    expect(resultado.candidatos).toHaveLength(2); // "João Pereira" não devia entrar
-    // Mais recente (pedido de 15/09) primeiro, mesmo tendo vindo em segundo na resposta da pesquisa.
-    expect(resultado.candidatos[0]).toMatchObject({ nf: "200", cliente: "Maria Oliveira", dataEmissao: "15/09/2026" });
-    expect(resultado.candidatos[1]).toMatchObject({
-      nf: "100",
-      cliente: "Maria Da Silva",
-      produtos: ["CHALEIRA MODERN PRETA 127V"],
-    });
-  });
-
-  it("pula pedido sem NF emitida ainda (sem id_nota_fiscal) em vez de quebrar", async () => {
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockImplementation(async (input) => {
-      switch (endpointDe(input)) {
-        case "pedidos.pesquisa.php":
-          return jsonResponse({
-            retorno: {
-              status: "OK",
-              numero_paginas: 1,
-              pedidos: [
-                { pedido: { id: "1", data_pedido: "01/01/2026", cliente: "Maria Sem Nota" } },
-                { pedido: { id: "2", data_pedido: "02/01/2026", cliente: "Maria Com Nota" } },
-              ],
-            },
-          });
-        case "pedido.obter.php": {
-          const id = new URL(String(input)).searchParams.get("id");
-          if (id === "1") return jsonResponse({ retorno: { status: "OK", pedido: {} } }); // sem id_nota_fiscal
-          return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: "nf-2" } } });
-        }
-        case "nota.fiscal.obter.php":
-          return jsonResponse({
-            retorno: { status: "OK", nota_fiscal: { numero: "200", data_emissao: "02/01/2026", cliente: { nome: "Maria Com Nota" }, itens: [] } },
-          });
-        default:
-          throw new Error(`endpoint inesperado: ${String(input)}`);
-      }
-    });
-
-    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
-    const resultado = await buscarCandidatosPorNomeCliente("Maria");
-
-    expect(resultado.candidatos).toHaveLength(1);
-    expect(resultado.candidatos[0]).toMatchObject({ nf: "200" });
-  });
-
-  it("nenhum resultado (codigo_erro 32) devolve lista vazia, não lança erro", async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse({ retorno: { status: "Erro", codigo_erro: 32 } }));
-
-    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
-    const resultado = await buscarCandidatosPorNomeCliente("NomeQueNaoExiste");
-
-    expect(resultado).toEqual({ candidatos: [], podeTerMais: false });
-  });
-
-  it("junta páginas de pedidos.pesquisa.php (numero_paginas > 1) antes de decidir os candidatos", async () => {
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockImplementation(async (input) => {
-      const url = new URL(String(input));
-      if (endpointDe(input) === "pedidos.pesquisa.php") {
-        const pagina = url.searchParams.get("pagina");
-        if (pagina === "1") {
-          return jsonResponse({
-            retorno: { status: "OK", numero_paginas: 2, pedidos: [{ pedido: { id: "1", data_pedido: "01/01/2026", cliente: "Fulano" } }] },
-          });
-        }
+      if (endpointDe(input) === "nota.fiscal.obter.php") {
         return jsonResponse({
-          retorno: { status: "OK", numero_paginas: 2, pedidos: [{ pedido: { id: "2", data_pedido: "02/01/2026", cliente: "Fulano" } }] },
+          retorno: { status: "OK", nota_fiscal: { numero: "1", numero_ecommerce: "2000018413435016", cliente: {}, itens: [] } },
         });
       }
-      if (endpointDe(input) === "pedido.obter.php") {
-        const id = url.searchParams.get("id");
-        return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: `nf-${id}` } } });
-      }
-      return jsonResponse({ retorno: { status: "OK", nota_fiscal: { numero: "1", data_emissao: "01/01/2026", cliente: { nome: "Fulano" }, itens: [] } } });
+      throw new Error(`nao deveria chamar ${String(input)}`);
     });
 
-    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
-    const resultado = await buscarCandidatosPorNomeCliente("Fulano");
+    const { buscarDevolucaoPorNf } = await freshDevolucao();
+    const { salvarImportacaoMercadoLivre } = await import("../lib/mercadoLivreImportacao");
+    salvarImportacaoMercadoLivre({
+      idPedido: "2000018413435016",
+      motivoDevolucao: "O comprador disse que não é da cor, tamanho ou modelo escolhido",
+      cliente: "Patricia Kelley De Freitas",
+      cpf: "36129007817",
+      corML: "Branco",
+      skuML: "LLETSEG-2",
+      dataRecebimento: "2026-09-29",
+    });
 
-    expect(resultado.candidatos).toHaveLength(2); // achou o das duas páginas, não só da primeira
+    const preview = await buscarDevolucaoPorNf("1");
+
+    expect(preview.mercadoLivre).toEqual({
+      motivoDevolucao: "O comprador disse que não é da cor, tamanho ou modelo escolhido",
+      ocorrenciaSugerida: "ERRO OPERACIONAL",
+      clienteML: "Patricia Kelley De Freitas",
+      cpfML: "36129007817",
+      corML: "Branco",
+      skuML: "LLETSEG-2",
+      dataRecebimento: "2026-09-29",
+    });
   });
 
-  it("mais de 5 encontrados: devolve só os 5 mais recentes e avisa que pode ter mais", async () => {
+  it("sem importação do Mercado Livre pra esse idPedido, preview.mercadoLivre fica undefined", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(async (input) => {
-      const url = new URL(String(input));
-      if (endpointDe(input) === "pedidos.pesquisa.php") {
-        const pedidos = Array.from({ length: 7 }, (_, i) => ({
-          pedido: { id: String(i + 1), data_pedido: `0${(i % 9) + 1}/01/2026`, cliente: "Fulano" },
-        }));
-        return jsonResponse({ retorno: { status: "OK", numero_paginas: 1, pedidos } });
+      if (endpointDe(input) === "notas.fiscais.pesquisa.php") {
+        return jsonResponse({ retorno: { status: "OK", notas_fiscais: [{ nota_fiscal: { id: "1", numero: "1", data_emissao: "01/01/2026" } }] } });
       }
-      if (endpointDe(input) === "pedido.obter.php") {
-        const id = url.searchParams.get("id");
-        return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: `nf-${id}` } } });
+      if (endpointDe(input) === "nota.fiscal.obter.php") {
+        return jsonResponse({
+          retorno: { status: "OK", nota_fiscal: { numero: "1", numero_ecommerce: "PEDIDO-SEM-IMPORTACAO-ML", cliente: {}, itens: [] } },
+        });
       }
-      return jsonResponse({
-        retorno: { status: "OK", nota_fiscal: { numero: "1", data_emissao: "01/01/2026", cliente: { nome: "Fulano" }, itens: [] } },
-      });
+      throw new Error(`nao deveria chamar ${String(input)}`);
     });
 
-    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
-    const resultado = await buscarCandidatosPorNomeCliente("Fulano");
+    const { buscarDevolucaoPorNf } = await freshDevolucao();
+    const preview = await buscarDevolucaoPorNf("1");
 
-    expect(resultado.candidatos).toHaveLength(5);
-    expect(resultado.podeTerMais).toBe(true);
-  });
-
-  it("nome vazio lança erro sem chamar o Tiny", async () => {
-    const fetchMock = vi.mocked(fetch);
-    const { buscarCandidatosPorNomeCliente } = await freshDevolucao();
-
-    await expect(buscarCandidatosPorNomeCliente("   ")).rejects.toThrow(/informe o nome/i);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("buscarCandidatosPorCpfCliente", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("acha o CPF mesmo formatado com pontuação no resumo do pedido (compara só os dígitos)", async () => {
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockImplementation(async (input) => {
-      const url = new URL(String(input));
-      switch (endpointDe(input)) {
-        case "pedidos.pesquisa.php":
-          return jsonResponse({
-            retorno: {
-              status: "OK",
-              numero_paginas: 1,
-              pedidos: [
-                // CPF formatado com pontuação — o dígito puro buscado é "03777947083".
-                { pedido: { id: "10", data_pedido: "01/01/2026", cpfContato: "037.779.470-83" } },
-                { pedido: { id: "20", data_pedido: "02/01/2026", cpfContato: "111.111.111-11" } }, // não bate
-              ],
-            },
-          });
-        case "pedido.obter.php":
-          expect(url.searchParams.get("id")).toBe("10");
-          return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: "nf-10" } } });
-        case "nota.fiscal.obter.php":
-          return jsonResponse({
-            retorno: { status: "OK", nota_fiscal: { numero: "500", data_emissao: "01/01/2026", cliente: { nome: "SENILDA MATTE" }, itens: [] } },
-          });
-        default:
-          throw new Error(`endpoint inesperado: ${String(input)}`);
-      }
-    });
-
-    const { buscarCandidatosPorCpfCliente } = await freshDevolucao();
-    const resultado = await buscarCandidatosPorCpfCliente("037.779.470-83");
-
-    expect(resultado.candidatos).toHaveLength(1);
-    expect(resultado.candidatos[0]).toMatchObject({ nf: "500", cliente: "Senilda Matte" });
-  });
-
-  it("aceita o CPF buscado só com dígitos, mesmo resultado que formatado", async () => {
-    const fetchMock = vi.mocked(fetch);
-    fetchMock.mockImplementation(async (input) => {
-      switch (endpointDe(input)) {
-        case "pedidos.pesquisa.php":
-          return jsonResponse({
-            retorno: { status: "OK", numero_paginas: 1, pedidos: [{ pedido: { id: "10", data_pedido: "01/01/2026", cpfContato: "03777947083" } }] },
-          });
-        case "pedido.obter.php":
-          return jsonResponse({ retorno: { status: "OK", pedido: { id_nota_fiscal: "nf-10" } } });
-        case "nota.fiscal.obter.php":
-          return jsonResponse({
-            retorno: { status: "OK", nota_fiscal: { numero: "500", data_emissao: "01/01/2026", cliente: { nome: "SENILDA MATTE" }, itens: [] } },
-          });
-        default:
-          throw new Error(`endpoint inesperado: ${String(input)}`);
-      }
-    });
-
-    const { buscarCandidatosPorCpfCliente } = await freshDevolucao();
-    const resultado = await buscarCandidatosPorCpfCliente("03777947083");
-
-    expect(resultado.candidatos).toHaveLength(1);
-  });
-
-  it("CPF com menos de 11 dígitos lança erro sem chamar o Tiny", async () => {
-    const fetchMock = vi.mocked(fetch);
-    const { buscarCandidatosPorCpfCliente } = await freshDevolucao();
-
-    await expect(buscarCandidatosPorCpfCliente("123.456.789")).rejects.toThrow(/11 dígitos/i);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("nenhum resultado (codigo_erro 32) devolve lista vazia, não lança erro", async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse({ retorno: { status: "Erro", codigo_erro: 32 } }));
-
-    const { buscarCandidatosPorCpfCliente } = await freshDevolucao();
-    const resultado = await buscarCandidatosPorCpfCliente("00000000000");
-
-    expect(resultado).toEqual({ candidatos: [], podeTerMais: false });
+    expect(preview.mercadoLivre).toBeUndefined();
   });
 });
