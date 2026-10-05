@@ -74,30 +74,45 @@ interface RetornoComErro {
   erros?: { erro: string }[];
 }
 
+function falhaLimiteTaxa(): Error {
+  return new Error("O Tiny bloqueou temporariamente as requisições (limite de taxa excedido). Aguarde alguns segundos e tente de novo.");
+}
+
 function falhaTiny(prefixo: string, retorno: RetornoComErro): Error {
-  if (retorno.codigo_erro === LIMITE_TAXA_ERROR_CODE) {
-    return new Error("O Tiny bloqueou temporariamente as requisições (limite de taxa excedido). Aguarde alguns segundos e tente de novo.");
-  }
+  if (retorno.codigo_erro === LIMITE_TAXA_ERROR_CODE) return falhaLimiteTaxa();
   const detalhe = retorno.erros?.map((e) => e.erro).join("; ") ?? "erro desconhecido";
   return new Error(`${prefixo}: ${detalhe}`);
 }
 
 /**
- * Mesma chamada de `tinyGet`, mas tenta de novo com espera crescente quando o Tiny devolve
- * `codigo_erro: 6` (limite de taxa) — diferente de uma falha de rede/HTTP (que o `tinyGet` já
- * retenta sozinho), esse erro vem dentro de uma resposta HTTP 200 normal, então sem isso aqui uma
- * única chamada "engasgada" derrubava a sincronização inteira.
+ * Mesma chamada de `tinyGet`, mas tenta de novo com espera crescente quando o limite de taxa
+ * persiste, nas duas formas que o Tiny usa pra sinalizar isso:
+ * 1. `codigo_erro: 6` dentro de uma resposta HTTP 200 normal — o `tinyGet` não enxerga isso como
+ *    falha (não é erro de rede/HTTP), então sem tratar aqui uma única chamada "engasgada" entrava
+ *    direto no relatório como se fosse definitivo.
+ * 2. HTTP 429 de verdade — o `tinyGet` já tenta de novo sozinho (3x, ~2s de espera total), mas numa
+ *    rajada mais longa isso não é suficiente; aqui tenta mais um tanto antes de desistir mesmo.
  */
 async function tinyGetComRetryDeLimiteTaxa<T extends { retorno: RetornoComErro }>(
   endpoint: string,
   params: Record<string, string>,
 ): Promise<T> {
-  let resposta: T;
+  let resposta: T | undefined;
+  let erroHttp: Error | undefined;
+
   for (let tentativa = 1; tentativa <= TENTATIVAS_LIMITE_TAXA; tentativa++) {
-    resposta = await tinyGet<T>(endpoint, params);
-    if (resposta.retorno.codigo_erro !== LIMITE_TAXA_ERROR_CODE) return resposta;
+    try {
+      resposta = await tinyGet<T>(endpoint, params);
+      erroHttp = undefined;
+      if (resposta.retorno.codigo_erro !== LIMITE_TAXA_ERROR_CODE) return resposta;
+    } catch (error) {
+      if (!(error instanceof Error) || !/\(429\)/.test(error.message)) throw error;
+      erroHttp = error;
+    }
     if (tentativa < TENTATIVAS_LIMITE_TAXA) await sleep(800 * tentativa);
   }
+
+  if (erroHttp) throw falhaLimiteTaxa();
   return resposta!;
 }
 

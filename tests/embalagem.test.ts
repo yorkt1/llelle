@@ -198,6 +198,32 @@ describe("embalagem", () => {
       ]);
     }, 15_000);
 
+    it("429 de verdade no separacao.pesquisa.php além do retry interno do tinyGet: tenta de novo nesta camada também e resolve", async () => {
+      let chamadas = 0;
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockImplementation(async (input) => {
+        switch (endpointDe(input)) {
+          case "separacao.pesquisa.php":
+            chamadas++;
+            // As 3 primeiras (esgotando o retry interno do próprio tinyGet) vêm com 429 de verdade.
+            if (chamadas <= 3) return new Response("", { status: 429 });
+            return jsonResponse({
+              retorno: { status: "OK", numero_paginas: 1, separacoes: [{ id: "1", dataCheckout: "05/10/2026" }] },
+            });
+          case "separacao.obter.php":
+            return jsonResponse({ retorno: { status: "OK", separacao: { idUsuarioEmbalador: "111" } } });
+          default:
+            throw new Error(`endpoint inesperado: ${String(input)}`);
+        }
+      });
+
+      const { obterDesempenho } = await freshEmbalagem();
+      const resultado = await obterDesempenho("05/10/2026");
+
+      expect(chamadas).toBe(4);
+      expect(resultado.totalPedidos).toBe(1);
+    }, 15_000);
+
     it("limite de taxa persistente no separacao.obter.php: não grava 'não identificado' pra sempre, fica pendente (completo:false) pra tentar de novo depois", async () => {
       const fetchMock = vi.mocked(fetch);
       fetchMock.mockImplementation(async (input) => {
