@@ -34,6 +34,20 @@ function formatarDataHora(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+/** Ícone de prateleira/galpão (estante com caixas) — usado quando a posição ainda não tem foto, no lugar de um texto seco. */
+function IconeGondola({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M8 6v36M40 6v36" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M8 16h32M8 32h32" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      <rect x="12" y="19" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.55" />
+      <rect x="23" y="19" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.35" />
+      <rect x="12" y="35" width="9" height="7" rx="1.5" fill="currentColor" opacity="0.35" />
+      <rect x="23" y="35" width="9" height="7" rx="1.5" fill="currentColor" opacity="0.55" />
+    </svg>
+  );
+}
+
 function lerUltimoResponsavel(): string {
   try {
     return localStorage.getItem(RESPONSAVEL_STORAGE_KEY) ?? "";
@@ -330,7 +344,14 @@ export function Estoque() {
                 className="estoque-card"
                 onClick={() => setModal({ modo: "existente", rua: posicao.rua, codigo: posicao.codigo, ultima: posicao.ultima })}
               >
-                {url ? <img className="estoque-card-foto" src={url} alt={`Posição ${posicao.codigo}`} /> : <div className="estoque-card-foto estoque-card-foto--vazia">Sem foto</div>}
+                {url ? (
+                  <img className="estoque-card-foto" src={url} alt={`Posição ${posicao.codigo}`} />
+                ) : (
+                  <div className="estoque-card-foto estoque-card-foto--vazia">
+                    <IconeGondola className="estoque-card-icone" />
+                    <span>Sem foto</span>
+                  </div>
+                )}
                 <span className="estoque-card-codigo">{posicao.codigo}</span>
                 <span className="estoque-card-qtd">{posicao.ultima.quantidade} un.</span>
                 <span className="estoque-card-meta">
