@@ -31,6 +31,7 @@ function viewFromHash(): View {
 function NavCorner({ view, onChange }: { view: View; onChange: (view: View) => void }) {
   return (
     <nav className="nav-corner">
+      <span className="nav-corner-brand">LLE</span>
       {VIEWS.map((item) => (
         <button
           key={item.key}

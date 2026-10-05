@@ -203,7 +203,7 @@ function FormularioContagem({ modal, onFechar, onSalvo }: { modal: Exclude<Modal
 
         {erro && <p className="error-banner">{erro}</p>}
 
-        <button className="refresh-btn" onClick={() => void salvar()} disabled={salvando}>
+        <button className="btn-primario" onClick={() => void salvar()} disabled={salvando}>
           {salvando ? "Salvando..." : "Salvar"}
         </button>
 

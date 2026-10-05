@@ -468,7 +468,7 @@ export function Devolucoes() {
             autoFocus
           />
         </label>
-        <button className="refresh-btn" type="submit" disabled={buscando || !numero.trim()}>
+        <button className="btn-primario" type="submit" disabled={buscando || !numero.trim()}>
           {buscando ? "Buscando..." : "Buscar"}
         </button>
       </form>

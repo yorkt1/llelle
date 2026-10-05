@@ -233,7 +233,7 @@ export function Embalagem() {
               <span className="field-label">Nome do colaborador</span>
               <input className="field-input" value={novoNome} onChange={(event) => setNovoNome(event.target.value)} placeholder="Ex: Geovane" />
             </label>
-            <button className="refresh-btn" type="submit">
+            <button className="btn-primario" type="submit">
               Adicionar
             </button>
           </form>

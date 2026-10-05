@@ -184,7 +184,7 @@ export function Relatorios() {
           </label>
         </div>
 
-        <button className="refresh-btn" type="submit" disabled={status === "processando" || !termo.trim()}>
+        <button className="btn-primario" type="submit" disabled={status === "processando" || !termo.trim()}>
           {status === "processando" ? "Gerando..." : "Gerar relatório"}
         </button>
       </form>
