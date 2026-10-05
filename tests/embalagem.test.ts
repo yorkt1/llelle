@@ -168,6 +168,69 @@ describe("embalagem", () => {
 
       expect(resultado.colaboradores[0].pedidosPorHora).toBe(40);
     });
+
+    it("limite de taxa (codigo_erro 6) no separacao.obter.php: tenta de novo e resolve normalmente se passar antes do teto de tentativas", async () => {
+      let chamadasObter = 0;
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockImplementation(async (input) => {
+        switch (endpointDe(input)) {
+          case "separacao.pesquisa.php":
+            return jsonResponse({
+              retorno: { status: "OK", numero_paginas: 1, separacoes: [{ id: "1", dataCheckout: "05/10/2026" }] },
+            });
+          case "separacao.obter.php":
+            chamadasObter++;
+            // Primeira tentativa: limite de taxa (HTTP 200 com erro no corpo). Segunda: sucesso.
+            if (chamadasObter === 1) return jsonResponse({ retorno: { status: "Erro", codigo_erro: 6, erros: [{ erro: "Token inválido" }] } });
+            return jsonResponse({ retorno: { status: "OK", separacao: { idUsuarioEmbalador: "111" } } });
+          default:
+            throw new Error(`endpoint inesperado: ${String(input)}`);
+        }
+      });
+
+      const { obterDesempenho } = await freshEmbalagem();
+      const resultado = await obterDesempenho("05/10/2026");
+
+      expect(chamadasObter).toBe(2);
+      expect(resultado.completo).toBe(true);
+      expect(resultado.colaboradores).toEqual([
+        { idUsuarioEmbalador: "111", nome: "ID 111 (sem nome cadastrado)", pedidos: 1, pedidosPorHora: 50, horas: 1 / 50, tempoFormatado: "0h 01min" },
+      ]);
+    }, 15_000);
+
+    it("limite de taxa persistente no separacao.obter.php: não grava 'não identificado' pra sempre, fica pendente (completo:false) pra tentar de novo depois", async () => {
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockImplementation(async (input) => {
+        switch (endpointDe(input)) {
+          case "separacao.pesquisa.php":
+            return jsonResponse({
+              retorno: { status: "OK", numero_paginas: 1, separacoes: [{ id: "1", dataCheckout: "05/10/2026" }] },
+            });
+          case "separacao.obter.php":
+            return jsonResponse({ retorno: { status: "Erro", codigo_erro: 6, erros: [{ erro: "Token inválido" }] } });
+          default:
+            throw new Error(`endpoint inesperado: ${String(input)}`);
+        }
+      });
+
+      const { obterDesempenho } = await freshEmbalagem();
+      const resultado = await obterDesempenho("05/10/2026");
+
+      // Não conta como "não identificado" (isso é só pra campo genuinamente ausente numa resposta
+      // "OK") — fica de fora por completo, sinalizado só por completo:false.
+      expect(resultado.naoIdentificados).toBe(0);
+      expect(resultado.totalPedidos).toBe(0);
+      expect(resultado.completo).toBe(false);
+    }, 15_000);
+
+    it("limite de taxa persistente no separacao.pesquisa.php lança mensagem amigável, não o texto cru 'Token inválido' do Tiny", async () => {
+      vi.mocked(fetch).mockImplementation(async () =>
+        jsonResponse({ retorno: { status: "Erro", codigo_erro: 6, erros: [{ erro: "Token inválido" }] } }),
+      );
+
+      const { obterDesempenho } = await freshEmbalagem();
+      await expect(obterDesempenho("05/10/2026")).rejects.toThrow(/limite de taxa/i);
+    }, 15_000);
   });
 
   describe("colaboradores", () => {

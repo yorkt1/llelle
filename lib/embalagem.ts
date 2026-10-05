@@ -16,12 +16,10 @@ import * as store from "./store";
  * 2. Pra cada resumo com `dataCheckout === dia`, `separacao.obter.php?idSeparacao=X` traz o
  *    DETALHE — com o campo `idUsuarioEmbalador`, que identifica quem embalou.
  *
- * ATENÇÃO — igual ao aviso já registrado em lib/relatorioVendas.ts e lib/devolucao.ts: não deu
- * pra confirmar `separacao.obter.php`/`idUsuarioEmbalador` contra a documentação ao vivo do Tiny
- * (tiny.com.br bloqueado no ambiente onde isso foi escrito) — veio de uma pesquisa feita fora
- * deste ambiente, colada pelo usuário, não de um teste real contra a API. **Teste com um dia real
- * antes de confiar nos números.** Se o campo vier ausente/vazio pra uma separação, ela cai no
- * balde "não identificado" em vez de quebrar o resto do relatório — nunca assume um valor.
+ * `separacao.obter.php`/`idUsuarioEmbalador` foi confirmado contra dados reais de produção (IDs
+ * distintos por bancada, contagens batendo com o relatório do Tiny). Se o campo vier ausente/vazio
+ * pra uma separação, ela cai no balde "não identificado" em vez de quebrar o resto do relatório —
+ * nunca assume um valor.
  *
  * O resultado de `separacao.obter.php` é cacheado por `idSeparacao` pra sempre (depois de
  * embalada, quem embalou não muda) — uma nova chamada só resolve as separações NOVAS desde a
@@ -36,6 +34,12 @@ const RATE_LIMIT_DELAY_MS = 150; // mesmo valor usado em lib/relatorioVendas.ts
 // próxima chamada (ver `completo` no retorno), que já acha o resto em cache.
 const MAX_RESOLUCOES_POR_CHAMADA = 200;
 const SEM_REGISTROS_ERROR_CODE = 32;
+// Mesmo código de lib/devolucao.ts — o Tiny devolve isso com STATUS HTTP 200 (não é um erro de
+// rede, então o retry do tinyGet não entra em ação sozinho) quando bloqueia por limite de taxa.
+// A mensagem que vem no corpo ("Token inválido") é enganosa — não é o token, é volume de chamadas
+// — por isso nunca repassamos esse texto direto pro usuário, e tentamos de novo antes de desistir.
+const LIMITE_TAXA_ERROR_CODE = 6;
+const TENTATIVAS_LIMITE_TAXA = 4;
 
 const CHAVE_RESOLUCOES = "embalagem:resolucoesPorSeparacao";
 const CHAVE_COLABORADORES = "embalagem:colaboradores";
@@ -71,8 +75,30 @@ interface RetornoComErro {
 }
 
 function falhaTiny(prefixo: string, retorno: RetornoComErro): Error {
+  if (retorno.codigo_erro === LIMITE_TAXA_ERROR_CODE) {
+    return new Error("O Tiny bloqueou temporariamente as requisições (limite de taxa excedido). Aguarde alguns segundos e tente de novo.");
+  }
   const detalhe = retorno.erros?.map((e) => e.erro).join("; ") ?? "erro desconhecido";
   return new Error(`${prefixo}: ${detalhe}`);
+}
+
+/**
+ * Mesma chamada de `tinyGet`, mas tenta de novo com espera crescente quando o Tiny devolve
+ * `codigo_erro: 6` (limite de taxa) — diferente de uma falha de rede/HTTP (que o `tinyGet` já
+ * retenta sozinho), esse erro vem dentro de uma resposta HTTP 200 normal, então sem isso aqui uma
+ * única chamada "engasgada" derrubava a sincronização inteira.
+ */
+async function tinyGetComRetryDeLimiteTaxa<T extends { retorno: RetornoComErro }>(
+  endpoint: string,
+  params: Record<string, string>,
+): Promise<T> {
+  let resposta: T;
+  for (let tentativa = 1; tentativa <= TENTATIVAS_LIMITE_TAXA; tentativa++) {
+    resposta = await tinyGet<T>(endpoint, params);
+    if (resposta.retorno.codigo_erro !== LIMITE_TAXA_ERROR_CODE) return resposta;
+    if (tentativa < TENTATIVAS_LIMITE_TAXA) await sleep(800 * tentativa);
+  }
+  return resposta!;
 }
 
 interface SeparacaoResumo {
@@ -100,7 +126,7 @@ async function buscarResumosEmbaladosNoDia(dia: string): Promise<SeparacaoResumo
   let totalPaginas = 1;
 
   do {
-    const json = await tinyGet<SeparacaoPesquisaResponse>("separacao.pesquisa.php", {
+    const json = await tinyGetComRetryDeLimiteTaxa<SeparacaoPesquisaResponse>("separacao.pesquisa.php", {
       situacao: String(SITUACAO.embaladas),
       dataInicial,
       dataFinal: dia,
@@ -136,12 +162,16 @@ async function resolverEmbaladores(
   const novasResolucoes: ResolucoesPorSeparacao = {};
 
   for (const resumo of aResolverAgora) {
-    const json = await tinyGet<SeparacaoObterResponse>("separacao.obter.php", { idSeparacao: resumo.id });
+    const json = await tinyGetComRetryDeLimiteTaxa<SeparacaoObterResponse>("separacao.obter.php", { idSeparacao: resumo.id });
     const { retorno } = json;
-    // Falha isolada (ex.: separação removida entre a pesquisa e o obter) não derruba o resto —
-    // essa separação some do relatório em vez de quebrar a sincronização inteira.
-    const idUsuarioEmbalador = retorno.status === "OK" ? retorno.separacao?.idUsuarioEmbalador ?? null : null;
-    novasResolucoes[resumo.id] = { idUsuarioEmbalador, dataCheckout: resumo.dataCheckout ?? "" };
+    // Só grava no cache quando o Tiny respondeu "OK" de verdade — mesmo sem idUsuarioEmbalador
+    // (cai em "não identificado" legitimamente). Qualquer outro status (limite de taxa persistente
+    // mesmo após as tentativas, separação removida, etc.) NÃO entra no cache: fica pendente pra
+    // tentar de novo na próxima sincronização, em vez de ficar "não identificado" pra sempre por
+    // causa de um erro passageiro.
+    if (retorno.status === "OK") {
+      novasResolucoes[resumo.id] = { idUsuarioEmbalador: retorno.separacao?.idUsuarioEmbalador ?? null, dataCheckout: resumo.dataCheckout ?? "" };
+    }
     await sleep(RATE_LIMIT_DELAY_MS);
   }
 
@@ -149,7 +179,13 @@ async function resolverEmbaladores(
     await store.update<ResolucoesPorSeparacao>(CHAVE_RESOLUCOES, (atual) => ({ ...(atual ?? {}), ...novasResolucoes }));
   }
 
-  return { resolucoes: { ...cache, ...novasResolucoes }, completo: pendentes.length <= MAX_RESOLUCOES_POR_CHAMADA };
+  const resolucoesFinais = { ...cache, ...novasResolucoes };
+  // Completo de verdade: toda separação pedida já tem uma resolução gravada — cobre tanto o teto
+  // de segurança (sobrou pendente por volume) quanto uma falha pontual numa das que tentamos agora
+  // (ficou de fora do cache de propósito, ver comentário acima).
+  const completo = resumos.every((resumo) => resumo.id in resolucoesFinais);
+
+  return { resolucoes: resolucoesFinais, completo };
 }
 
 export type ColaboradorEmbalagem = { idUsuarioEmbalador: string; nome: string };
@@ -226,6 +262,10 @@ export async function obterDesempenho(diaBr?: string): Promise<DesempenhoEmbalag
   let naoIdentificados = 0;
 
   for (const resumo of resumos) {
+    // Sem resolução gravada ainda (teto de segurança, ou falha/limite de taxa persistente ao
+    // tentar resolver agora) — fica de fora por completo, sem contar como "não identificado"
+    // (esse balde é só pra resposta "OK" sem o campo, ver resolverEmbaladores).
+    if (!(resumo.id in resolucoes)) continue;
     const idUsuarioEmbalador = resolucoes[resumo.id]?.idUsuarioEmbalador;
     if (!idUsuarioEmbalador) {
       naoIdentificados++;
