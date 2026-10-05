@@ -198,6 +198,47 @@ describe("fetchSeparacaoCountsLive", () => {
       embaladas: 0,
     });
   });
+
+  it("limite de taxa (codigo_erro 6, 'Token inválido') numa chamada: tenta de novo e resolve normalmente", async () => {
+    let chamadas = 0;
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async () => {
+      chamadas++;
+      if (chamadas === 1) return jsonResponse({ retorno: { status: "Erro", codigo_erro: 6, erros: [{ erro: "Token inválido" }] } });
+      return jsonResponse(retornoOk([{}]));
+    });
+
+    const { fetchSeparacaoCountsLive } = await freshOlist();
+    const snapshot = await fetchSeparacaoCountsLive();
+
+    expect(chamadas).toBeGreaterThan(1);
+    expect(snapshot.counts.aguardandoSeparacao).toBe(1);
+  }, 15_000);
+
+  it("429 HTTP numa chamada: tenta de novo e resolve normalmente", async () => {
+    let chamadas = 0;
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async () => {
+      chamadas++;
+      if (chamadas === 1) return new Response("", { status: 429 });
+      return jsonResponse(retornoOk([{}]));
+    });
+
+    const { fetchSeparacaoCountsLive } = await freshOlist();
+    const snapshot = await fetchSeparacaoCountsLive();
+
+    expect(chamadas).toBeGreaterThan(1);
+    expect(snapshot.counts.aguardandoSeparacao).toBe(1);
+  }, 15_000);
+
+  it("limite de taxa persistente lança mensagem amigável, não o texto cru 'Token inválido' do Tiny", async () => {
+    vi.mocked(fetch).mockImplementation(
+      async () => jsonResponse({ retorno: { status: "Erro", codigo_erro: 6, erros: [{ erro: "Token inválido" }] } }),
+    );
+
+    const { fetchSeparacaoCountsLive } = await freshOlist();
+    await expect(fetchSeparacaoCountsLive()).rejects.toThrow(/limite de taxa/i);
+  }, 15_000);
 });
 
 describe("isConfigured", () => {

@@ -68,6 +68,17 @@ const COUNTS_KEY = "olist:counts";
 // não é uma falha de verdade, é como a API sinaliza uma busca vazia.
 const NO_RECORDS_ERROR_CODE = 32;
 
+// Limite de taxa (ver comentário no topo do arquivo) — o Tiny sinaliza isso de duas formas: HTTP
+// 429 de verdade, ou HTTP 200 com esse codigo_erro e mensagem "Token inválido" (enganosa — não é o
+// token). `syncCore` dispara 3 chamadas em paralelo a cada 30s, então uma rajada passageira batendo
+// nesse limite é esperado — sem retry aqui, ela derrubava o ciclo inteiro até o próximo tick.
+const LIMITE_TAXA_ERROR_CODE = 6;
+const TENTATIVAS_LIMITE_TAXA = 4;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Ordem e rótulos das etapas — situacao=N confirmado na documentação da API 2.0. */
 export const SITUACAO = {
   aguardandoSeparacao: 1,
@@ -137,11 +148,15 @@ interface DateRange {
   dataFinal: string;
 }
 
-async function fetchPage(situacao: number, pagina: number, range?: DateRange): Promise<SeparacaoPage> {
-  if (!isConfigured()) {
-    throw new OlistConfigError("OLIST_API_TOKEN precisa estar configurado.");
-  }
+type SeparacaoPesquisaRetorno = {
+  status: string;
+  codigo_erro?: number;
+  numero_paginas?: number;
+  separacoes?: SeparacaoItem[];
+  erros?: { erro: string }[];
+};
 
+async function fetchPageUmaVez(situacao: number, pagina: number, range?: DateRange): Promise<SeparacaoPesquisaRetorno> {
   const url = new URL(`${apiBaseUrl()}/separacao.pesquisa.php`);
   url.searchParams.set("token", apiToken());
   url.searchParams.set("formato", apiFormat());
@@ -154,32 +169,41 @@ async function fetchPage(situacao: number, pagina: number, range?: DateRange): P
 
   const response = await fetch(url);
   if (!response.ok) {
+    if (response.status === 429) return { status: "Erro", codigo_erro: LIMITE_TAXA_ERROR_CODE };
     const detail = await response.text().catch(() => "");
     throw new Error(`separacao.pesquisa.php falhou (${response.status}): ${detail}`);
   }
 
-  const json = (await response.json()) as {
-    retorno: {
-      status: string;
-      codigo_erro?: number;
-      numero_paginas?: number;
-      separacoes?: SeparacaoItem[];
-      erros?: { erro: string }[];
-    };
-  };
+  const json = (await response.json()) as { retorno: SeparacaoPesquisaRetorno };
+  return json.retorno;
+}
 
-  const { retorno } = json;
-  if (retorno.status !== "OK") {
-    if (retorno.codigo_erro === NO_RECORDS_ERROR_CODE) {
+async function fetchPage(situacao: number, pagina: number, range?: DateRange): Promise<SeparacaoPage> {
+  if (!isConfigured()) {
+    throw new OlistConfigError("OLIST_API_TOKEN precisa estar configurado.");
+  }
+
+  let retorno: SeparacaoPesquisaRetorno | undefined;
+  for (let tentativa = 1; tentativa <= TENTATIVAS_LIMITE_TAXA; tentativa++) {
+    retorno = await fetchPageUmaVez(situacao, pagina, range);
+    if (retorno.codigo_erro !== LIMITE_TAXA_ERROR_CODE) break;
+    if (tentativa < TENTATIVAS_LIMITE_TAXA) await sleep(800 * tentativa);
+  }
+
+  if (retorno!.status !== "OK") {
+    if (retorno!.codigo_erro === NO_RECORDS_ERROR_CODE) {
       return { numero_paginas: 0, separacoes: [] };
     }
-    const detail = retorno.erros?.map((e) => e.erro).join("; ") ?? "erro desconhecido";
+    if (retorno!.codigo_erro === LIMITE_TAXA_ERROR_CODE) {
+      throw new Error("O Tiny bloqueou temporariamente as requisições (limite de taxa excedido). Aguarde alguns segundos e tente de novo.");
+    }
+    const detail = retorno!.erros?.map((e) => e.erro).join("; ") ?? "erro desconhecido";
     throw new Error(`Olist recusou a consulta de separações: ${detail}`);
   }
 
   return {
-    numero_paginas: retorno.numero_paginas ?? 1,
-    separacoes: retorno.separacoes ?? [],
+    numero_paginas: retorno!.numero_paginas ?? 1,
+    separacoes: retorno!.separacoes ?? [],
   };
 }
 
