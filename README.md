@@ -426,6 +426,59 @@ com o Tiny pra pré-preencher produtos esperados por posição — seria um
 facilitador puramente opcional, e a contagem continuaria sendo sempre manual
 mesmo com isso.
 
+## Embalagem
+
+Aba (`#embalagem`): quantos pedidos cada colaborador embalou num dia,
+calculado automaticamente a partir do Tiny — sem ninguém digitar a
+quantidade na mão (diferente de uma planilha/HTML solto que só calcula
+`pedidos ÷ pedidos-por-hora` em cima de um número que alguém lançou).
+
+- `lib/embalagem.ts` — fluxo:
+  1. `separacao.pesquisa.php?situacao=3&dataInicial=X&dataFinal=Y&pagina=N`
+     lista os RESUMOS de separações "Embalada" — mesmo endpoint+parâmetros já
+     confirmados em produção por `lib/olist.ts` (painel de separação). Não
+     existe filtro de `dataCheckout` na busca, só `dataCriacao`, então usa a
+     mesma janela de dias (`OLIST_EMBALADAS_WINDOW_DAYS`, reaproveitada) e
+     filtra por `dataCheckout === dia` no próprio código — igual
+     `countEmbaladasHoje` em `lib/olist.ts`.
+  2. Pra cada resumo com `dataCheckout` do dia pedido,
+     `separacao.obter.php?idSeparacao=X` traz o detalhe — com o campo
+     `idUsuarioEmbalador`, que identifica quem embalou (um ID numérico, não
+     o nome).
+  3. Um cadastro próprio (não fica no Tiny) mapeia `idUsuarioEmbalador` →
+     nome do colaborador — editável pela própria aba, sem precisar de
+     deploy. Um ID sem cadastro aparece no relatório como `ID 12345 (sem
+     nome cadastrado)` em vez de ser escondido.
+
+  **Atenção**: `separacao.obter.php` e o campo `idUsuarioEmbalador` vieram
+  de uma pesquisa feita fora deste ambiente (documentação pública do Tiny,
+  colada pelo usuário) — **não** de um teste real contra a API, porque
+  `tiny.com.br` está bloqueado no ambiente onde isso foi escrito (mesma
+  limitação já registrada em `lib/devolucao.ts` e `lib/relatorioVendas.ts`).
+  **Teste com um dia real antes de confiar nos números.** Se o campo vier
+  ausente numa separação, ela cai no contador "não identificados" do
+  relatório em vez de quebrar o resto ou de ser atribuída a alguém errado.
+
+  `separacao.obter.php` custa **1 chamada ao Tiny por separação** — caro no
+  volume real desse negócio (centenas de pedidos/dia). Por isso o resultado
+  é cacheado por `idSeparacao` pra sempre (depois de embalada, quem embalou
+  não muda): uma atualização da tela só resolve as separações NOVAS desde a
+  última vez, não o dia inteiro de novo. Um teto de segurança
+  (`MAX_RESOLUCOES_POR_CHAMADA`) limita quantas separações NOVAS uma única
+  chamada resolve — o resto fica pra próxima atualização (`completo: false`
+  na resposta avisa o front disso), pra nunca travar a tela num dia de
+  volume alto.
+- `server/routes/embalagem.ts` — `GET /api/embalagem?dia=dd/mm/yyyy` (sem
+  isso, usa hoje), `GET/POST /api/embalagem/colaboradores`,
+  `DELETE /api/embalagem/colaboradores/:idUsuarioEmbalador`.
+- `src/Embalagem.tsx` — tabela (Colaborador/Pedidos/Pedidos-Hora/Tempo),
+  total, aviso de "ainda sincronizando" quando `completo: false`, e uma
+  seção pra cadastrar/remover colaboradores. Atualiza a cada 20s.
+
+`EMBALAGEM_PEDIDOS_POR_HORA` (variável de ambiente, padrão 50) troca o
+"pedidos por hora" usado pra calcular o tempo — mesmo valor do protótipo
+original, configurável sem precisar editar código.
+
 ## Desenvolvimento
 
 ```bash

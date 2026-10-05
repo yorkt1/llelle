@@ -51,7 +51,9 @@ export function apiFormat(): string {
 export function apiToken(): string {
   return process.env.OLIST_API_TOKEN ?? "";
 }
-function embaladasWindowDays(): number {
+// Exportada: lib/embalagem.ts reaproveita a mesma janela/suposição (pedido criado alguns dias
+// antes de ser embalado hoje) pro relatório de desempenho de embalagem.
+export function embaladasWindowDays(): number {
   return Number(process.env.OLIST_EMBALADAS_WINDOW_DAYS ?? 6);
 }
 
@@ -99,7 +101,7 @@ export function isConfigured(): boolean {
 }
 
 /** dd/mm/yyyy no fuso do Brasil — o formato que a API espera em dataInicial/dataFinal. */
-function todayInSaoPaulo(): string {
+export function todayInSaoPaulo(): string {
   return dateInSaoPaulo(new Date());
 }
 
@@ -112,8 +114,8 @@ function dateInSaoPaulo(date: Date): string {
   }).format(date);
 }
 
-/** N dias atrás, no mesmo formato dd/mm/yyyy — início da janela de busca do Embaladas. */
-function daysAgoInSaoPaulo(days: number): string {
+/** N dias atrás, no mesmo formato dd/mm/yyyy — início da janela de busca do Embaladas. Exportada pelo mesmo motivo de `embaladasWindowDays`. */
+export function daysAgoInSaoPaulo(days: number): string {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() - days);
   return dateInSaoPaulo(date);
