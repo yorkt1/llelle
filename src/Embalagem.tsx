@@ -141,9 +141,7 @@ export function Embalagem() {
         <button className="refresh-btn" type="button" onClick={() => setDia(hojeBr())}>
           Hoje
         </button>
-        <button className="refresh-btn" type="button" onClick={() => void carregarDesempenho(dia)} disabled={carregando}>
-          {carregando ? "Atualizando..." : "Atualizar"}
-        </button>
+        {carregando && <span className="field-value--muted">Atualizando...</span>}
       </form>
 
       {erro && <p className="error-banner">{erro}</p>}
