@@ -27,6 +27,10 @@ interface ColaboradorEmbalagem {
 
 // Vazio quando front e API rodam juntos — mesma convenção do resto do sistema.
 const API_URL = import.meta.env.VITE_API_URL ?? "";
+// Seguro pollar: GET /api/embalagem pro dia de hoje só lê cache no servidor, nunca chama o Tiny
+// direto (ver lib/embalagem.ts) — quem chama o Tiny é só o job de fundo, numa frequência própria.
+// Mesmo intervalo do painel de separação (src/App.tsx).
+const POLL_MS = 30_000;
 
 function hojeBr(): string {
   return new Date().toLocaleDateString("pt-BR");
@@ -83,15 +87,16 @@ export function Embalagem() {
     return () => clearTimeout(kickoff);
   }, [carregarColaboradores]);
 
-  // Só reconsulta ao trocar o dia — sem polling automático de propósito. O servidor hoje roda num
-  // plano sem disco persistente (ver README), então cada deploy/"acordar" zera o cache de
-  // separações já resolvidas; um polling automático somava chamadas de fundo o dia inteiro em
-  // cima disso e estourava o limite de taxa do Tiny com frequência. Com atualização manual
-  // (botão), só dispara quando a pessoa realmente quer ver o número de novo — igual funcionava
-  // antes desta tela existir.
+  // Reconsulta ao trocar o dia, e continua atualizando em intervalo — seguro agora que o GET só
+  // lê cache no servidor (ver comentário em POLL_MS). O botão "Atualizar" ao lado cobre quem quer
+  // forçar uma olhada na hora, sem esperar o próximo tick.
   useEffect(() => {
     const kickoff = setTimeout(() => void carregarDesempenho(dia), 0);
-    return () => clearTimeout(kickoff);
+    const id = setInterval(() => void carregarDesempenho(dia), POLL_MS);
+    return () => {
+      clearTimeout(kickoff);
+      clearInterval(id);
+    };
   }, [dia, carregarDesempenho]);
 
   const adicionarColaborador = useCallback(

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { todayInSaoPaulo } from "../lib/olist";
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200 });
@@ -283,6 +284,71 @@ describe("embalagem", () => {
       expect(chamadas).toBeGreaterThan(1);
       expect(resultado.totalPedidos).toBe(1);
     }, 15_000);
+  });
+
+  describe("obterDesempenho(hoje) — nunca chama o Tiny direto, só lê o que sincronizarEmbalagemHoje já deixou em cache", () => {
+    it("sem nenhuma sincronização ainda (boot): relatório vazio com completo:false, sem nenhuma chamada ao Tiny", async () => {
+      const { obterDesempenho } = await freshEmbalagem();
+      const resultado = await obterDesempenho();
+
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+      expect(resultado.completo).toBe(false);
+      expect(resultado.totalPedidos).toBe(0);
+      expect(resultado.colaboradores).toEqual([]);
+    });
+
+    it("depois de sincronizarEmbalagemHoje: obterDesempenho(hoje) devolve o relatório do cache, sem nenhuma chamada nova ao Tiny", async () => {
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockImplementation(async (input) => {
+        switch (endpointDe(input)) {
+          case "separacao.pesquisa.php":
+            return jsonResponse({
+              retorno: { status: "OK", numero_paginas: 1, separacoes: [{ id: "1", dataCheckout: todayInSaoPaulo() }] },
+            });
+          case "separacao.obter.php":
+            return jsonResponse({ retorno: { status: "OK", separacao: { idUsuarioEmbalador: "111" } } });
+          default:
+            throw new Error(`endpoint inesperado: ${String(input)}`);
+        }
+      });
+
+      const { obterDesempenho, sincronizarEmbalagemHoje } = await freshEmbalagem();
+      await sincronizarEmbalagemHoje();
+      const chamadasAntesDeLer = fetchMock.mock.calls.length;
+
+      const resultado = await obterDesempenho();
+
+      expect(fetchMock.mock.calls.length).toBe(chamadasAntesDeLer); // obterDesempenho não chamou fetch de novo
+      expect(resultado.completo).toBe(true);
+      expect(resultado.totalPedidos).toBe(1);
+    });
+
+    it("snapshot de um dia anterior (virou o dia) é ignorado — hoje volta a ficar vazio/incompleto até sincronizar de novo", async () => {
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockImplementation(async (input) => {
+        switch (endpointDe(input)) {
+          case "separacao.pesquisa.php":
+            return jsonResponse({
+              retorno: { status: "OK", numero_paginas: 1, separacoes: [{ id: "1", dataCheckout: "04/10/2020" }] },
+            });
+          case "separacao.obter.php":
+            return jsonResponse({ retorno: { status: "OK", separacao: { idUsuarioEmbalador: "111" } } });
+          default:
+            throw new Error(`endpoint inesperado: ${String(input)}`);
+        }
+      });
+
+      const embalagem = await freshEmbalagem();
+      // Sincroniza um dia que não é "hoje" de verdade (o módulo sempre usa a data real do
+      // relógio) — simula o cache tendo ficado de um dia anterior.
+      const store = await import("../lib/store");
+      await store.set("embalagem:resumosHoje", { dia: "04/10/2020", resumos: [{ id: "1", dataCheckout: "04/10/2020" }] });
+
+      const resultado = await embalagem.obterDesempenho();
+
+      expect(resultado.completo).toBe(false);
+      expect(resultado.totalPedidos).toBe(0);
+    });
   });
 
   describe("colaboradores", () => {

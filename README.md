@@ -444,36 +444,43 @@ quantidade na mão (diferente de uma planilha/HTML solto que só calcula
   2. Pra cada resumo com `dataCheckout` do dia pedido,
      `separacao.obter.php?idSeparacao=X` traz o detalhe — com o campo
      `idUsuarioEmbalador`, que identifica quem embalou (um ID numérico, não
-     o nome).
+     o nome) — **confirmado contra dados reais de produção**.
   3. Um cadastro próprio (não fica no Tiny) mapeia `idUsuarioEmbalador` →
      nome do colaborador — editável pela própria aba, sem precisar de
      deploy. Um ID sem cadastro aparece no relatório como `ID 12345 (sem
      nome cadastrado)` em vez de ser escondido.
 
-  **Atenção**: `separacao.obter.php` e o campo `idUsuarioEmbalador` vieram
-  de uma pesquisa feita fora deste ambiente (documentação pública do Tiny,
-  colada pelo usuário) — **não** de um teste real contra a API, porque
-  `tiny.com.br` está bloqueado no ambiente onde isso foi escrito (mesma
-  limitação já registrada em `lib/devolucao.ts` e `lib/relatorioVendas.ts`).
-  **Teste com um dia real antes de confiar nos números.** Se o campo vier
-  ausente numa separação, ela cai no contador "não identificados" do
-  relatório em vez de quebrar o resto ou de ser atribuída a alguém errado.
+  **Quem chama o Tiny**: só `sincronizarEmbalagemHoje`, acionada por um job
+  de fundo em `server/index.ts` (mesmo padrão de `fetchCoreCountsLive` em
+  `lib/olist.ts`) — nunca uma requisição HTTP direto. `GET /api/embalagem`
+  pro dia de HOJE só lê o que esse job já deixou em cache; nunca bloqueia
+  nem conta pro limite de taxa do Tiny, pode pollar à vontade. Um dia
+  PASSADO específico (`?dia=` diferente de hoje) ainda busca ao vivo — é
+  consulta rara/manual, e a resolução por separação normalmente já está
+  quente no cache de quando esse dia era "hoje".
 
   `separacao.obter.php` custa **1 chamada ao Tiny por separação** — caro no
   volume real desse negócio (centenas de pedidos/dia). Por isso o resultado
   é cacheado por `idSeparacao` pra sempre (depois de embalada, quem embalou
-  não muda): uma atualização da tela só resolve as separações NOVAS desde a
+  não muda): cada sincronização só resolve as separações NOVAS desde a
   última vez, não o dia inteiro de novo. Um teto de segurança
   (`MAX_RESOLUCOES_POR_CHAMADA`) limita quantas separações NOVAS uma única
-  chamada resolve — o resto fica pra próxima atualização (`completo: false`
-  na resposta avisa o front disso), pra nunca travar a tela num dia de
-  volume alto.
+  sincronização resolve — o resto fica pra próxima (`completo: false` na
+  resposta avisa o front disso), pra nunca gerar uma rajada grande de
+  chamadas de uma vez (isso já causou bloqueio de limite de taxa na
+  prática, com a cache fria logo depois de um deploy/redeploy).
+- `server/index.ts` — `syncEmbalagemOnce`, no mesmo esquema de
+  `syncCoreOnce`/`syncEmbaladasOnce`: roda a cada
+  `EMBALAGEM_SYNC_INTERVAL_MS` (padrão 60s), com um atraso no boot
+  (30s) pra não colidir com os outros dois syncs bem na subida.
 - `server/routes/embalagem.ts` — `GET /api/embalagem?dia=dd/mm/yyyy` (sem
   isso, usa hoje), `GET/POST /api/embalagem/colaboradores`,
   `DELETE /api/embalagem/colaboradores/:idUsuarioEmbalador`.
 - `src/Embalagem.tsx` — tabela (Colaborador/Pedidos/Pedidos-Hora/Tempo),
   total, aviso de "ainda sincronizando" quando `completo: false`, e uma
-  seção pra cadastrar/remover colaboradores. Atualiza a cada 20s.
+  seção pra cadastrar/remover colaboradores. Atualiza a cada 30s (seguro:
+  só lê cache) e tem botão "Atualizar" pra quem quer forçar uma olhada na
+  hora, sem esperar o próximo tick.
 
 `EMBALAGEM_PEDIDOS_POR_HORA` (variável de ambiente, padrão 50) troca o
 "pedidos por hora" usado pra calcular o tempo — mesmo valor do protótipo

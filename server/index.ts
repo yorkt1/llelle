@@ -10,6 +10,7 @@ import { devolucaoRouter } from "./routes/devolucao";
 import { estoqueRouter } from "./routes/estoque";
 import { embalagemRouter } from "./routes/embalagem";
 import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
+import { sincronizarEmbalagemHoje } from "../lib/embalagem";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -77,6 +78,10 @@ app.listen(port, () => {
 // lib/olist.ts). Padrão de 10min pra Embaladas, 30s pro resto.
 const CORE_SYNC_INTERVAL_MS = Number(process.env.OLIST_SYNC_INTERVAL_MS ?? 30_000);
 const EMBALADAS_SYNC_INTERVAL_MS = Number(process.env.OLIST_EMBALADAS_SYNC_INTERVAL_MS ?? 10 * 60_000);
+// Mesma ideia de Embaladas: fica fora do ciclo de 30s de propósito, e cada tick já se limita a um
+// teto pequeno de separações novas (ver MAX_RESOLUCOES_POR_CHAMADA em lib/embalagem.ts) — então
+// não precisa ser tão frequente quanto o core.
+const EMBALAGEM_SYNC_INTERVAL_MS = Number(process.env.EMBALAGEM_SYNC_INTERVAL_MS ?? 60_000);
 
 let syncingCore = false;
 
@@ -120,9 +125,37 @@ async function syncEmbaladasOnce(): Promise<void> {
   }
 }
 
-// Atraso no primeiro embaladas: sem isso, os dois syncs disparavam juntos bem no boot (cada deploy
-// reinicia o processo), formando uma rajada logo de cara contra o limite de taxa do Tiny.
+let syncingEmbalagem = false;
+
+/**
+ * Único lugar que chama `sincronizarEmbalagemHoje` — a tela de Embalagem (GET /api/embalagem)
+ * nunca chama o Tiny direto, só lê o que este job já deixou em cache (ver aviso no topo de
+ * lib/embalagem.ts). Isso existe porque, antes, cada clique em "Atualizar" disparava a
+ * busca+resolução ao vivo dentro do próprio request — e isso, somado ao que os outros dois syncs
+ * já fazem, foi uma causa real de bloqueio de limite de taxa.
+ */
+async function syncEmbalagemOnce(): Promise<void> {
+  if (!isConfigured() || syncingEmbalagem) return;
+  syncingEmbalagem = true;
+  try {
+    await sincronizarEmbalagemHoje();
+    console.log(`[embalagem] sincronizado às ${new Date().toISOString()}`);
+  } catch (error) {
+    if (error instanceof OlistConfigError) {
+      console.error(`[embalagem] ${error.message}`);
+      return;
+    }
+    console.error("[embalagem] falha na sincronização:", error);
+  } finally {
+    syncingEmbalagem = false;
+  }
+}
+
+// Atrasos no boot: sem isso, os três syncs disparavam juntos bem na subida (cada deploy reinicia
+// o processo), formando uma rajada logo de cara contra o limite de taxa do Tiny.
 void syncCoreOnce();
 setTimeout(() => void syncEmbaladasOnce(), 15_000);
+setTimeout(() => void syncEmbalagemOnce(), 30_000);
 setInterval(() => void syncCoreOnce(), CORE_SYNC_INTERVAL_MS);
 setInterval(() => void syncEmbaladasOnce(), EMBALADAS_SYNC_INTERVAL_MS);
+setInterval(() => void syncEmbalagemOnce(), EMBALAGEM_SYNC_INTERVAL_MS);

@@ -26,6 +26,17 @@ import * as store from "./store";
  * última vez, mesma ideia de "nunca reprocessar o que já foi resolvido" de
  * lib/shopeeImportacao.ts. Isso existe porque `separacao.obter.php` custa 1 chamada por
  * separação — sem cache, cada atualização da tela re-consultaria o dia inteiro de novo.
+ *
+ * IMPORTANTE — quem chama o Tiny: só `sincronizarEmbalagemHoje`, acionada por um job de fundo em
+ * server/index.ts (mesmo padrão de `fetchCoreCountsLive`/`fetchEmbaladasCountLive` em
+ * lib/olist.ts). `obterDesempenho` pro dia de HOJE nunca chama o Tiny direto — só lê o que esse
+ * job já deixou em cache (`CHAVE_RESUMOS_HOJE` + `CHAVE_RESOLUCOES`) e monta o relatório. Isso
+ * existe porque, antes, cada requisição HTTP (um clique no botão "Atualizar", por exemplo)
+ * disparava a busca+resolução ao vivo — na prática, isso fazia o próprio clique da pessoa somar
+ * chamadas em cima do que o job de fundo já estava fazendo, e foi uma causa real de bloqueios de
+ * limite de taxa. Um dia PASSADO específico (`dia` explícito, diferente de hoje) ainda busca ao
+ * vivo em `obterDesempenho` — é uma consulta rara/manual, não fica num loop de polling, e a
+ * resolução por separação já costuma estar quente no cache de quando esse dia era "hoje".
  */
 
 // Maior que o valor "padrão" (150ms) usado em lib/relatorioVendas.ts/lib/olist.ts: essa tela faz
@@ -50,6 +61,10 @@ const TENTATIVAS_LIMITE_TAXA = 4;
 
 const CHAVE_RESOLUCOES = "embalagem:resolucoesPorSeparacao";
 const CHAVE_COLABORADORES = "embalagem:colaboradores";
+// Snapshot da última busca de resumos "hoje" — o que o job de fundo encontrou da última vez que
+// consultou o Tiny. `obterDesempenho` pro dia de hoje monta o relatório só a partir disso, nunca
+// busca ao vivo (ver aviso no topo do arquivo).
+const CHAVE_RESUMOS_HOJE = "embalagem:resumosHoje";
 
 /** Pedidos/hora assumido quando não configurado — mesmo valor do protótipo original em HTML. */
 function pedidosPorHoraPadrao(): number {
@@ -279,13 +294,15 @@ export type DesempenhoEmbalagem = {
   atualizadoEm: string;
 };
 
-export async function obterDesempenho(diaBr?: string): Promise<DesempenhoEmbalagem> {
-  const dia = diaBr?.trim() || todayInSaoPaulo();
+/** Monta o relatório a partir de resumos+resoluções já em mãos — puro, sem chamar o Tiny. */
+function montarRelatorio(
+  dia: string,
+  resumos: SeparacaoResumo[],
+  resolucoes: ResolucoesPorSeparacao,
+  completo: boolean,
+  colaboradoresCadastrados: ColaboradorEmbalagem[],
+): DesempenhoEmbalagem {
   const pedidosPorHora = pedidosPorHoraPadrao();
-
-  const resumos = await buscarResumosEmbaladosNoDia(dia);
-  const { resolucoes, completo } = await resolverEmbaladores(resumos);
-  const colaboradoresCadastrados = await listarColaboradores();
   const nomePorId = new Map(colaboradoresCadastrados.map((c) => [c.idUsuarioEmbalador, c.nome]));
 
   const pedidosPorColaborador = new Map<string, number>();
@@ -331,4 +348,45 @@ export async function obterDesempenho(diaBr?: string): Promise<DesempenhoEmbalag
     completo,
     atualizadoEm: new Date().toISOString(),
   };
+}
+
+type SnapshotResumosHoje = { dia: string; resumos: SeparacaoResumo[] };
+
+/**
+ * Único ponto que chama o Tiny pro dia de hoje — acionada pelo job de fundo em server/index.ts,
+ * nunca por uma requisição HTTP (ver aviso no topo do arquivo). Busca os resumos do dia e resolve
+ * o que puder (dentro do teto de segurança), deixando os dois caches prontos pra
+ * `obterDesempenho` só ler, sem nenhuma chamada de rede.
+ */
+export async function sincronizarEmbalagemHoje(): Promise<void> {
+  const dia = todayInSaoPaulo();
+  const resumos = await buscarResumosEmbaladosNoDia(dia);
+  await store.set(CHAVE_RESUMOS_HOJE, { dia, resumos } satisfies SnapshotResumosHoje);
+  await resolverEmbaladores(resumos);
+}
+
+export async function obterDesempenho(diaBr?: string): Promise<DesempenhoEmbalagem> {
+  const diaPedido = diaBr?.trim();
+  const hoje = todayInSaoPaulo();
+  const colaboradoresCadastrados = await listarColaboradores();
+
+  if (!diaPedido || diaPedido === hoje) {
+    // Hoje: só lê o que o job de fundo (sincronizarEmbalagemHoje) já deixou em cache — nunca
+    // chama o Tiny aqui. Sem sincronização ainda (boot recém-ligado) vira relatório vazio com
+    // completo:false, igual o "esqueleto" do painel de separação enquanto a primeira sync não
+    // roda.
+    const snapshot = await store.get<SnapshotResumosHoje>(CHAVE_RESUMOS_HOJE);
+    const sincronizado = snapshot?.dia === hoje;
+    const resumos = sincronizado ? snapshot!.resumos : [];
+    const resolucoes = (await store.get<ResolucoesPorSeparacao>(CHAVE_RESOLUCOES)) ?? {};
+    const completo = sincronizado && resumos.every((resumo) => resumo.id in resolucoes);
+    return montarRelatorio(hoje, resumos, resolucoes, completo, colaboradoresCadastrados);
+  }
+
+  // Dia passado específico — consulta rara/manual, ainda busca ao vivo (ver aviso no topo do
+  // arquivo); a resolução por separação normalmente já está quente no cache de quando esse dia
+  // era "hoje", então isso raramente gera chamada nova de verdade.
+  const resumos = await buscarResumosEmbaladosNoDia(diaPedido);
+  const { resolucoes, completo } = await resolverEmbaladores(resumos);
+  return montarRelatorio(diaPedido, resumos, resolucoes, completo, colaboradoresCadastrados);
 }
