@@ -23,6 +23,7 @@ interface DesempenhoEmbalagem {
 interface ColaboradorEmbalagem {
   idUsuarioEmbalador: string;
   nome: string;
+  bancada?: string;
 }
 
 // Vazio quando front e API rodam juntos — mesma convenção do resto do sistema.
@@ -53,6 +54,7 @@ export function Embalagem() {
   const [mostrarConfig, setMostrarConfig] = useState(false);
   const [novoId, setNovoId] = useState("");
   const [novoNome, setNovoNome] = useState("");
+  const [novaBancada, setNovaBancada] = useState("");
   const [erroConfig, setErroConfig] = useState<string | null>(null);
   const [salvandoConfig, setSalvandoConfig] = useState(false);
   // ID original de quem está sendo editado agora (null = formulário em modo "adicionar"). Guarda
@@ -108,6 +110,7 @@ export function Embalagem() {
     setEditandoIdOriginal(null);
     setNovoId("");
     setNovoNome("");
+    setNovaBancada("");
     setErroConfig(null);
   }, []);
 
@@ -115,6 +118,7 @@ export function Embalagem() {
     setEditandoIdOriginal(colaborador.idUsuarioEmbalador);
     setNovoId(colaborador.idUsuarioEmbalador);
     setNovoNome(colaborador.nome);
+    setNovaBancada(colaborador.bancada ?? "");
     setErroConfig(null);
   }, []);
 
@@ -127,7 +131,7 @@ export function Embalagem() {
         const response = await fetch(`${API_URL}/api/embalagem/colaboradores`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idUsuarioEmbalador: novoId, nome: novoNome }),
+          body: JSON.stringify({ idUsuarioEmbalador: novoId, nome: novoNome, bancada: novaBancada }),
         });
         const json = await response.json();
         if (!response.ok) throw new Error(extrairErro(json, "Não consegui salvar o colaborador."));
@@ -146,7 +150,7 @@ export function Embalagem() {
         setSalvandoConfig(false);
       }
     },
-    [novoId, novoNome, editandoIdOriginal, cancelarEdicao, carregarColaboradores],
+    [novoId, novoNome, novaBancada, editandoIdOriginal, cancelarEdicao, carregarColaboradores],
   );
 
   const removerColaborador = useCallback(
@@ -245,14 +249,15 @@ export function Embalagem() {
           <p className="estoque-vazio-titulo">Colaboradores cadastrados</p>
           <p className="field-value--muted">
             O Tiny identifica quem embalou por um ID numérico (`idUsuarioEmbalador`), não pelo nome — cadastre aqui qual ID
-            corresponde a qual colaborador. Um ID sem cadastro aparece no relatório como "ID 12345 (sem nome cadastrado)".
+            corresponde a qual colaborador, e opcionalmente a bancada dele (pra não precisar mostrar esse ID cru na tela).
+            Um ID sem cadastro aparece no relatório como "ID 12345 (sem nome cadastrado)".
           </p>
 
           <div className="tabela-wrap">
             <table className="tabela">
               <thead>
                 <tr>
-                  <th>ID no Tiny</th>
+                  <th>Bancada</th>
                   <th>Nome</th>
                   <th>Ações</th>
                 </tr>
@@ -267,7 +272,11 @@ export function Embalagem() {
                 ) : (
                   colaboradores.map((colaborador) => (
                     <tr key={colaborador.idUsuarioEmbalador} className={editandoIdOriginal === colaborador.idUsuarioEmbalador ? "tabela-linha--editando" : undefined}>
-                      <td>{colaborador.idUsuarioEmbalador}</td>
+                      <td>
+                        {colaborador.bancada ? `Bancada ${colaborador.bancada}` : "—"}
+                        <br />
+                        <span className="field-value--muted">ID {colaborador.idUsuarioEmbalador}</span>
+                      </td>
                       <td>{colaborador.nome}</td>
                       <td className="tabela-acoes">
                         <button type="button" className="refresh-btn" onClick={() => iniciarEdicao(colaborador)}>
@@ -292,6 +301,10 @@ export function Embalagem() {
             <label className="field">
               <span className="field-label">Nome do colaborador</span>
               <input className="field-input" value={novoNome} onChange={(event) => setNovoNome(event.target.value)} placeholder="Ex: Geovane" />
+            </label>
+            <label className="field">
+              <span className="field-label">Bancada (opcional)</span>
+              <input className="field-input" value={novaBancada} onChange={(event) => setNovaBancada(event.target.value)} placeholder="Ex: 03" />
             </label>
             <button className="btn-primario" type="submit" disabled={salvandoConfig}>
               {salvandoConfig ? "Salvando..." : editandoIdOriginal ? "Salvar alteração" : "Adicionar"}

@@ -32,8 +32,9 @@ embalagemRouter.get("/colaboradores", async (_req, res) => {
 embalagemRouter.post("/colaboradores", async (req, res) => {
   const idUsuarioEmbalador = String(req.body?.idUsuarioEmbalador ?? "");
   const nome = String(req.body?.nome ?? "");
+  const bancada = req.body?.bancada ? String(req.body.bancada) : undefined;
   try {
-    const colaborador = await salvarColaborador(idUsuarioEmbalador, nome);
+    const colaborador = await salvarColaborador(idUsuarioEmbalador, nome, bancada);
     res.status(201).json({ colaborador });
   } catch (error) {
     res.status(400).json({ erro: error instanceof Error ? error.message : "Erro inesperado ao salvar o colaborador." });

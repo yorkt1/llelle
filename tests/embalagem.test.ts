@@ -373,5 +373,25 @@ describe("embalagem", () => {
       await expect(salvarColaborador("111", "  ")).rejects.toThrow(/nome/i);
       expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
+
+    it("aceita bancada opcional, e continua funcionando sem ela", async () => {
+      const { salvarColaborador, listarColaboradores } = await freshEmbalagem();
+
+      await salvarColaborador("893706113", "Werisvan", "03");
+      await salvarColaborador("893709362", "Giovane"); // sem bancada
+
+      expect(await listarColaboradores()).toEqual([
+        { idUsuarioEmbalador: "893709362", nome: "Giovane" },
+        { idUsuarioEmbalador: "893706113", nome: "Werisvan", bancada: "03" },
+      ]);
+    });
+
+    it("lê cadastro no formato antigo (valor era só o nome, sem bancada) sem quebrar", async () => {
+      const { listarColaboradores } = await freshEmbalagem();
+      const store = await import("../lib/store");
+      await store.set("embalagem:colaboradores", { "893706113": "Werisvan" });
+
+      expect(await listarColaboradores()).toEqual([{ idUsuarioEmbalador: "893706113", nome: "Werisvan" }]);
+    });
   });
 });

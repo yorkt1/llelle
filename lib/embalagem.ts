@@ -233,27 +233,38 @@ async function resolverEmbaladores(
   return { resolucoes: resolucoesFinais, completo };
 }
 
-export type ColaboradorEmbalagem = { idUsuarioEmbalador: string; nome: string };
+// Formato antigo era só `Record<id, nome>` (string direto) — mantém aceitando os dois formatos na
+// leitura, pra não quebrar cadastros antigos que ainda estejam no cache quando isso for lido.
+type RegistroColaborador = { nome: string; bancada?: string };
+type RegistroColaboradorOuAntigo = string | RegistroColaborador;
+
+function normalizarRegistro(registro: RegistroColaboradorOuAntigo): RegistroColaborador {
+  return typeof registro === "string" ? { nome: registro } : registro;
+}
+
+export type ColaboradorEmbalagem = { idUsuarioEmbalador: string; nome: string; bancada?: string };
 
 export async function listarColaboradores(): Promise<ColaboradorEmbalagem[]> {
-  const mapa = (await store.get<Record<string, string>>(CHAVE_COLABORADORES)) ?? {};
+  const mapa = (await store.get<Record<string, RegistroColaboradorOuAntigo>>(CHAVE_COLABORADORES)) ?? {};
   return Object.entries(mapa)
-    .map(([idUsuarioEmbalador, nome]) => ({ idUsuarioEmbalador, nome }))
+    .map(([idUsuarioEmbalador, registro]) => ({ idUsuarioEmbalador, ...normalizarRegistro(registro) }))
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
-export async function salvarColaborador(idUsuarioEmbalador: string, nome: string): Promise<ColaboradorEmbalagem> {
+export async function salvarColaborador(idUsuarioEmbalador: string, nome: string, bancada?: string): Promise<ColaboradorEmbalagem> {
   const id = idUsuarioEmbalador.trim();
   const nomeLimpo = nome.trim();
+  const bancadaLimpa = bancada?.trim();
   if (!id) throw new Error("Informe o ID do usuário no Tiny.");
   if (!nomeLimpo) throw new Error("Informe o nome do colaborador.");
 
-  await store.update<Record<string, string>>(CHAVE_COLABORADORES, (atual) => ({ ...(atual ?? {}), [id]: nomeLimpo }));
-  return { idUsuarioEmbalador: id, nome: nomeLimpo };
+  const registro: RegistroColaborador = bancadaLimpa ? { nome: nomeLimpo, bancada: bancadaLimpa } : { nome: nomeLimpo };
+  await store.update<Record<string, RegistroColaboradorOuAntigo>>(CHAVE_COLABORADORES, (atual) => ({ ...(atual ?? {}), [id]: registro }));
+  return { idUsuarioEmbalador: id, ...registro };
 }
 
 export async function removerColaborador(idUsuarioEmbalador: string): Promise<void> {
-  await store.update<Record<string, string>>(CHAVE_COLABORADORES, (atual) => {
+  await store.update<Record<string, RegistroColaboradorOuAntigo>>(CHAVE_COLABORADORES, (atual) => {
     const copia = { ...(atual ?? {}) };
     delete copia[idUsuarioEmbalador];
     return copia;
