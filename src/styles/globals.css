@@ -742,6 +742,63 @@ body {
   gap: 1rem;
 }
 
+/* Cards do Embalagem: 2 por linha de propósito (não auto-fill), um por colaborador/bancada,
+   com o nome em destaque no topo — texto geral maior que o da tabela padrão (pedido explícito:
+   letra pequena demais pra quem lê de longe/no celular). */
+.embalagem-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .embalagem-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.embalagem-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  padding: 1.25rem 1.5rem;
+}
+
+.embalagem-card--total {
+  background: rgba(91, 141, 239, 0.1);
+  border-color: var(--brand);
+}
+
+.embalagem-card-nome {
+  margin: 0 0 0.85rem;
+  font-size: 1.45rem;
+  font-weight: 700;
+}
+
+.embalagem-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.embalagem-card-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.embalagem-card-valor {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.embalagem-card-label {
+  font-size: 1.05rem;
+  color: var(--muted);
+}
+
 .estoque-card {
   display: flex;
   flex-direction: column;

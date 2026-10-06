@@ -195,44 +195,44 @@ export function Embalagem() {
               : ""}
           </p>
 
-          <div className="tabela-wrap">
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Colaborador</th>
-                  <th>Pedidos</th>
-                  <th>Pedidos/Hora</th>
-                  <th>Tempo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {desempenho.colaboradores.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="field-value--muted">
-                      Nenhum pedido embalado nesse dia ainda.
-                    </td>
-                  </tr>
-                ) : (
-                  desempenho.colaboradores.map((colaborador) => (
-                    <tr key={colaborador.idUsuarioEmbalador}>
-                      <td>{colaborador.nome}</td>
-                      <td>{colaborador.pedidos}</td>
-                      <td>{colaborador.pedidosPorHora}</td>
-                      <td>{colaborador.tempoFormatado}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td>TOTAL</td>
-                  <td>{desempenho.totalPedidos}</td>
-                  <td>—</td>
-                  <td>{desempenho.totalTempoFormatado}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          {desempenho.colaboradores.length === 0 ? (
+            <p className="field-value--muted">Nenhum pedido embalado nesse dia ainda.</p>
+          ) : (
+            <div className="embalagem-grid">
+              {desempenho.colaboradores.map((colaborador) => (
+                <div key={colaborador.idUsuarioEmbalador} className="embalagem-card">
+                  <h3 className="embalagem-card-nome">{colaborador.nome}</h3>
+                  <div className="embalagem-card-stats">
+                    <div className="embalagem-card-stat">
+                      <span className="embalagem-card-valor">{colaborador.pedidos}</span>
+                      <span className="embalagem-card-label">Pedidos</span>
+                    </div>
+                    <div className="embalagem-card-stat">
+                      <span className="embalagem-card-valor">{colaborador.pedidosPorHora}</span>
+                      <span className="embalagem-card-label">Pedidos/Hora</span>
+                    </div>
+                    <div className="embalagem-card-stat">
+                      <span className="embalagem-card-valor">{colaborador.tempoFormatado}</span>
+                      <span className="embalagem-card-label">Tempo</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div className="embalagem-card embalagem-card--total">
+                <h3 className="embalagem-card-nome">TOTAL</h3>
+                <div className="embalagem-card-stats">
+                  <div className="embalagem-card-stat">
+                    <span className="embalagem-card-valor">{desempenho.totalPedidos}</span>
+                    <span className="embalagem-card-label">Pedidos</span>
+                  </div>
+                  <div className="embalagem-card-stat">
+                    <span className="embalagem-card-valor">{desempenho.totalTempoFormatado}</span>
+                    <span className="embalagem-card-label">Tempo</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
