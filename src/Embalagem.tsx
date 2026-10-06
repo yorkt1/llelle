@@ -54,6 +54,11 @@ export function Embalagem() {
   const [novoId, setNovoId] = useState("");
   const [novoNome, setNovoNome] = useState("");
   const [erroConfig, setErroConfig] = useState<string | null>(null);
+  const [salvandoConfig, setSalvandoConfig] = useState(false);
+  // ID original de quem está sendo editado agora (null = formulário em modo "adicionar"). Guarda
+  // o ID de ANTES da edição porque, se a pessoa também trocar o ID no formulário, precisa remover
+  // o registro antigo depois de salvar o novo — o Tiny não tem conceito de "renomear uma chave".
+  const [editandoIdOriginal, setEditandoIdOriginal] = useState<string | null>(null);
 
   const carregarDesempenho = useCallback(async (diaConsultado: string) => {
     setCarregando(true);
@@ -99,10 +104,25 @@ export function Embalagem() {
     };
   }, [dia, carregarDesempenho]);
 
-  const adicionarColaborador = useCallback(
+  const cancelarEdicao = useCallback(() => {
+    setEditandoIdOriginal(null);
+    setNovoId("");
+    setNovoNome("");
+    setErroConfig(null);
+  }, []);
+
+  const iniciarEdicao = useCallback((colaborador: ColaboradorEmbalagem) => {
+    setEditandoIdOriginal(colaborador.idUsuarioEmbalador);
+    setNovoId(colaborador.idUsuarioEmbalador);
+    setNovoNome(colaborador.nome);
+    setErroConfig(null);
+  }, []);
+
+  const salvarColaborador = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
       setErroConfig(null);
+      setSalvandoConfig(true);
       try {
         const response = await fetch(`${API_URL}/api/embalagem/colaboradores`, {
           method: "POST",
@@ -111,26 +131,37 @@ export function Embalagem() {
         });
         const json = await response.json();
         if (!response.ok) throw new Error(extrairErro(json, "Não consegui salvar o colaborador."));
-        setNovoId("");
-        setNovoNome("");
+
+        // Editando e o ID mudou: o registro antigo não se renomeia, fica um cadastro separado se
+        // não remover — limpa ele depois de confirmar que o novo já foi salvo.
+        if (editandoIdOriginal && editandoIdOriginal !== novoId.trim()) {
+          await fetch(`${API_URL}/api/embalagem/colaboradores/${encodeURIComponent(editandoIdOriginal)}`, { method: "DELETE" });
+        }
+
+        cancelarEdicao();
         await carregarColaboradores();
       } catch (error) {
         setErroConfig(error instanceof Error ? error.message : "Não consegui salvar o colaborador.");
+      } finally {
+        setSalvandoConfig(false);
       }
     },
-    [novoId, novoNome, carregarColaboradores],
+    [novoId, novoNome, editandoIdOriginal, cancelarEdicao, carregarColaboradores],
   );
 
   const removerColaborador = useCallback(
     async (idUsuarioEmbalador: string) => {
+      setErroConfig(null);
       try {
-        await fetch(`${API_URL}/api/embalagem/colaboradores/${encodeURIComponent(idUsuarioEmbalador)}`, { method: "DELETE" });
+        const response = await fetch(`${API_URL}/api/embalagem/colaboradores/${encodeURIComponent(idUsuarioEmbalador)}`, { method: "DELETE" });
+        if (!response.ok) throw new Error("Não consegui remover esse colaborador agora.");
+        if (editandoIdOriginal === idUsuarioEmbalador) cancelarEdicao();
         await carregarColaboradores();
-      } catch {
-        setErroConfig("Não consegui remover esse colaborador agora.");
+      } catch (error) {
+        setErroConfig(error instanceof Error ? error.message : "Não consegui remover esse colaborador agora.");
       }
     },
-    [carregarColaboradores],
+    [carregarColaboradores, editandoIdOriginal, cancelarEdicao],
   );
 
   return (
@@ -217,20 +248,43 @@ export function Embalagem() {
             corresponde a qual colaborador. Um ID sem cadastro aparece no relatório como "ID 12345 (sem nome cadastrado)".
           </p>
 
-          {colaboradores.length > 0 && (
-            <ul className="buscas-recentes">
-              {colaboradores.map((colaborador) => (
-                <li key={colaborador.idUsuarioEmbalador} className="buscas-recentes-item">
-                  {colaborador.nome} (ID {colaborador.idUsuarioEmbalador}){" "}
-                  <button className="refresh-btn" onClick={() => void removerColaborador(colaborador.idUsuarioEmbalador)}>
-                    Remover
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="tabela-wrap">
+            <table className="tabela">
+              <thead>
+                <tr>
+                  <th>ID no Tiny</th>
+                  <th>Nome</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {colaboradores.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="field-value--muted">
+                      Nenhum colaborador cadastrado ainda.
+                    </td>
+                  </tr>
+                ) : (
+                  colaboradores.map((colaborador) => (
+                    <tr key={colaborador.idUsuarioEmbalador} className={editandoIdOriginal === colaborador.idUsuarioEmbalador ? "tabela-linha--editando" : undefined}>
+                      <td>{colaborador.idUsuarioEmbalador}</td>
+                      <td>{colaborador.nome}</td>
+                      <td className="tabela-acoes">
+                        <button type="button" className="refresh-btn" onClick={() => iniciarEdicao(colaborador)}>
+                          Editar
+                        </button>
+                        <button type="button" className="refresh-btn" onClick={() => void removerColaborador(colaborador.idUsuarioEmbalador)}>
+                          Remover
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
 
-          <form className="busca-linha" onSubmit={adicionarColaborador}>
+          <form className="busca-linha" onSubmit={salvarColaborador}>
             <label className="field">
               <span className="field-label">ID do usuário no Tiny</span>
               <input className="field-input" value={novoId} onChange={(event) => setNovoId(event.target.value)} placeholder="Ex: 449251343" />
@@ -239,9 +293,14 @@ export function Embalagem() {
               <span className="field-label">Nome do colaborador</span>
               <input className="field-input" value={novoNome} onChange={(event) => setNovoNome(event.target.value)} placeholder="Ex: Geovane" />
             </label>
-            <button className="btn-primario" type="submit">
-              Adicionar
+            <button className="btn-primario" type="submit" disabled={salvandoConfig}>
+              {salvandoConfig ? "Salvando..." : editandoIdOriginal ? "Salvar alteração" : "Adicionar"}
             </button>
+            {editandoIdOriginal && (
+              <button type="button" className="refresh-btn" onClick={cancelarEdicao}>
+                Cancelar
+              </button>
+            )}
           </form>
 
           {erroConfig && <p className="error-banner">{erroConfig}</p>}

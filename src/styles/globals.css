@@ -613,6 +613,16 @@ body {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.tabela-acoes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tabela-linha--editando {
+  background: rgba(91, 141, 239, 0.12);
+}
+
 .tabela input,
 .tabela select {
   background: var(--panel);
