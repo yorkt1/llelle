@@ -74,6 +74,7 @@ const NO_RECORDS_ERROR_CODE = 32;
 // nesse limite é esperado — sem retry aqui, ela derrubava o ciclo inteiro até o próximo tick.
 const LIMITE_TAXA_ERROR_CODE = 6;
 const TENTATIVAS_LIMITE_TAXA = 4;
+const RATE_LIMIT_DELAY_MS = 150; // mesmo valor usado em lib/embalagem.ts e lib/relatorioVendas.ts
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -256,13 +257,16 @@ async function countEmbaladasHoje(dia: string): Promise<number> {
   return items.filter((item) => item.dataCheckout === dia).length;
 }
 
+// Em sequência, não em paralelo: as 3 chamadas de uma vez (Promise.all) formavam uma rajada que
+// contribuía pro limite de taxa na prática — espaçar um pouco cada uma reduz isso, ao custo de
+// syncCore demorar mais pra terminar (sem problema, é sincronização em segundo plano).
 async function syncCore(): Promise<Omit<SeparacaoCounts, "embaladas">> {
   const hoje = todayInSaoPaulo();
-  const [aguardandoSeparacao, emSeparacao, separadas] = await Promise.all([
-    countByCreatedOn(SITUACAO.aguardandoSeparacao, hoje),
-    countByCreatedOn(SITUACAO.emSeparacao, hoje),
-    countSeparadasHoje(hoje),
-  ]);
+  const aguardandoSeparacao = await countByCreatedOn(SITUACAO.aguardandoSeparacao, hoje);
+  await sleep(RATE_LIMIT_DELAY_MS);
+  const emSeparacao = await countByCreatedOn(SITUACAO.emSeparacao, hoje);
+  await sleep(RATE_LIMIT_DELAY_MS);
+  const separadas = await countSeparadasHoje(hoje);
   return { aguardandoSeparacao, emSeparacao, separadas };
 }
 

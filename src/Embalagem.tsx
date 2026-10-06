@@ -27,11 +27,13 @@ interface ColaboradorEmbalagem {
 
 // Vazio quando front e API rodam juntos — mesma convenção do resto do sistema.
 const API_URL = import.meta.env.VITE_API_URL ?? "";
-// Mais espaçado que outras telas de propósito: cada atualização pode disparar várias chamadas ao
-// Tiny (pesquisa paginada + 1 por separação nova), e o painel de separação já sincroniza por conta
-// própria a cada 30s/10min — os dois batendo juntos foi o que mais provocou "limite de taxa"
-// (ver lib/embalagem.ts) na prática.
-const POLL_MS = 45_000;
+// Bem mais espaçado que outras telas de propósito: cada atualização pode disparar várias chamadas
+// ao Tiny (pesquisa paginada + 1 por separação nova), e o painel de separação já sincroniza por
+// conta própria a cada 30s/10min — os dois competindo pelo mesmo limite de taxa é o que mais
+// provoca "Tiny bloqueou temporariamente..." na prática (ver lib/embalagem.ts). Não tem botão
+// manual aqui de propósito, então esse polling é a ÚNICA fonte extra de chamadas que esta tela
+// soma ao resto do sistema — por isso o intervalo fica largo em vez de mais "ao vivo".
+const POLL_MS = 90_000;
 
 function hojeBr(): string {
   return new Date().toLocaleDateString("pt-BR");
