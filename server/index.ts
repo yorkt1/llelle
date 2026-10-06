@@ -120,7 +120,9 @@ async function syncEmbaladasOnce(): Promise<void> {
   }
 }
 
+// Atraso no primeiro embaladas: sem isso, os dois syncs disparavam juntos bem no boot (cada deploy
+// reinicia o processo), formando uma rajada logo de cara contra o limite de taxa do Tiny.
 void syncCoreOnce();
-void syncEmbaladasOnce();
+setTimeout(() => void syncEmbaladasOnce(), 15_000);
 setInterval(() => void syncCoreOnce(), CORE_SYNC_INTERVAL_MS);
 setInterval(() => void syncEmbaladasOnce(), EMBALADAS_SYNC_INTERVAL_MS);
