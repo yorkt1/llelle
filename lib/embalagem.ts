@@ -74,12 +74,20 @@ interface RetornoComErro {
   erros?: { erro: string }[];
 }
 
+// O Tiny nem sempre manda codigo_erro:6 junto com essa mensagem — já vimos o mesmo texto chegar
+// sem esse código (ou com outro). O texto em si é o sinal mais confiável de que é limite de taxa,
+// não o código, então checa os dois: codigo_erro:6 OU a mensagem "Token inválido" bate.
+function ehLimiteDeTaxa(retorno: RetornoComErro): boolean {
+  if (retorno.codigo_erro === LIMITE_TAXA_ERROR_CODE) return true;
+  return retorno.erros?.some((e) => /token inv[aá]lido/i.test(e.erro)) ?? false;
+}
+
 function falhaLimiteTaxa(): Error {
   return new Error("O Tiny bloqueou temporariamente as requisições (limite de taxa excedido). Aguarde alguns segundos e tente de novo.");
 }
 
 function falhaTiny(prefixo: string, retorno: RetornoComErro): Error {
-  if (retorno.codigo_erro === LIMITE_TAXA_ERROR_CODE) return falhaLimiteTaxa();
+  if (ehLimiteDeTaxa(retorno)) return falhaLimiteTaxa();
   const detalhe = retorno.erros?.map((e) => e.erro).join("; ") ?? "erro desconhecido";
   return new Error(`${prefixo}: ${detalhe}`);
 }
@@ -104,7 +112,7 @@ async function tinyGetComRetryDeLimiteTaxa<T extends { retorno: RetornoComErro }
     try {
       resposta = await tinyGet<T>(endpoint, params);
       erroHttp = undefined;
-      if (resposta.retorno.codigo_erro !== LIMITE_TAXA_ERROR_CODE) return resposta;
+      if (!ehLimiteDeTaxa(resposta.retorno)) return resposta;
     } catch (error) {
       if (!(error instanceof Error) || !/\(429\)/.test(error.message)) throw error;
       erroHttp = error;

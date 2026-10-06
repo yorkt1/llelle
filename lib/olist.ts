@@ -156,6 +156,14 @@ type SeparacaoPesquisaRetorno = {
   erros?: { erro: string }[];
 };
 
+// O Tiny nem sempre manda codigo_erro:6 junto com essa mensagem — já vimos o mesmo texto chegar
+// sem esse código (ou com outro). O texto em si é o sinal mais confiável de que é limite de taxa,
+// não o código, então checa os dois: codigo_erro:6 OU a mensagem "Token inválido" bate.
+function ehLimiteDeTaxa(retorno: SeparacaoPesquisaRetorno): boolean {
+  if (retorno.codigo_erro === LIMITE_TAXA_ERROR_CODE) return true;
+  return retorno.erros?.some((e) => /token inv[aá]lido/i.test(e.erro)) ?? false;
+}
+
 async function fetchPageUmaVez(situacao: number, pagina: number, range?: DateRange): Promise<SeparacaoPesquisaRetorno> {
   const url = new URL(`${apiBaseUrl()}/separacao.pesquisa.php`);
   url.searchParams.set("token", apiToken());
@@ -186,7 +194,7 @@ async function fetchPage(situacao: number, pagina: number, range?: DateRange): P
   let retorno: SeparacaoPesquisaRetorno | undefined;
   for (let tentativa = 1; tentativa <= TENTATIVAS_LIMITE_TAXA; tentativa++) {
     retorno = await fetchPageUmaVez(situacao, pagina, range);
-    if (retorno.codigo_erro !== LIMITE_TAXA_ERROR_CODE) break;
+    if (!ehLimiteDeTaxa(retorno)) break;
     if (tentativa < TENTATIVAS_LIMITE_TAXA) await sleep(800 * tentativa);
   }
 
@@ -194,7 +202,7 @@ async function fetchPage(situacao: number, pagina: number, range?: DateRange): P
     if (retorno!.codigo_erro === NO_RECORDS_ERROR_CODE) {
       return { numero_paginas: 0, separacoes: [] };
     }
-    if (retorno!.codigo_erro === LIMITE_TAXA_ERROR_CODE) {
+    if (ehLimiteDeTaxa(retorno!)) {
       throw new Error("O Tiny bloqueou temporariamente as requisições (limite de taxa excedido). Aguarde alguns segundos e tente de novo.");
     }
     const detail = retorno!.erros?.map((e) => e.erro).join("; ") ?? "erro desconhecido";

@@ -257,6 +257,32 @@ describe("embalagem", () => {
       const { obterDesempenho } = await freshEmbalagem();
       await expect(obterDesempenho("05/10/2026")).rejects.toThrow(/limite de taxa/i);
     }, 15_000);
+
+    it("'Token inválido' SEM codigo_erro:6 (visto na prática) ainda é tratado como limite de taxa, não como erro genérico", async () => {
+      let chamadas = 0;
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockImplementation(async (input) => {
+        switch (endpointDe(input)) {
+          case "separacao.pesquisa.php":
+            chamadas++;
+            // Sem codigo_erro nenhum — só o texto, que é o sinal real (visto em produção).
+            if (chamadas === 1) return jsonResponse({ retorno: { status: "Erro", erros: [{ erro: "Token inválido" }] } });
+            return jsonResponse({
+              retorno: { status: "OK", numero_paginas: 1, separacoes: [{ id: "1", dataCheckout: "05/10/2026" }] },
+            });
+          case "separacao.obter.php":
+            return jsonResponse({ retorno: { status: "OK", separacao: { idUsuarioEmbalador: "111" } } });
+          default:
+            throw new Error(`endpoint inesperado: ${String(input)}`);
+        }
+      });
+
+      const { obterDesempenho } = await freshEmbalagem();
+      const resultado = await obterDesempenho("05/10/2026");
+
+      expect(chamadas).toBeGreaterThan(1);
+      expect(resultado.totalPedidos).toBe(1);
+    }, 15_000);
   });
 
   describe("colaboradores", () => {

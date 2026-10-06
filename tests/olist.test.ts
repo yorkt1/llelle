@@ -174,14 +174,14 @@ describe("fetchSeparacaoCountsLive", () => {
     expect(situacaoEmbaladasCalls).toBeGreaterThan(0);
   });
 
-  it("rejeita quando o Olist devolve status de erro", async () => {
+  it("rejeita quando o Olist devolve status de erro (não relacionado a limite de taxa)", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation(
-      async () => jsonResponse({ retorno: { status: "Erro", erros: [{ erro: "Token inválido" }] } }),
+      async () => jsonResponse({ retorno: { status: "Erro", erros: [{ erro: "CNPJ inválido" }] } }),
     );
 
     const { fetchSeparacaoCountsLive } = await freshOlist();
-    await expect(fetchSeparacaoCountsLive()).rejects.toThrow("Token inválido");
+    await expect(fetchSeparacaoCountsLive()).rejects.toThrow("CNPJ inválido");
   });
 
   it("trata codigo_erro 32 (consulta sem registros) como contagem zero, nao como falha", async () => {
@@ -238,6 +238,23 @@ describe("fetchSeparacaoCountsLive", () => {
 
     const { fetchSeparacaoCountsLive } = await freshOlist();
     await expect(fetchSeparacaoCountsLive()).rejects.toThrow(/limite de taxa/i);
+  }, 15_000);
+
+  it("'Token inválido' SEM codigo_erro:6 (visto na prática) ainda é tratado como limite de taxa, não como erro genérico", async () => {
+    let chamadas = 0;
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async () => {
+      chamadas++;
+      // Sem codigo_erro nenhum — só o texto, que é o sinal real.
+      if (chamadas === 1) return jsonResponse({ retorno: { status: "Erro", erros: [{ erro: "Token inválido" }] } });
+      return jsonResponse(retornoOk([{}]));
+    });
+
+    const { fetchSeparacaoCountsLive } = await freshOlist();
+    const snapshot = await fetchSeparacaoCountsLive();
+
+    expect(chamadas).toBeGreaterThan(1);
+    expect(snapshot.counts.aguardandoSeparacao).toBe(1);
   }, 15_000);
 });
 
