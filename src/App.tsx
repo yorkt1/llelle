@@ -309,8 +309,9 @@ export function App() {
     } catch {
       // Se já tínhamos dados na tela, um soluço passageiro vira aviso discreto;
       // se nunca carregou nada, é bloqueante — não dá pra mostrar números que não existem.
+      const horario = new Date().toLocaleTimeString("pt-BR");
       setData((current) => {
-        if (current) setSyncError("Não consegui atualizar os números agora.");
+        if (current) setSyncError(`Não consegui atualizar os números agora (tentativa às ${horario}).`);
         else setBootError("Não consegui falar com o servidor do painel.");
         return current;
       });
@@ -379,6 +380,9 @@ export function App() {
         <GhostGrid stages={stages} colors={stageColors} />
       )}
 
+      {data?.syncedAt && (
+        <p className="nota-info">Última sincronização com o Tiny: {new Date(data.syncedAt).toLocaleTimeString("pt-BR")}</p>
+      )}
       {syncError && <p className="error-banner">{syncError}</p>}
 
       <SettingsButton onClick={() => setSettingsOpen(true)} />

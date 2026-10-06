@@ -60,7 +60,9 @@ export function Embalagem() {
       setDesempenho(json as DesempenhoEmbalagem);
       setErro(null);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui calcular o desempenho de embalagem.");
+      const mensagem = error instanceof Error ? error.message : "Não consegui calcular o desempenho de embalagem.";
+      const horario = new Date().toLocaleTimeString("pt-BR");
+      setErro(`${mensagem} (tentativa às ${horario})`);
     } finally {
       setCarregando(false);
     }
