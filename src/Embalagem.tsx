@@ -27,13 +27,6 @@ interface ColaboradorEmbalagem {
 
 // Vazio quando front e API rodam juntos — mesma convenção do resto do sistema.
 const API_URL = import.meta.env.VITE_API_URL ?? "";
-// Bem mais espaçado que outras telas de propósito: cada atualização pode disparar várias chamadas
-// ao Tiny (pesquisa paginada + 1 por separação nova), e o painel de separação já sincroniza por
-// conta própria a cada 30s/10min — os dois competindo pelo mesmo limite de taxa é o que mais
-// provoca "Tiny bloqueou temporariamente..." na prática (ver lib/embalagem.ts). Não tem botão
-// manual aqui de propósito, então esse polling é a ÚNICA fonte extra de chamadas que esta tela
-// soma ao resto do sistema — por isso o intervalo fica largo em vez de mais "ao vivo".
-const POLL_MS = 90_000;
 
 function hojeBr(): string {
   return new Date().toLocaleDateString("pt-BR");
@@ -88,15 +81,15 @@ export function Embalagem() {
     return () => clearTimeout(kickoff);
   }, [carregarColaboradores]);
 
-  // Reconsulta ao trocar o dia, e continua atualizando em intervalo (barato depois da primeira
-  // vez: separações já resolvidas ficam em cache no servidor — ver lib/embalagem.ts).
+  // Só reconsulta ao trocar o dia — sem polling automático de propósito. O servidor hoje roda num
+  // plano sem disco persistente (ver README), então cada deploy/"acordar" zera o cache de
+  // separações já resolvidas; um polling automático somava chamadas de fundo o dia inteiro em
+  // cima disso e estourava o limite de taxa do Tiny com frequência. Com atualização manual
+  // (botão), só dispara quando a pessoa realmente quer ver o número de novo — igual funcionava
+  // antes desta tela existir.
   useEffect(() => {
     const kickoff = setTimeout(() => void carregarDesempenho(dia), 0);
-    const id = setInterval(() => void carregarDesempenho(dia), POLL_MS);
-    return () => {
-      clearTimeout(kickoff);
-      clearInterval(id);
-    };
+    return () => clearTimeout(kickoff);
   }, [dia, carregarDesempenho]);
 
   const adicionarColaborador = useCallback(
@@ -147,7 +140,9 @@ export function Embalagem() {
         <button className="refresh-btn" type="button" onClick={() => setDia(hojeBr())}>
           Hoje
         </button>
-        {carregando && <span className="field-value--muted">Atualizando...</span>}
+        <button className="refresh-btn" type="button" onClick={() => void carregarDesempenho(dia)} disabled={carregando}>
+          {carregando ? "Atualizando..." : "Atualizar"}
+        </button>
       </form>
 
       {erro && <p className="error-banner">{erro}</p>}
