@@ -28,11 +28,18 @@ import * as store from "./store";
  * separação — sem cache, cada atualização da tela re-consultaria o dia inteiro de novo.
  */
 
-const RATE_LIMIT_DELAY_MS = 150; // mesmo valor usado em lib/relatorioVendas.ts
+// Maior que o valor "padrão" (150ms) usado em lib/relatorioVendas.ts/lib/olist.ts: essa tela faz
+// séries mais longas de chamadas (1 por separação a resolver), então um respiro maior entre elas
+// reduz a chance de, por conta própria, acumular volume suficiente pra estourar o limite de taxa.
+const RATE_LIMIT_DELAY_MS = 400;
 // Teto de segurança por chamada: nunca resolve mais que isso de separações NOVAS numa única
 // requisição (evita travar a tela de propósito num dia com volume alto) — o que sobrar fica pra
-// próxima chamada (ver `completo` no retorno), que já acha o resto em cache.
-const MAX_RESOLUCOES_POR_CHAMADA = 200;
+// próxima chamada (ver `completo` no retorno), que já acha o resto em cache. Baixado de 200: numa
+// cache fria (zerada por deploy, sem disco persistente — ver README), resolver 200 de uma vez já é
+// ~1min de chamadas em sequência só por essa tela, suficiente pra estourar o limite de taxa por
+// conta própria. Com menos por vez, a cache esquenta em várias chamadas pequenas em vez de uma só
+// rajada grande.
+const MAX_RESOLUCOES_POR_CHAMADA = 40;
 const SEM_REGISTROS_ERROR_CODE = 32;
 // Mesmo código de lib/devolucao.ts — o Tiny devolve isso com STATUS HTTP 200 (não é um erro de
 // rede, então o retry do tinyGet não entra em ação sozinho) quando bloqueia por limite de taxa.
