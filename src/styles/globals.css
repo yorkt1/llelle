@@ -1,7 +1,10 @@
 :root {
   --bg: #0a0b0d;
   --fg: #f4f5f7;
-  --muted: #6b7280;
+  /* #6b7280 original dava ~3.75:1 contra --panel — abaixo do mínimo AA (4.5:1) pra texto normal.
+     #8a92a0 mede ~5.8:1 contra --panel e ~6.8:1 contra --bg, mantendo a mesma intenção visual
+     ("texto secundário, discreto") sem ficar ilegível. */
+  --muted: #8a92a0;
   --line: #1f2226;
   --danger: #f87171;
   --success: #4ade80;
@@ -742,22 +745,20 @@ body {
   gap: 1rem;
 }
 
-/* Cards do Embalagem: 2 por linha de propósito (não auto-fill), um por colaborador/bancada,
-   com o nome em destaque no topo — texto geral maior que o da tabela padrão (pedido explícito:
-   letra pequena demais pra quem lê de longe/no celular). */
+/* Cards do Embalagem: um por colaborador/bancada, com o nome em destaque no topo — texto geral
+   maior que o da tabela padrão (pedido explícito: letra pequena demais pra quem lê de
+   longe/no celular). Auto-fill em vez de contagem fixa: se ajusta de 1 a N por linha conforme a
+   largura disponível, sem nunca espremer um card abaixo de 300px. */
 .embalagem-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1rem;
 }
 
-@media (max-width: 640px) {
-  .embalagem-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 .embalagem-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
@@ -765,15 +766,46 @@ body {
   padding: 1.25rem 1.5rem;
 }
 
+/* Sempre primeiro e ocupando a linha toda — resumo do dia, não é "mais um colaborador". */
 .embalagem-card--total {
+  grid-column: 1 / -1;
   background: rgba(91, 141, 239, 0.1);
   border-color: var(--brand);
 }
 
 .embalagem-card-nome {
-  margin: 0 0 0.85rem;
+  margin: 0 0 0.35rem;
   font-size: 1.45rem;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.embalagem-card-sub {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Card sem colaborador cadastrado: "Sem nome" + esse badge no lugar do subtítulo, clicável, que
+   leva direto pro formulário de cadastro já com o ID preenchido. */
+.embalagem-card-badge {
+  align-self: flex-start;
+  margin: 0 0 0.85rem;
+  background: rgba(91, 141, 239, 0.14);
+  border: 1px solid var(--brand);
+  color: var(--fg);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.embalagem-card-badge:hover {
+  background: rgba(91, 141, 239, 0.24);
 }
 
 .embalagem-card-stats {
@@ -797,6 +829,112 @@ body {
 .embalagem-card-label {
   font-size: 1.05rem;
   color: var(--muted);
+}
+
+/* Painel "Colaboradores cadastrados" do Embalagem — classe própria em vez de reaproveitar
+   .estoque-vazio (que é o estado "nada cadastrado ainda" do Estoque: largura fixa pequena, borda
+   tracejada, texto centralizado — tudo errado pra um painel de configuração de verdade). */
+.colab-painel {
+  width: 100%;
+  max-width: none;
+  text-align: left;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .colab-painel {
+    grid-template-columns: 1fr;
+  }
+}
+
+.colab-painel-info {
+  min-width: 0;
+}
+
+.colab-saibamais {
+  background: none;
+  border: none;
+  color: var(--brand);
+  font-size: 0.85rem;
+  padding: 0;
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+
+.colab-painel-form-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 1.25rem;
+  align-self: start;
+}
+
+.colab-painel-form-titulo {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+}
+
+/* Formulário do painel: empilhado (não lado a lado como .busca-linha, que é feito pra uma barra
+   de busca horizontal) — cada campo numa linha, botão embaixo ocupando a largura toda. */
+.colab-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.colab-form .field {
+  text-align: left;
+}
+
+.colab-form .btn-primario,
+.colab-form .refresh-btn {
+  width: 100%;
+  text-align: center;
+}
+
+/* Botões com ícone (Editar/Excluir/Configurar) — o ícone nunca encolhe e nunca passa de 1rem,
+   pra não disputar espaço com o texto ao lado dele. */
+.refresh-btn--icone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-icone {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+/* Barra Dia/Hoje/Atualizar: todos os controles com a mesma altura, alinhados pela base — sem
+   isso, o input (com rótulo acima) e os botões (sem rótulo) ficavam com alturas levemente
+   diferentes. */
+.busca-linha--alinhada .field-input,
+.busca-linha--alinhada .refresh-btn,
+.busca-linha--alinhada .btn-primario {
+  height: 2.5rem;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+}
+
+.nota-info--aviso {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.nota-info-icone {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: var(--stage-2);
 }
 
 .estoque-card {

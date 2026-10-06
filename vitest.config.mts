@@ -7,6 +7,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+    // Testes de componente (.tsx) declaram `// @vitest-environment jsdom` no topo do arquivo —
+    // o resto (lib/ puro Node) fica em "node" por padrão, mais rápido e sem simular navegador.
+    setupFiles: ["tests/setup-react.ts"],
   },
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 interface DesempenhoColaborador {
   idUsuarioEmbalador: string;
@@ -32,6 +32,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? "";
 // direto (ver lib/embalagem.ts) — quem chama o Tiny é só o job de fundo, numa frequência própria.
 // Mesmo intervalo do painel de separação (src/App.tsx).
 const POLL_MS = 30_000;
+const NOME_MAX_LENGTH = 100;
 
 function hojeBr(): string {
   return new Date().toLocaleDateString("pt-BR");
@@ -44,6 +45,61 @@ function extrairErro(json: unknown, fallback: string): string {
   return fallback;
 }
 
+/** Primeiros dígitos + "…" — o ID completo (idUsuarioEmbalador) não diz nada pra quem lê, só serve de referência. */
+function abreviarId(id: string): string {
+  return id.length > 4 ? `${id.slice(0, 4)}…` : id;
+}
+
+function IconeEditar({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path
+        d="M4 20h4L19.5 8.5a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconeExcluir({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path
+        d="M5 7h14M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconeConfig({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconeAviso({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M12 8v5M12 16h.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function Embalagem() {
   const [dia, setDia] = useState(hojeBr());
   const [desempenho, setDesempenho] = useState<DesempenhoEmbalagem | null>(null);
@@ -52,6 +108,7 @@ export function Embalagem() {
 
   const [colaboradores, setColaboradores] = useState<ColaboradorEmbalagem[]>([]);
   const [mostrarConfig, setMostrarConfig] = useState(false);
+  const [mostrarSaibaMais, setMostrarSaibaMais] = useState(false);
   const [novoId, setNovoId] = useState("");
   const [novoNome, setNovoNome] = useState("");
   const [novaBancada, setNovaBancada] = useState("");
@@ -61,6 +118,8 @@ export function Embalagem() {
   // o ID de ANTES da edição porque, se a pessoa também trocar o ID no formulário, precisa remover
   // o registro antigo depois de salvar o novo — o Tiny não tem conceito de "renomear uma chave".
   const [editandoIdOriginal, setEditandoIdOriginal] = useState<string | null>(null);
+
+  const colaboradorPorId = useMemo(() => new Map(colaboradores.map((c) => [c.idUsuarioEmbalador, c])), [colaboradores]);
 
   const carregarDesempenho = useCallback(async (diaConsultado: string) => {
     setCarregando(true);
@@ -122,35 +181,70 @@ export function Embalagem() {
     setErroConfig(null);
   }, []);
 
+  /** Clique no badge "Cadastrar" de um card sem nome — abre o painel já com o ID preenchido. */
+  const abrirCadastroComId = useCallback((idUsuarioEmbalador: string) => {
+    setMostrarConfig(true);
+    setEditandoIdOriginal(null);
+    setNovoId(idUsuarioEmbalador);
+    setNovoNome("");
+    setNovaBancada("");
+    setErroConfig(null);
+  }, []);
+
   const salvarColaborador = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
       setErroConfig(null);
+
+      const idLimpo = novoId.trim();
+      const nomeLimpo = novoNome.trim();
+      if (!idLimpo) {
+        setErroConfig("Informe o ID do usuário no Tiny.");
+        return;
+      }
+      if (!/^\d+$/.test(idLimpo)) {
+        setErroConfig("O ID deve conter apenas números.");
+        return;
+      }
+      if (!nomeLimpo) {
+        setErroConfig("Informe o nome do colaborador.");
+        return;
+      }
+      if (nomeLimpo.length > NOME_MAX_LENGTH) {
+        setErroConfig(`O nome pode ter no máximo ${NOME_MAX_LENGTH} caracteres.`);
+        return;
+      }
+      if (!editandoIdOriginal && colaboradorPorId.has(idLimpo)) {
+        setErroConfig("Esse ID já está cadastrado.");
+        return;
+      }
+
       setSalvandoConfig(true);
       try {
         const response = await fetch(`${API_URL}/api/embalagem/colaboradores`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idUsuarioEmbalador: novoId, nome: novoNome, bancada: novaBancada }),
+          body: JSON.stringify({ idUsuarioEmbalador: idLimpo, nome: nomeLimpo, bancada: novaBancada }),
         });
         const json = await response.json();
         if (!response.ok) throw new Error(extrairErro(json, "Não consegui salvar o colaborador."));
 
         // Editando e o ID mudou: o registro antigo não se renomeia, fica um cadastro separado se
         // não remover — limpa ele depois de confirmar que o novo já foi salvo.
-        if (editandoIdOriginal && editandoIdOriginal !== novoId.trim()) {
+        if (editandoIdOriginal && editandoIdOriginal !== idLimpo) {
           await fetch(`${API_URL}/api/embalagem/colaboradores/${encodeURIComponent(editandoIdOriginal)}`, { method: "DELETE" });
         }
 
         cancelarEdicao();
         await carregarColaboradores();
       } catch (error) {
+        // Mantém o que a pessoa digitou — só a mensagem de erro aparece, o formulário não limpa.
         setErroConfig(error instanceof Error ? error.message : "Não consegui salvar o colaborador.");
       } finally {
         setSalvandoConfig(false);
       }
     },
-    [novoId, novoNome, novaBancada, editandoIdOriginal, cancelarEdicao, carregarColaboradores],
+    [novoId, novoNome, novaBancada, editandoIdOriginal, colaboradorPorId, cancelarEdicao, carregarColaboradores],
   );
 
   const removerColaborador = useCallback(
@@ -168,13 +262,25 @@ export function Embalagem() {
     [carregarColaboradores, editandoIdOriginal, cancelarEdicao],
   );
 
+  const confirmarERemover = useCallback(
+    (colaborador: ColaboradorEmbalagem) => {
+      if (!window.confirm(`Remover "${colaborador.nome}" da lista de colaboradores?`)) return;
+      void removerColaborador(colaborador.idUsuarioEmbalador);
+    },
+    [removerColaborador],
+  );
+
   return (
     <div className="page pagina-formulario pagina-formulario--larga">
       <header className="header">
         <h1 className="title">Controle de Tempo de Embalagem</h1>
+        <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => setMostrarConfig((atual) => !atual)}>
+          <IconeConfig className="btn-icone" />
+          {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
+        </button>
       </header>
 
-      <form className="busca-linha" onSubmit={(event) => event.preventDefault()}>
+      <form className="busca-linha busca-linha--alinhada" onSubmit={(event) => event.preventDefault()}>
         <label className="field">
           <span className="field-label">Dia</span>
           <input className="field-input" value={dia} onChange={(event) => setDia(event.target.value)} placeholder="dd/mm/aaaa" />
@@ -182,7 +288,7 @@ export function Embalagem() {
         <button className="refresh-btn" type="button" onClick={() => setDia(hojeBr())}>
           Hoje
         </button>
-        <button className="refresh-btn" type="button" onClick={() => void carregarDesempenho(dia)} disabled={carregando}>
+        <button className="btn-primario" type="button" onClick={() => void carregarDesempenho(dia)} disabled={carregando}>
           {carregando ? "Atualizando..." : "Atualizar"}
         </button>
       </form>
@@ -191,7 +297,8 @@ export function Embalagem() {
 
       {desempenho && (
         <>
-          <p className="nota-info">
+          <p className="nota-info nota-info--aviso">
+            {!desempenho.completo && <IconeAviso className="nota-info-icone" />}
             Atualizado às {new Date(desempenho.atualizadoEm).toLocaleTimeString("pt-BR")}
             {!desempenho.completo ? " — ainda sincronizando com o Tiny, os números vão completar nas próximas atualizações." : ""}
             {desempenho.naoIdentificados > 0
@@ -203,25 +310,6 @@ export function Embalagem() {
             <p className="field-value--muted">Nenhum pedido embalado nesse dia ainda.</p>
           ) : (
             <div className="embalagem-grid">
-              {desempenho.colaboradores.map((colaborador) => (
-                <div key={colaborador.idUsuarioEmbalador} className="embalagem-card">
-                  <h3 className="embalagem-card-nome">{colaborador.nome}</h3>
-                  <div className="embalagem-card-stats">
-                    <div className="embalagem-card-stat">
-                      <span className="embalagem-card-valor">{colaborador.pedidos}</span>
-                      <span className="embalagem-card-label">Pedidos</span>
-                    </div>
-                    <div className="embalagem-card-stat">
-                      <span className="embalagem-card-valor">{colaborador.pedidosPorHora}</span>
-                      <span className="embalagem-card-label">Pedidos/Hora</span>
-                    </div>
-                    <div className="embalagem-card-stat">
-                      <span className="embalagem-card-valor">{colaborador.tempoFormatado}</span>
-                      <span className="embalagem-card-label">Tempo</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
               <div className="embalagem-card embalagem-card--total">
                 <h3 className="embalagem-card-nome">TOTAL</h3>
                 <div className="embalagem-card-stats">
@@ -235,88 +323,155 @@ export function Embalagem() {
                   </div>
                 </div>
               </div>
+
+              {desempenho.colaboradores.map((colaborador) => {
+                const registrado = colaboradorPorId.get(colaborador.idUsuarioEmbalador);
+                return (
+                  <div key={colaborador.idUsuarioEmbalador} className="embalagem-card">
+                    {registrado ? (
+                      <>
+                        <h3 className="embalagem-card-nome" title={registrado.nome}>
+                          {registrado.nome}
+                        </h3>
+                        <p className="embalagem-card-sub">
+                          {registrado.bancada ? `Bancada ${registrado.bancada} · ` : ""}ID {abreviarId(colaborador.idUsuarioEmbalador)}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="embalagem-card-nome">Sem nome</h3>
+                        <button
+                          type="button"
+                          className="embalagem-card-badge"
+                          onClick={() => abrirCadastroComId(colaborador.idUsuarioEmbalador)}
+                        >
+                          Cadastrar · ID {abreviarId(colaborador.idUsuarioEmbalador)}
+                        </button>
+                      </>
+                    )}
+                    <div className="embalagem-card-stats">
+                      <div className="embalagem-card-stat">
+                        <span className="embalagem-card-valor">{colaborador.pedidos}</span>
+                        <span className="embalagem-card-label">Pedidos</span>
+                      </div>
+                      <div className="embalagem-card-stat">
+                        <span className="embalagem-card-valor">{colaborador.pedidosPorHora}</span>
+                        <span className="embalagem-card-label">Pedidos/Hora</span>
+                      </div>
+                      <div className="embalagem-card-stat">
+                        <span className="embalagem-card-valor">{colaborador.tempoFormatado}</span>
+                        <span className="embalagem-card-label">Tempo</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </>
       )}
 
-      <button className="nav-corner-item" onClick={() => setMostrarConfig((atual) => !atual)}>
-        {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
-      </button>
-
       {mostrarConfig && (
-        <div className="estoque-vazio">
-          <p className="estoque-vazio-titulo">Colaboradores cadastrados</p>
-          <p className="field-value--muted">
-            O Tiny identifica quem embalou por um ID numérico (`idUsuarioEmbalador`), não pelo nome — cadastre aqui qual ID
-            corresponde a qual colaborador, e opcionalmente a bancada dele (pra não precisar mostrar esse ID cru na tela).
-            Um ID sem cadastro aparece no relatório como "ID 12345 (sem nome cadastrado)".
-          </p>
+        <div className="colab-painel">
+          <div className="colab-painel-info">
+            <p className="estoque-vazio-titulo">Colaboradores cadastrados</p>
+            <p className="field-value--muted">
+              O Tiny identifica quem embalou por um ID numérico, não pelo nome.
+              {mostrarSaibaMais && (
+                <>
+                  {" "}
+                  Cadastre aqui qual ID (`idUsuarioEmbalador`) corresponde a qual colaborador, e opcionalmente a bancada dele —
+                  assim a tela mostra o nome em vez do ID cru. Um ID sem cadastro aparece no relatório como "Sem nome".
+                </>
+              )}
+            </p>
+            <button type="button" className="colab-saibamais" onClick={() => setMostrarSaibaMais((atual) => !atual)}>
+              {mostrarSaibaMais ? "Mostrar menos" : "Saiba mais"}
+            </button>
 
-          <div className="tabela-wrap">
-            <table className="tabela">
-              <thead>
-                <tr>
-                  <th>Bancada</th>
-                  <th>Nome</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {colaboradores.length === 0 ? (
+            <div className="tabela-wrap">
+              <table className="tabela">
+                <thead>
                   <tr>
-                    <td colSpan={3} className="field-value--muted">
-                      Nenhum colaborador cadastrado ainda.
-                    </td>
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>Bancada</th>
+                    <th>Ações</th>
                   </tr>
-                ) : (
-                  colaboradores.map((colaborador) => (
-                    <tr key={colaborador.idUsuarioEmbalador} className={editandoIdOriginal === colaborador.idUsuarioEmbalador ? "tabela-linha--editando" : undefined}>
-                      <td>
-                        {colaborador.bancada ? `Bancada ${colaborador.bancada}` : "—"}
-                        <br />
-                        <span className="field-value--muted">ID {colaborador.idUsuarioEmbalador}</span>
-                      </td>
-                      <td>{colaborador.nome}</td>
-                      <td className="tabela-acoes">
-                        <button type="button" className="refresh-btn" onClick={() => iniciarEdicao(colaborador)}>
-                          Editar
-                        </button>
-                        <button type="button" className="refresh-btn" onClick={() => void removerColaborador(colaborador.idUsuarioEmbalador)}>
-                          Remover
-                        </button>
+                </thead>
+                <tbody>
+                  {colaboradores.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="field-value--muted">
+                        Nenhum colaborador cadastrado ainda.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    colaboradores.map((colaborador) => (
+                      <tr
+                        key={colaborador.idUsuarioEmbalador}
+                        className={editandoIdOriginal === colaborador.idUsuarioEmbalador ? "tabela-linha--editando" : undefined}
+                      >
+                        <td>{colaborador.idUsuarioEmbalador}</td>
+                        <td>{colaborador.nome}</td>
+                        <td>{colaborador.bancada || "—"}</td>
+                        <td className="tabela-acoes">
+                          <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => iniciarEdicao(colaborador)}>
+                            <IconeEditar className="btn-icone" />
+                            Editar
+                          </button>
+                          <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => confirmarERemover(colaborador)}>
+                            <IconeExcluir className="btn-icone" />
+                            Excluir
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          <form className="busca-linha" onSubmit={salvarColaborador}>
-            <label className="field">
-              <span className="field-label">ID do usuário no Tiny</span>
-              <input className="field-input" value={novoId} onChange={(event) => setNovoId(event.target.value)} placeholder="Ex: 449251343" />
-            </label>
-            <label className="field">
-              <span className="field-label">Nome do colaborador</span>
-              <input className="field-input" value={novoNome} onChange={(event) => setNovoNome(event.target.value)} placeholder="Ex: Geovane" />
-            </label>
-            <label className="field">
-              <span className="field-label">Bancada (opcional)</span>
-              <input className="field-input" value={novaBancada} onChange={(event) => setNovaBancada(event.target.value)} placeholder="Ex: 03" />
-            </label>
-            <button className="btn-primario" type="submit" disabled={salvandoConfig}>
-              {salvandoConfig ? "Salvando..." : editandoIdOriginal ? "Salvar alteração" : "Adicionar"}
-            </button>
-            {editandoIdOriginal && (
-              <button type="button" className="refresh-btn" onClick={cancelarEdicao}>
-                Cancelar
+          <div className="colab-painel-form-card">
+            <h3 className="colab-painel-form-titulo">{editandoIdOriginal ? "Editar colaborador" : "Novo colaborador"}</h3>
+            <form className="colab-form" onSubmit={salvarColaborador}>
+              <label className="field">
+                <span className="field-label">ID do usuário no Tiny</span>
+                <input
+                  className="field-input"
+                  inputMode="numeric"
+                  value={novoId}
+                  onChange={(event) => setNovoId(event.target.value)}
+                  placeholder="Ex: 449251343"
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">Nome do colaborador</span>
+                <input
+                  className="field-input"
+                  value={novoNome}
+                  onChange={(event) => setNovoNome(event.target.value)}
+                  placeholder="Ex: Geovane"
+                  maxLength={NOME_MAX_LENGTH}
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">Bancada (opcional)</span>
+                <input className="field-input" value={novaBancada} onChange={(event) => setNovaBancada(event.target.value)} placeholder="Ex: 03" />
+              </label>
+              <button className="btn-primario" type="submit" disabled={salvandoConfig}>
+                {salvandoConfig ? "Salvando..." : editandoIdOriginal ? "Salvar alteração" : "Adicionar"}
               </button>
-            )}
-          </form>
+              {editandoIdOriginal && (
+                <button type="button" className="refresh-btn" onClick={cancelarEdicao}>
+                  Cancelar
+                </button>
+              )}
+            </form>
 
-          {erroConfig && <p className="error-banner">{erroConfig}</p>}
+            {erroConfig && <p className="error-banner">{erroConfig}</p>}
+          </div>
         </div>
       )}
     </div>
