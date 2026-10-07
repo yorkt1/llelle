@@ -49,7 +49,7 @@
 
   // ===== CONFIGURAÇÃO — ajuste antes de usar =====
   const BACKEND_URL = "https://llelle.onrender.com/api/devolucao/shopee";
-  const IMPORT_TOKEN = "COLE_AQUI_O_MESMO_VALOR_DE_SHOPEE_IMPORT_TOKEN_DO_RENDER";
+const IMPORT_TOKEN = "querotestar";
   // ================================================
 
   // Indicador fixo (não some sozinho) — começa vermelho quando a página abre/troca de devolução,

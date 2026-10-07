@@ -36,7 +36,7 @@
 
   // ===== CONFIGURAÇÃO — ajuste antes de usar =====
   const BACKEND_URL = "https://llelle.onrender.com/api/devolucao/mercadolivre";
-  const IMPORT_TOKEN = "COLE_AQUI_O_MESMO_VALOR_DE_MERCADOLIVRE_IMPORT_TOKEN_DO_RENDER";
+  const IMPORT_TOKEN = "20e87baf80d03621ebd8209f85e9c8c7025140124c9aba8c0dfada9dc6d535ae";
   // ================================================
 
   // Mesmo indicador fixo (bolinha de 12px) já usado no script do Shopee — vermelho enquanto
