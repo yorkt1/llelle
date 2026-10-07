@@ -4,6 +4,15 @@ import { buscarDevolucaoPorNf, NfNaoEncontradaError, TinyLimiteTaxaError } from 
 import { salvarImportacaoShopee, type ShopeeImportacaoEntrada } from "../../lib/shopeeImportacao";
 import { salvarImportacaoMercadoLivre, type MercadoLivreImportacaoEntrada } from "../../lib/mercadoLivreImportacao";
 import { GroqConfigError, lerNumeroSerieComGroq } from "../../lib/groqOcr";
+import {
+  brParaIso,
+  listarDevolucoes,
+  parsearLinhasPlanilha,
+  registrarDevolucoes,
+  removerDevolucao,
+  type EntradaDevolucao,
+} from "../../lib/devolucaoHistorico";
+import { vendasPorCodigoNoPeriodo } from "../../lib/vendasSync";
 
 export const devolucaoRouter = Router();
 
@@ -160,5 +169,98 @@ devolucaoRouter.post("/ler-numero-serie", async (req, res) => {
     }
     const mensagem = error instanceof Error ? error.message : "Erro inesperado ao ler a imagem.";
     res.status(502).json({ erro: mensagem });
+  }
+});
+
+// ---------- Histórico (ver lib/devolucaoHistorico.ts) ----------
+
+function erroDe(error: unknown, padrao: string): string {
+  return error instanceof Error ? error.message : padrao;
+}
+
+function paraEntradaHistorico(bruto: unknown): EntradaDevolucao | null {
+  if (!bruto || typeof bruto !== "object") return null;
+  const b = bruto as Record<string, unknown>;
+  const texto = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const data = brParaIso(texto(b.dataPedidoSac)) ?? (/^\d{4}-\d{2}-\d{2}$/.test(texto(b.data)) ? texto(b.data) : null);
+  const nf = texto(b.nf);
+  const produto = texto(b.produto);
+  if (!data || !nf || !produto) return null;
+  return {
+    data,
+    nf,
+    idPedido: texto(b.idPedido),
+    cliente: texto(b.cliente),
+    marketplace: texto(b.marketplace),
+    ocorrencia: texto(b.ocorrencia),
+    observacoes: texto(b.observacoes),
+    quantidade: paraNumero(b.quantidade) ?? 1,
+    produto,
+    codigoProduto: texto(b.codigoProduto),
+    dataRecebimento: texto(b.dataRecebimento),
+    defeito: texto(b.defeito),
+    codigoFabricante: texto(b.codigoFabricante),
+    status: texto(b.status),
+    reembolso: texto(b.reembolso),
+    valorReembolso: paraNumero(b.valorReembolso),
+    origem: "tela",
+  };
+}
+
+devolucaoRouter.post("/historico", async (req, res) => {
+  const brutos: unknown[] = Array.isArray(req.body?.registros) ? req.body.registros : [];
+  const entradas = brutos.map(paraEntradaHistorico).filter((e): e is EntradaDevolucao => e !== null);
+  if (entradas.length === 0) {
+    res.status(400).json({ erro: "Nenhuma linha válida (precisa de data dd/mm/aaaa, NF e produto)." });
+    return;
+  }
+  try {
+    res.status(201).json(await registrarDevolucoes(entradas));
+  } catch (error) {
+    res.status(500).json({ erro: erroDe(error, "Não consegui salvar no histórico.") });
+  }
+});
+
+devolucaoRouter.post("/historico/importar", async (req, res) => {
+  const texto = typeof req.body?.texto === "string" ? req.body.texto : "";
+  const { entradas, ignoradas } = parsearLinhasPlanilha(texto);
+  if (entradas.length === 0) {
+    res.status(400).json({ erro: "Nenhuma linha reconhecida — cole as linhas da planilha (colunas A até O), sem o cabeçalho." });
+    return;
+  }
+  try {
+    const resultado = await registrarDevolucoes(entradas);
+    res.status(201).json({ ...resultado, ignoradas });
+  } catch (error) {
+    res.status(500).json({ erro: erroDe(error, "Não consegui importar.") });
+  }
+});
+
+devolucaoRouter.get("/historico", async (req, res) => {
+  const de = String(req.query.de ?? "");
+  const ate = String(req.query.ate ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate) || de > ate) {
+    res.status(400).json({ erro: "Informe o período (de/ate no formato aaaa-mm-dd)." });
+    return;
+  }
+  try {
+    res.status(200).json({ registros: await listarDevolucoes(de, ate), vendasPorCodigo: await vendasPorCodigoNoPeriodo(de, ate) });
+  } catch (error) {
+    res.status(500).json({ erro: erroDe(error, "Não consegui carregar o histórico.") });
+  }
+});
+
+devolucaoRouter.delete("/historico", async (req, res) => {
+  const id = typeof req.body?.id === "string" ? req.body.id : "";
+  const registradoEm = typeof req.body?.registradoEm === "string" ? req.body.registradoEm : "";
+  if (!id || !registradoEm) {
+    res.status(400).json({ erro: "Informe o registro a remover." });
+    return;
+  }
+  try {
+    await removerDevolucao(id, registradoEm);
+    res.status(204).end();
+  } catch (error) {
+    res.status(500).json({ erro: erroDe(error, "Não consegui remover.") });
   }
 });

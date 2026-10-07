@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
 import { PageHeader } from "@/PageHeader";
+import { DevolucoesHistorico } from "@/DevolucoesHistorico";
 
 interface ItemDevolucao {
   codigo: string;
@@ -302,6 +303,7 @@ export function Devolucoes() {
   const [preview, setPreview] = useState<DevolucaoPreview | null>(null);
   const [linhas, setLinhas] = useState<LinhaEditavel[]>([]);
   const [avisoCopia, setAvisoCopia] = useState<string | null>(null);
+  const [aba, setAba] = useState<"registrar" | "historico">("registrar");
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(() => lerBuscasRecentes());
   const tabelaRef = useRef<HTMLTableElement>(null);
 
@@ -449,12 +451,60 @@ export function Devolucoes() {
     } catch {
       setAvisoCopia(null);
       setErro("Não consegui copiar — seu navegador pode ter bloqueado o acesso à área de transferência.");
+      return;
+    }
+
+    // Cópia pra planilha continua sendo o fluxo principal; o histórico é um extra — se falhar,
+    // a cópia já foi feita e só avisa. Copiar de novo a mesma linha atualiza, não duplica.
+    try {
+      const resposta = await fetch(`${API_URL}/api/devolucao/historico`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          registros: linhas.map((linha, index) => ({
+            dataPedidoSac: linha.dataPedidoSac,
+            nf: preview.nf,
+            idPedido: preview.idPedido,
+            cliente: preview.cliente,
+            marketplace: preview.marketplace,
+            ocorrencia: linha.ocorrencia,
+            observacoes: linha.observacoes,
+            quantidade: linha.quantidade,
+            produto: linha.produto,
+            codigoProduto: preview.itens[index]?.codigo ?? "",
+            dataRecebimento: linha.dataRecebimento,
+            defeito: linha.defeito,
+            codigoFabricante: linha.codigoFabricante,
+            status: linha.status,
+            reembolso: linha.reembolso,
+            valorReembolso: preview.shopee?.valorReembolso,
+          })),
+        }),
+      });
+      if (!resposta.ok) throw new Error(extrairErro(await resposta.json(), "falhou"));
+      setAvisoCopia(`✔ ${linhas.length} linha(s) copiada(s) e salva(s) no histórico`);
+    } catch (error) {
+      setAvisoCopia(`✔ ${linhas.length} linha(s) copiada(s) — mas não consegui salvar no histórico (${error instanceof Error ? error.message : "erro"}).`);
     }
   }, [preview, linhas]);
 
   return (
     <div className="page pagina-formulario">
-      <PageHeader titulo="Devoluções" />
+      <PageHeader titulo="Devoluções" subtitulo="Registro de devoluções e histórico com indicadores" />
+
+      <div className="abas" role="tablist" aria-label="Seções de Devoluções">
+        <button type="button" role="tab" aria-selected={aba === "registrar"} className={`aba${aba === "registrar" ? " aba--ativa" : ""}`} onClick={() => setAba("registrar")}>
+          Registrar
+        </button>
+        <button type="button" role="tab" aria-selected={aba === "historico"} className={`aba${aba === "historico" ? " aba--ativa" : ""}`} onClick={() => setAba("historico")}>
+          Histórico
+        </button>
+      </div>
+
+      {aba === "historico" ? (
+        <DevolucoesHistorico />
+      ) : (
+        <>
 
       <form className="busca-linha" onSubmit={buscar}>
         <label className="field">
@@ -627,6 +677,8 @@ export function Devolucoes() {
           </button>
 
           {avisoCopia && <p className="aviso-sucesso">{avisoCopia}</p>}
+        </>
+      )}
         </>
       )}
     </div>

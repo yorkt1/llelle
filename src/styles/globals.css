@@ -1218,7 +1218,8 @@ body:has(.settings-overlay) .app-bottom-nav {
   border-bottom: 1px solid var(--line);
 }
 
-.ruas-abas {
+.ruas-abas,
+.abas {
   display: flex;
   gap: 0.25rem;
   overflow-x: auto;
@@ -1227,7 +1228,8 @@ body:has(.settings-overlay) .app-bottom-nav {
   max-width: 100%;
 }
 
-.ruas-aba {
+.ruas-aba,
+.aba {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -1246,11 +1248,13 @@ body:has(.settings-overlay) .app-bottom-nav {
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 
-.ruas-aba:hover {
+.ruas-aba:hover,
+.aba:hover {
   color: var(--fg);
 }
 
-.ruas-aba--ativa {
+.ruas-aba--ativa,
+.aba--ativa {
   color: var(--fg);
   border-bottom-color: var(--brand);
 }
@@ -1976,3 +1980,145 @@ body:has(.settings-overlay) .app-bottom-nav {
   width: 100%;
 }
 
+
+/* ---------- Abas de seção (Devoluções: Registrar / Histórico) ---------- */
+
+.abas {
+  border-bottom: 1px solid var(--line);
+}
+
+/* ---------- Cartões de painel, barras e filtros com rótulo (Histórico, Compras) ---------- */
+
+.painel-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 1.25rem 1.5rem;
+  min-width: 0;
+}
+
+.painel-card-titulo {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.painel-duplo {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .painel-duplo {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dentro de um .painel-card a tabela não precisa de segunda moldura/sombra. */
+.tabela-wrap--plana {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* Barras horizontais de uma série só: cor única (marca), valor em texto ao lado — nunca só cor. */
+.barras {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.barras-item {
+  display: grid;
+  grid-template-columns: minmax(6rem, 11rem) 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.barras-rotulo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-secondary);
+}
+
+.barras-trilho {
+  height: 0.6rem;
+  background: var(--surface-active);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.barras-barra {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: var(--brand);
+  border-radius: 0 4px 4px 0;
+}
+
+.barras-item:hover .barras-barra {
+  filter: brightness(1.15);
+}
+
+.barras-valor {
+  min-width: 5.5rem;
+  text-align: right;
+}
+
+/* Filtro com rótulo em cima (período, marketplace…) — alinha pela base com botões sem rótulo. */
+.filtro-barra:has(.filtro-campo) {
+  align-items: flex-end;
+}
+
+.filtro-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 0 1 11rem;
+  min-width: 9rem;
+}
+
+.filtro-acao {
+  margin-left: auto;
+}
+
+.resumo-card-valor--texto {
+  font-size: 1.35rem;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-panel.settings-panel--largo {
+  width: min(44rem, 94vw);
+}
+
+.importar-textarea {
+  min-height: 14rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  white-space: pre;
+}
+
+@media (max-width: 640px) {
+  .filtro-campo {
+    flex: 1 1 calc(50% - 0.375rem);
+    min-width: 0;
+  }
+
+  .filtro-acao {
+    margin-left: 0;
+  }
+
+  .barras-item {
+    grid-template-columns: minmax(5rem, 8rem) 1fr auto;
+  }
+}
