@@ -850,14 +850,97 @@ body:has(.settings-overlay) .nav-corner {
   gap: 1rem;
 }
 
-/* Cards do Embalagem: um por colaborador/bancada, com o nome em destaque no topo — texto geral
-   maior que o da tabela padrão (pedido explícito: letra pequena demais pra quem lê de
-   longe/no celular). Auto-fill em vez de contagem fixa: se ajusta de 1 a N por linha conforme a
-   largura disponível, sem nunca espremer um card abaixo de 300px. */
+/* Painel fixo por bancada (substitui o grid dinâmico antigo nessa mesma tela — pedido explícito:
+   layout fixo em 2 colunas, uma caixa por bancada, letra grande, porque fica num painel/TV). Uma
+   bancada por linha de duas, sempre presente mesmo com 0 pedidos ainda hoje. */
+.bancada-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+.bancada-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  padding: 1.5rem 1.75rem;
+}
+
+.bancada-card-titulo {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--brand);
+  text-transform: uppercase;
+}
+
+.bancada-card-nome {
+  margin: 0 0 1.25rem;
+  font-size: 2.1rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bancada-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+}
+
+.bancada-card-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.bancada-card-valor {
+  font-size: 3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.bancada-card-label {
+  font-size: 1.3rem;
+  color: var(--muted);
+}
+
+.bancada-total {
+  margin: 1.25rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .bancada-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Cards do Embalagem: lista secundária (quem embalou mas não está numa bancada cadastrada) — bem
+   menos destaque que o painel de bancadas acima, só pra não perder dados. Auto-fill em vez de
+   contagem fixa: se ajusta de 1 a N por linha conforme a largura disponível. */
 .embalagem-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 1rem;
+}
+
+.embalagem-grid--secundario {
+  margin-top: 1.5rem;
+}
+
+.embalagem-grid-titulo {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
 }
 
 .embalagem-card {
@@ -869,13 +952,6 @@ body:has(.settings-overlay) .nav-corner {
   border-radius: var(--radius-card);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   padding: 1.25rem 1.5rem;
-}
-
-/* Sempre primeiro e ocupando a linha toda — resumo do dia, não é "mais um colaborador". */
-.embalagem-card--total {
-  grid-column: 1 / -1;
-  background: rgba(91, 141, 239, 0.1);
-  border-color: var(--brand);
 }
 
 .embalagem-card-nome {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Embalagem } from "../src/Embalagem";
 
@@ -99,7 +99,8 @@ describe("Embalagem — CRUD de colaboradores", () => {
     mockarFetch([{ idUsuarioEmbalador: "222", nome: "Werisvan", bancada: "99" }]);
     render(<Embalagem />);
     await abrirPainelDeColaboradores();
-    await waitFor(() => expect(screen.getByText("Werisvan")).toBeInTheDocument());
+    const tabela = () => within(screen.getByRole("table"));
+    await waitFor(() => expect(tabela().getByText("Werisvan")).toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: /editar/i }));
     const campoNome = screen.getByLabelText(/nome do colaborador/i);
@@ -110,9 +111,9 @@ describe("Embalagem — CRUD de colaboradores", () => {
     await userEvent.type(campoBancada, "03");
     await userEvent.click(screen.getByRole("button", { name: /salvar alteração/i }));
 
-    await waitFor(() => expect(screen.getByText("Werisvan Silva")).toBeInTheDocument());
-    expect(screen.getByText("03")).toBeInTheDocument();
-    expect(screen.queryByText("Werisvan")).not.toBeInTheDocument();
+    await waitFor(() => expect(tabela().getByText("Werisvan Silva")).toBeInTheDocument());
+    expect(tabela().getByText("03")).toBeInTheDocument();
+    expect(tabela().queryByText("Werisvan")).not.toBeInTheDocument();
   });
 
   it("Delete: remove com confirmação — cancelar a confirmação não remove nada", async () => {

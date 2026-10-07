@@ -121,6 +121,37 @@ export function Embalagem() {
 
   const colaboradorPorId = useMemo(() => new Map(colaboradores.map((c) => [c.idUsuarioEmbalador, c])), [colaboradores]);
 
+  // Painel fixo por bancada (pra visualização em TV) — uma bancada por colaborador cadastrado com
+  // esse campo preenchido, ordenadas numericamente. Não é fixo em "1 a 4": se cadastrar uma bancada
+  // 5, ela aparece também, só continua no mesmo grid de 2 colunas e letra grande.
+  const colaboradorPorBancada = useMemo(() => {
+    const mapa = new Map<string, ColaboradorEmbalagem>();
+    for (const c of colaboradores) {
+      if (c.bancada && !mapa.has(c.bancada)) mapa.set(c.bancada, c);
+    }
+    return mapa;
+  }, [colaboradores]);
+
+  const bancadas = useMemo(
+    () => Array.from(colaboradorPorBancada.keys()).sort((a, b) => Number(a) - Number(b) || a.localeCompare(b)),
+    [colaboradorPorBancada],
+  );
+
+  const desempenhoPorId = useMemo(
+    () => new Map((desempenho?.colaboradores ?? []).map((d) => [d.idUsuarioEmbalador, d])),
+    [desempenho],
+  );
+
+  // Quem embalou hoje mas não está numa bancada (sem cadastro, ou cadastrado sem bancada) — não
+  // pode desaparecer só porque não cabe no grid fixo, então sobra numa lista simples embaixo.
+  const desempenhoSemBancada = useMemo(() => {
+    if (!desempenho) return [];
+    return desempenho.colaboradores.filter((d) => {
+      const registrado = colaboradorPorId.get(d.idUsuarioEmbalador);
+      return !registrado?.bancada;
+    });
+  }, [desempenho, colaboradorPorId]);
+
   const carregarDesempenho = useCallback(async (diaConsultado: string) => {
     setCarregando(true);
     try {
@@ -306,37 +337,50 @@ export function Embalagem() {
               : ""}
           </p>
 
-          {desempenho.colaboradores.length === 0 ? (
-            <p className="field-value--muted">Nenhum pedido embalado nesse dia ainda.</p>
+          {bancadas.length === 0 ? (
+            <p className="field-value--muted">
+              Nenhuma bancada cadastrada ainda — em "Configurar colaboradores", preencha o campo Bancada de quem embala.
+            </p>
           ) : (
-            <div className="embalagem-grid">
-              <div className="embalagem-card embalagem-card--total">
-                <h3 className="embalagem-card-nome">TOTAL</h3>
-                <div className="embalagem-card-stats">
-                  <div className="embalagem-card-stat">
-                    <span className="embalagem-card-valor">{desempenho.totalPedidos}</span>
-                    <span className="embalagem-card-label">Pedidos</span>
+            <div className="bancada-grid">
+              {bancadas.map((bancada) => {
+                const registrado = colaboradorPorBancada.get(bancada);
+                const dados = registrado ? desempenhoPorId.get(registrado.idUsuarioEmbalador) : undefined;
+                return (
+                  <div key={bancada} className="bancada-card">
+                    <h3 className="bancada-card-titulo">Bancada {bancada}</h3>
+                    <p className="bancada-card-nome">{registrado?.nome ?? "Sem colaborador"}</p>
+                    <div className="bancada-card-stats">
+                      <div className="bancada-card-stat">
+                        <span className="bancada-card-valor">{dados?.pedidos ?? 0}</span>
+                        <span className="bancada-card-label">Bipados</span>
+                      </div>
+                      <div className="bancada-card-stat">
+                        <span className="bancada-card-valor">{dados?.pedidosPorHora ?? 0}</span>
+                        <span className="bancada-card-label">Pedidos Hora</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="embalagem-card-stat">
-                    <span className="embalagem-card-valor">{desempenho.totalTempoFormatado}</span>
-                    <span className="embalagem-card-label">Tempo</span>
-                  </div>
-                </div>
-              </div>
+                );
+              })}
+            </div>
+          )}
 
-              {desempenho.colaboradores.map((colaborador) => {
+          <p className="bancada-total">
+            total: {desempenho.totalPedidos} pedidos · {desempenho.totalTempoFormatado}
+          </p>
+
+          {desempenhoSemBancada.length > 0 && (
+            <div className="embalagem-grid embalagem-grid--secundario">
+              <p className="embalagem-grid-titulo">Sem bancada cadastrada</p>
+              {desempenhoSemBancada.map((colaborador) => {
                 const registrado = colaboradorPorId.get(colaborador.idUsuarioEmbalador);
                 return (
                   <div key={colaborador.idUsuarioEmbalador} className="embalagem-card">
                     {registrado ? (
-                      <>
-                        <h3 className="embalagem-card-nome" title={registrado.nome}>
-                          {registrado.nome}
-                        </h3>
-                        <p className="embalagem-card-sub">
-                          {registrado.bancada ? `Bancada ${registrado.bancada} · ` : ""}ID {abreviarId(colaborador.idUsuarioEmbalador)}
-                        </p>
-                      </>
+                      <h3 className="embalagem-card-nome" title={registrado.nome}>
+                        {registrado.nome}
+                      </h3>
                     ) : (
                       <>
                         <h3 className="embalagem-card-nome">Sem nome</h3>
