@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PageHeader } from "@/PageHeader";
 
 interface DesempenhoColaborador {
@@ -115,6 +115,7 @@ export function Embalagem() {
   const [novaBancada, setNovaBancada] = useState("");
   const [erroConfig, setErroConfig] = useState<string | null>(null);
   const [salvandoConfig, setSalvandoConfig] = useState(false);
+  const idInputRef = useRef<HTMLInputElement>(null);
   // ID original de quem está sendo editado agora (null = formulário em modo "adicionar"). Guarda
   // o ID de ANTES da edição porque, se a pessoa também trocar o ID no formulário, precisa remover
   // o registro antigo depois de salvar o novo — o Tiny não tem conceito de "renomear uma chave".
@@ -338,9 +339,15 @@ export function Embalagem() {
           </p>
 
           {bancadas.length === 0 ? (
-            <p className="field-value--muted">
-              Nenhuma bancada cadastrada ainda — em "Configurar colaboradores", preencha o campo Bancada de quem embala.
-            </p>
+            <div className="estado-vazio">
+              <p className="estado-vazio-titulo">Nenhuma bancada cadastrada ainda.</p>
+              <p className="field-value--muted">Preencha o campo Bancada de quem embala no cadastro de colaboradores.</p>
+              {!mostrarConfig && (
+                <button type="button" className="btn-primario" onClick={() => setMostrarConfig(true)}>
+                  Cadastrar bancadas
+                </button>
+              )}
+            </div>
           ) : (
             <div className="bancada-grid">
               {bancadas.map((bancada) => {
@@ -450,8 +457,13 @@ export function Embalagem() {
                 <tbody>
                   {colaboradores.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="field-value--muted">
-                        Nenhum colaborador cadastrado ainda.
+                      <td colSpan={4}>
+                        <div className="estado-vazio estado-vazio--compacto">
+                          <p className="estado-vazio-titulo">Nenhum colaborador cadastrado ainda.</p>
+                          <button type="button" className="btn-primario" onClick={() => idInputRef.current?.focus()}>
+                            Cadastrar o primeiro
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ) : (
@@ -487,6 +499,7 @@ export function Embalagem() {
               <label className="field">
                 <span className="field-label">ID do usuário no Tiny</span>
                 <input
+                  ref={idInputRef}
                   className="field-input"
                   inputMode="numeric"
                   value={novoId}
