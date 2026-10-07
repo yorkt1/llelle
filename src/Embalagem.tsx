@@ -359,6 +359,10 @@ export function Embalagem() {
                         <span className="bancada-card-valor">{dados?.pedidosPorHora ?? 0}</span>
                         <span className="bancada-card-label">Pedidos Hora</span>
                       </div>
+                      <div className="bancada-card-stat">
+                        <span className="bancada-card-valor">{dados?.tempoFormatado ?? "0h 00min"}</span>
+                        <span className="bancada-card-label">Tempo</span>
+                      </div>
                     </div>
                   </div>
                 );
