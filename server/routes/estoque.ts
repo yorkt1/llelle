@@ -9,6 +9,7 @@ import {
   registrarContagem,
   removerProduto,
 } from "../../lib/estoque";
+import { StoreConfigError } from "../../lib/store";
 
 export const estoqueRouter = Router();
 
@@ -40,6 +41,10 @@ estoqueRouter.post("/produtos", async (req, res) => {
     const produtos = await adicionarProduto(nome);
     res.status(201).json({ produtos });
   } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao cadastrar o produto." });
   }
 });
@@ -49,6 +54,10 @@ estoqueRouter.delete("/produtos/:nome", async (req, res) => {
     await removerProduto(decodeURIComponent(String(req.params.nome)));
     res.status(204).end();
   } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao remover o produto." });
   }
 });
@@ -73,6 +82,10 @@ estoqueRouter.put("/:rua/:codigo/metadados", async (req, res) => {
     const metadados = await definirMetadados(String(req.params.rua), String(req.params.codigo), produto, voltagem);
     res.status(200).json({ metadados });
   } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao salvar produto/voltagem." });
   }
 });
@@ -116,7 +129,7 @@ estoqueRouter.post("/:rua/:codigo", async (req, res) => {
     const registro = await registrarContagem({ rua, codigo, quantidade, responsavel, fotoDataUri, produto, voltagem });
     res.status(201).json({ registro });
   } catch (error) {
-    if (error instanceof CloudinaryConfigError) {
+    if (error instanceof CloudinaryConfigError || error instanceof StoreConfigError) {
       res.status(503).json({ error: error.message });
       return;
     }

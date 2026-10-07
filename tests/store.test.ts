@@ -62,6 +62,47 @@ describe("store (arquivo local — sem Supabase configurado)", () => {
   });
 });
 
+describe("store (produção sem Supabase configurado — não pode gravar só no disco quieto)", () => {
+  const nodeEnvOriginal = process.env.NODE_ENV;
+
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "olist-store-prod-"));
+    process.env.NODE_ENV = "production";
+  });
+
+  afterEach(async () => {
+    process.env.NODE_ENV = nodeEnvOriginal;
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it("set lança StoreConfigError em vez de gravar no arquivo local", async () => {
+    const store = await freshStore();
+    await expect(store.set("colaboradores", { "1": "Ana" })).rejects.toThrow(store.StoreConfigError);
+  });
+
+  it("update lança StoreConfigError", async () => {
+    const store = await freshStore();
+    await expect(store.update("colaboradores", (atual) => atual ?? {})).rejects.toThrow(store.StoreConfigError);
+  });
+
+  it("del lança StoreConfigError", async () => {
+    const store = await freshStore();
+    await expect(store.del("colaboradores")).rejects.toThrow(store.StoreConfigError);
+  });
+
+  it("get continua funcionando (ler não arrisca perder dado, só fica vazio)", async () => {
+    const store = await freshStore();
+    expect(await store.get("colaboradores")).toBeNull();
+  });
+
+  it("fora de produção (NODE_ENV=test, como nos testes), grava no arquivo local sem lançar erro", async () => {
+    process.env.NODE_ENV = "test";
+    const store = await freshStore();
+    await store.set("colaboradores", { "1": "Ana" });
+    expect(await store.get("colaboradores")).toEqual({ "1": "Ana" });
+  });
+});
+
 // Simula a tabela "kv_store" do Supabase como um Map em memória — definido FORA do factory do
 // vi.mock (que pode re-executar entre resets de módulo) pra representar "o banco persistiu",
 // igual ao arquivo em disco representa isso pro backend de arquivo local acima.

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { StoreConfigError } from "../../lib/store";
 import { OlistConfigError } from "../../lib/olist";
 import { listarColaboradores, obterDesempenho, removerColaborador, salvarColaborador } from "../../lib/embalagem";
 
@@ -37,6 +38,10 @@ embalagemRouter.post("/colaboradores", async (req, res) => {
     const colaborador = await salvarColaborador(idUsuarioEmbalador, nome, bancada);
     res.status(201).json({ colaborador });
   } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ erro: error.message });
+      return;
+    }
     res.status(400).json({ erro: error instanceof Error ? error.message : "Erro inesperado ao salvar o colaborador." });
   }
 });
@@ -46,6 +51,10 @@ embalagemRouter.delete("/colaboradores/:idUsuarioEmbalador", async (req, res) =>
     await removerColaborador(String(req.params.idUsuarioEmbalador));
     res.status(204).end();
   } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ erro: error.message });
+      return;
+    }
     res.status(500).json({ erro: error instanceof Error ? error.message : "Erro inesperado ao remover o colaborador." });
   }
 });

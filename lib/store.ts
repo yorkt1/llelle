@@ -22,7 +22,20 @@ import { createClient } from "@supabase/supabase-js";
  * Lido a cada chamada, não capturado num const no import: dotenv só carrega o .env.local depois
  * que os imports de server/index.ts já rodaram (import é hoisted), então um const de topo aqui
  * sempre veria o valor padrão antes disso.
+ *
+ * **Em produção (`NODE_ENV=production`, padrão do Render), sem Supabase configurado, gravar
+ * (`set`/`update`/`del`) lança `StoreConfigError` em vez de cair quieto pro arquivo local** — é
+ * essa queda silenciosa que fazia parecer que um cadastro salvou quando, na verdade, ia desaparecer
+ * no próximo restart. `get` continua com o fallback (ler é inofensivo). Fora de produção (dev local,
+ * testes — `NODE_ENV` não é "production" nesses casos), o arquivo local continua funcionando sem
+ * precisar configurar nada, como sempre.
  */
+export class StoreConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StoreConfigError";
+  }
+}
 export function dataDir(): string {
   return process.env.DATA_DIR ?? "./data";
 }
@@ -34,6 +47,15 @@ const TABELA = "kv_store";
 
 function supabaseConfigurado(): boolean {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function exigirPersistenciaDeVerdadeAoGravar(): void {
+  if (supabaseConfigurado() || process.env.NODE_ENV !== "production") return;
+  throw new StoreConfigError(
+    "Supabase não está configurado em produção (faltam SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY) — " +
+      "não vou gravar isso só no disco local, porque esse disco não é persistente no Render e a " +
+      "informação se perderia no próximo restart/\"acordar\" do serviço.",
+  );
 }
 
 function supabaseClient() {
@@ -102,6 +124,7 @@ export async function set(key: string, value: unknown): Promise<void> {
       await setSupabase(key, value);
       return;
     }
+    exigirPersistenciaDeVerdadeAoGravar();
     const data = await readAllArquivo();
     data[key] = value;
     await writeAllArquivo(data);
@@ -122,6 +145,7 @@ export async function update<T>(key: string, updater: (atual: T | null) => T): P
       await setSupabase(key, novo);
       return novo;
     }
+    exigirPersistenciaDeVerdadeAoGravar();
     const data = await readAllArquivo();
     const novo = updater((data[key] as T | undefined) ?? null);
     data[key] = novo;
@@ -136,6 +160,7 @@ export async function del(key: string): Promise<void> {
       await delSupabase(key);
       return;
     }
+    exigirPersistenciaDeVerdadeAoGravar();
     const data = await readAllArquivo();
     delete data[key];
     await writeAllArquivo(data);

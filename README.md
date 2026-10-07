@@ -17,7 +17,14 @@ diferentes acompanharem etapas diferentes sem afetar o que aparece em outra TV.
   estiverem configuradas — é o modo usado em produção, sobrevive a
   redeploy/restart; sem elas, cai pro arquivo JSON local de sempre (modo usado
   em dev, zero configuração). Ver seção de hospedagem abaixo pro porquê disso
-  importar em produção.
+  importar em produção. **Em produção (`NODE_ENV=production`, padrão do
+  Render) sem Supabase configurado, gravar (`set`/`update`/`del`) lança
+  `StoreConfigError` em vez de cair quieto pro arquivo local** — as rotas que
+  usam isso (colaboradores, catálogo de produtos, produto/voltagem de
+  posição) devolvem HTTP 503 com uma mensagem clara, e a tela mostra esse
+  erro em vez de dar a falsa impressão de que salvou. Só em dev/teste
+  (`NODE_ENV` não é `"production"`) o arquivo local continua aceitando
+  gravação sem Supabase, sem precisar configurar nada.
 - `lib/olist.ts` — `fetchCoreCountsLive()` (Aguardando/Em separação/Separadas) e
   `fetchEmbaladasCountLive()` (Embaladas) sincronizam **independente um do outro**
   — cada um preserva no cache o que o outro já tinha calculado. `fetchSeparacaoCountsLive()`
