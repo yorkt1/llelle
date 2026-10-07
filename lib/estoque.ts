@@ -32,10 +32,25 @@ export interface RegistroContagem {
 
 type HistoricoPorPosicao = Record<string, RegistroContagem[]>; // chave: "RUA::CODIGO", mais recente primeiro
 
+export const VOLTAGENS = ["110V", "220V", "Bivolt"] as const;
+export type Voltagem = (typeof VOLTAGENS)[number];
+
+export interface MetadadosPosicao {
+  produto: string;
+  voltagem: Voltagem;
+}
+
+// chave: "RUA::CODIGO" — produto/voltagem são fixos da posição (definidos na criação, editáveis
+// depois), não um dado de cada contagem: não faz sentido perguntar de novo numa recontagem.
+type MetadadosPorPosicao = Record<string, MetadadosPosicao>;
+
 export interface PosicaoResumo {
   rua: string;
   codigo: string;
   ultima: RegistroContagem;
+  /** null só pra posição criada antes dessa funcionalidade existir — toda posição nova exige os dois. */
+  produto: string | null;
+  voltagem: Voltagem | null;
 }
 
 export interface RuaResumo {
@@ -44,6 +59,8 @@ export interface RuaResumo {
 }
 
 const CHAVE_STORE = "estoque";
+const CHAVE_METADADOS = "estoque:metadados";
+const CHAVE_PRODUTOS = "estoque:produtos";
 const PASTA_CLOUDINARY = "llelle-estoque";
 
 function normalizar(texto: string): string {
@@ -56,13 +73,15 @@ function chave(rua: string, codigo: string): string {
 
 export async function listarEstoque(): Promise<RuaResumo[]> {
   const tudo = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
+  const metadados = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
   const porRua = new Map<string, PosicaoResumo[]>();
 
   for (const [chaveComposta, historico] of Object.entries(tudo)) {
     if (historico.length === 0) continue;
     const [rua, codigo] = chaveComposta.split("::");
+    const meta = metadados[chaveComposta];
     const lista = porRua.get(rua) ?? [];
-    lista.push({ rua, codigo, ultima: historico[0] });
+    lista.push({ rua, codigo, ultima: historico[0], produto: meta?.produto ?? null, voltagem: meta?.voltagem ?? null });
     porRua.set(rua, lista);
   }
 
@@ -77,6 +96,50 @@ export async function listarEstoque(): Promise<RuaResumo[]> {
 export async function obterHistorico(rua: string, codigo: string): Promise<RegistroContagem[]> {
   const tudo = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
   return tudo[chave(rua, codigo)] ?? [];
+}
+
+export async function obterMetadados(rua: string, codigo: string): Promise<MetadadosPosicao | null> {
+  const tudo = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
+  return tudo[chave(rua, codigo)] ?? null;
+}
+
+function validarVoltagem(voltagem: string): voltagem is Voltagem {
+  return (VOLTAGENS as readonly string[]).includes(voltagem);
+}
+
+/** Define/atualiza produto+voltagem de uma posição — tanto na criação quanto numa correção depois. */
+export async function definirMetadados(rua: string, codigo: string, produto: string, voltagem: string): Promise<MetadadosPosicao> {
+  const produtoLimpo = produto.trim();
+  if (!produtoLimpo) throw new Error("Informe o produto dessa posição.");
+  if (!validarVoltagem(voltagem)) throw new Error(`Voltagem inválida (use ${VOLTAGENS.join(", ")}).`);
+
+  const catalogo = await listarProdutos();
+  if (!catalogo.some((p) => p.toLowerCase() === produtoLimpo.toLowerCase())) {
+    throw new Error("Esse produto não está no catálogo — cadastre em \"Configurar produtos\" antes.");
+  }
+
+  const metadados: MetadadosPosicao = { produto: produtoLimpo, voltagem };
+  const k = chave(rua, codigo);
+  await store.update<MetadadosPorPosicao>(CHAVE_METADADOS, (atual) => ({ ...(atual ?? {}), [k]: metadados }));
+  return metadados;
+}
+
+export async function listarProdutos(): Promise<string[]> {
+  return (await store.get<string[]>(CHAVE_PRODUTOS)) ?? [];
+}
+
+export async function adicionarProduto(nome: string): Promise<string[]> {
+  const limpo = nome.trim();
+  if (!limpo) throw new Error("Informe o nome do produto.");
+  return store.update<string[]>(CHAVE_PRODUTOS, (atual) => {
+    const lista = atual ?? [];
+    if (lista.some((p) => p.toLowerCase() === limpo.toLowerCase())) throw new Error("Esse produto já está cadastrado.");
+    return [...lista, limpo].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  });
+}
+
+export async function removerProduto(nome: string): Promise<void> {
+  await store.update<string[]>(CHAVE_PRODUTOS, (atual) => (atual ?? []).filter((p) => p !== nome));
 }
 
 const FORMATOS_AUTORIZADOS = new Set(["jpeg", "jpg", "png", "webp"]);
@@ -135,9 +198,22 @@ export interface RegistrarContagemParams {
    * EVENTO de contagem, não uma foto genérica reaproveitada de uma vez qualquer no passado.
    */
   fotoDataUri: string;
+  /**
+   * Só usados ao criar uma posição NOVA (primeira contagem dela) — depois ficam fixos, só
+   * mudam por uma correção explícita (ver `definirMetadados`), nunca de novo aqui.
+   */
+  produto?: string;
+  voltagem?: string;
 }
 
 export async function registrarContagem(params: RegistrarContagemParams): Promise<RegistroContagem> {
+  const k = chave(params.rua, params.codigo);
+  const metadadosAtuais = await obterMetadados(params.rua, params.codigo);
+  if (!metadadosAtuais) {
+    if (!params.produto || !params.voltagem) throw new Error("Produto e voltagem são obrigatórios ao criar uma posição nova.");
+    await definirMetadados(params.rua, params.codigo, params.produto, params.voltagem);
+  }
+
   const fotoUrl = await salvarFoto(params.fotoDataUri);
 
   const registro: RegistroContagem = {
@@ -148,7 +224,6 @@ export async function registrarContagem(params: RegistrarContagemParams): Promis
     criadoEm: new Date().toISOString(),
   };
 
-  const k = chave(params.rua, params.codigo);
   await store.update<HistoricoPorPosicao>(CHAVE_STORE, (atual) => {
     const tudo = atual ?? {};
     return { ...tudo, [k]: [registro, ...(tudo[k] ?? [])] };

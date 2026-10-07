@@ -1,5 +1,14 @@
 import { Router } from "express";
-import { CloudinaryConfigError, listarEstoque, obterHistorico, registrarContagem } from "../../lib/estoque";
+import {
+  CloudinaryConfigError,
+  adicionarProduto,
+  definirMetadados,
+  listarEstoque,
+  listarProdutos,
+  obterHistorico,
+  registrarContagem,
+  removerProduto,
+} from "../../lib/estoque";
 
 export const estoqueRouter = Router();
 
@@ -12,12 +21,59 @@ estoqueRouter.get("/", async (_req, res) => {
   }
 });
 
+estoqueRouter.get("/produtos", async (_req, res) => {
+  try {
+    const produtos = await listarProdutos();
+    res.status(200).json({ produtos });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao listar produtos." });
+  }
+});
+
+estoqueRouter.post("/produtos", async (req, res) => {
+  const nome = paraTextoObrigatorio(req.body?.nome);
+  if (!nome) {
+    res.status(400).json({ error: "Informe o nome do produto." });
+    return;
+  }
+  try {
+    const produtos = await adicionarProduto(nome);
+    res.status(201).json({ produtos });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao cadastrar o produto." });
+  }
+});
+
+estoqueRouter.delete("/produtos/:nome", async (req, res) => {
+  try {
+    await removerProduto(decodeURIComponent(String(req.params.nome)));
+    res.status(204).end();
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao remover o produto." });
+  }
+});
+
 estoqueRouter.get("/:rua/:codigo/historico", async (req, res) => {
   try {
     const historico = await obterHistorico(String(req.params.rua), String(req.params.codigo));
     res.status(200).json({ historico });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao buscar o histórico." });
+  }
+});
+
+estoqueRouter.put("/:rua/:codigo/metadados", async (req, res) => {
+  const produto = paraTextoObrigatorio(req.body?.produto);
+  const voltagem = paraTextoObrigatorio(req.body?.voltagem);
+  if (!produto || !voltagem) {
+    res.status(400).json({ error: "Produto e voltagem são obrigatórios." });
+    return;
+  }
+  try {
+    const metadados = await definirMetadados(String(req.params.rua), String(req.params.codigo), produto, voltagem);
+    res.status(200).json({ metadados });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao salvar produto/voltagem." });
   }
 });
 
@@ -36,6 +92,8 @@ estoqueRouter.post("/:rua/:codigo", async (req, res) => {
   const quantidade = paraQuantidade(req.body?.quantidade);
   const responsavel = paraTextoObrigatorio(req.body?.responsavel);
   const fotoDataUri = paraTextoObrigatorio(req.body?.fotoDataUri);
+  const produto = paraTextoObrigatorio(req.body?.produto) ?? undefined;
+  const voltagem = paraTextoObrigatorio(req.body?.voltagem) ?? undefined;
 
   if (!rua || !codigo) {
     res.status(400).json({ error: "Rua e código da posição são obrigatórios." });
@@ -55,7 +113,7 @@ estoqueRouter.post("/:rua/:codigo", async (req, res) => {
   }
 
   try {
-    const registro = await registrarContagem({ rua, codigo, quantidade, responsavel, fotoDataUri });
+    const registro = await registrarContagem({ rua, codigo, quantidade, responsavel, fotoDataUri, produto, voltagem });
     res.status(201).json({ registro });
   } catch (error) {
     if (error instanceof CloudinaryConfigError) {

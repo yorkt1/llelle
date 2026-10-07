@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 interface RegistroContagem {
   id: string;
@@ -9,10 +9,16 @@ interface RegistroContagem {
   criadoEm: string;
 }
 
+const VOLTAGENS = ["110V", "220V", "Bivolt"] as const;
+type Voltagem = (typeof VOLTAGENS)[number];
+
 interface PosicaoResumo {
   rua: string;
   codigo: string;
   ultima: RegistroContagem;
+  /** null só pra posição criada antes dessa funcionalidade existir. */
+  produto: string | null;
+  voltagem: Voltagem | null;
 }
 
 interface RuaResumo {
@@ -21,7 +27,7 @@ interface RuaResumo {
 }
 
 type Modal =
-  | { modo: "existente"; rua: string; codigo: string; ultima: RegistroContagem }
+  | { modo: "existente"; rua: string; codigo: string; ultima: RegistroContagem; produto: string | null; voltagem: Voltagem | null }
   | { modo: "nova"; rua: string; codigosExistentes: string[] }
   | null;
 
@@ -106,6 +112,14 @@ function validarFoto(fotoPreview: string | null): string | null {
   return fotoPreview ? null : "Tire ou escolha uma foto — toda contagem precisa de uma foto própria.";
 }
 
+function validarProduto(produto: string): string | null {
+  return produto.trim() ? null : "Selecione o produto dessa posição.";
+}
+
+function validarVoltagem(voltagem: string): string | null {
+  return (VOLTAGENS as readonly string[]).includes(voltagem) ? null : "Selecione a voltagem dessa posição.";
+}
+
 /** "H" + [H2, H3, H7] → "H8". Sem nenhuma posição ainda na rua, sugere "H1". */
 function proximoCodigoSugerido(rua: string, codigosExistentes: string[]): string {
   const numeros = codigosExistentes
@@ -118,16 +132,22 @@ function proximoCodigoSugerido(rua: string, codigosExistentes: string[]): string
 
 function FormularioContagem({
   modal,
+  produtos,
   onFechar,
   onSalvo,
+  onMetadadosSalvos,
 }: {
   modal: Exclude<Modal, null>;
+  produtos: string[];
   onFechar: () => void;
   onSalvo: (rua: string, codigo: string) => void;
+  onMetadadosSalvos: (rua: string, codigo: string, produto: string, voltagem: Voltagem) => void;
 }) {
   const [codigo, setCodigo] = useState(modal.modo === "nova" ? proximoCodigoSugerido(modal.rua, modal.codigosExistentes) : "");
   const [quantidade, setQuantidade] = useState(modal.modo === "existente" ? String(modal.ultima.quantidade) : "");
   const [responsavel, setResponsavel] = useState(() => (modal.modo === "existente" ? modal.ultima.responsavel : lerUltimoResponsavel()));
+  const [produto, setProduto] = useState("");
+  const [voltagem, setVoltagem] = useState("");
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [historico, setHistorico] = useState<RegistroContagem[] | null>(null);
@@ -135,8 +155,19 @@ function FormularioContagem({
   const [erro, setErro] = useState<string | null>(null);
   const [tocados, setTocados] = useState<Set<string>>(new Set());
   const [tentouSalvar, setTentouSalvar] = useState(false);
+
+  // Edição de produto/voltagem de uma posição já existente — fica fechado por padrão (os dois
+  // normalmente não mudam numa recontagem), só abre se a pessoa pedir pra corrigir.
+  const [editandoMetadados, setEditandoMetadados] = useState(false);
+  const [produtoEdit, setProdutoEdit] = useState(modal.modo === "existente" ? modal.produto ?? "" : "");
+  const [voltagemEdit, setVoltagemEdit] = useState(modal.modo === "existente" ? modal.voltagem ?? "" : "");
+  const [salvandoMetadados, setSalvandoMetadados] = useState(false);
+  const [erroMetadados, setErroMetadados] = useState<string | null>(null);
+
   const inputFotoRef = useRef<HTMLInputElement>(null);
   const codigoRef = useRef<HTMLInputElement>(null);
+  const produtoRef = useRef<HTMLSelectElement>(null);
+  const voltagemRef = useRef<HTMLSelectElement>(null);
   const quantidadeRef = useRef<HTMLInputElement>(null);
   const responsavelRef = useRef<HTMLInputElement>(null);
   const fotoBotaoRef = useRef<HTMLButtonElement>(null);
@@ -158,10 +189,12 @@ function FormularioContagem({
   const erroCodigoDuplicado =
     modal.modo === "nova" && !erroCodigoFormato && modal.codigosExistentes.includes(codigo.trim()) ? "Essa posição já existe nessa rua." : null;
   const erroCodigo = erroCodigoFormato ?? erroCodigoDuplicado;
+  const erroProduto = modal.modo === "nova" ? validarProduto(produto) : null;
+  const erroVoltagem = modal.modo === "nova" ? validarVoltagem(voltagem) : null;
   const erroQuantidade = validarQuantidade(quantidade);
   const erroResponsavel = validarResponsavel(responsavel);
   const erroFoto = validarFoto(fotoPreview);
-  const formularioInvalido = Boolean(erroCodigo || erroQuantidade || erroResponsavel || erroFoto);
+  const formularioInvalido = Boolean(erroCodigo || erroProduto || erroVoltagem || erroQuantidade || erroResponsavel || erroFoto);
 
   const ajustarQuantidade = useCallback((delta: number) => {
     setQuantidade((atual) => String(Math.max(0, (Number(atual) || 0) + delta)));
@@ -194,16 +227,20 @@ function FormularioContagem({
     const refAlvo =
       modal.modo === "nova" && erroCodigo
         ? codigoRef.current
-        : erroFoto
-          ? fotoBotaoRef.current
-          : erroQuantidade
-            ? quantidadeRef.current
-            : erroResponsavel
-              ? responsavelRef.current
-              : null;
+        : modal.modo === "nova" && erroProduto
+          ? produtoRef.current
+          : modal.modo === "nova" && erroVoltagem
+            ? voltagemRef.current
+            : erroFoto
+              ? fotoBotaoRef.current
+              : erroQuantidade
+                ? quantidadeRef.current
+                : erroResponsavel
+                  ? responsavelRef.current
+                  : null;
     refAlvo?.scrollIntoView({ behavior: "smooth", block: "center" });
     refAlvo?.focus();
-  }, [modal, erroCodigo, erroFoto, erroQuantidade, erroResponsavel]);
+  }, [modal, erroCodigo, erroProduto, erroVoltagem, erroFoto, erroQuantidade, erroResponsavel]);
 
   const salvar = useCallback(async () => {
     setTentouSalvar(true);
@@ -219,7 +256,12 @@ function FormularioContagem({
       const resposta = await fetch(`${API_URL}/api/estoque/${encodeURIComponent(modal.rua)}/${encodeURIComponent(codigoFinal)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantidade: Number(quantidade), responsavel: responsavel.trim(), fotoDataUri: fotoPreview }),
+        body: JSON.stringify({
+          quantidade: Number(quantidade),
+          responsavel: responsavel.trim(),
+          fotoDataUri: fotoPreview,
+          ...(modal.modo === "nova" ? { produto: produto.trim(), voltagem } : {}),
+        }),
       });
       const json = await resposta.json();
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui salvar a contagem.");
@@ -231,7 +273,33 @@ function FormularioContagem({
     } finally {
       setSalvando(false);
     }
-  }, [codigo, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, quantidade, responsavel]);
+  }, [codigo, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, voltagem]);
+
+  const salvarMetadados = useCallback(async () => {
+    if (modal.modo !== "existente") return;
+    if (!produtoEdit.trim() || !voltagemEdit) {
+      setErroMetadados("Selecione produto e voltagem.");
+      return;
+    }
+    setSalvandoMetadados(true);
+    setErroMetadados(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/${encodeURIComponent(modal.rua)}/${encodeURIComponent(modal.codigo)}/metadados`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ produto: produtoEdit.trim(), voltagem: voltagemEdit }),
+      });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui salvar produto/voltagem.");
+
+      onMetadadosSalvos(modal.rua, modal.codigo, produtoEdit.trim(), voltagemEdit as Voltagem);
+      setEditandoMetadados(false);
+    } catch (error) {
+      setErroMetadados(error instanceof Error ? error.message : "Não consegui salvar produto/voltagem.");
+    } finally {
+      setSalvandoMetadados(false);
+    }
+  }, [modal, produtoEdit, voltagemEdit, onMetadadosSalvos]);
 
   // A foto anterior só aparece como referência (pra comparar contra o que tem na posição agora) —
   // nunca é reaproveitada ao salvar: toda contagem exige tirar uma foto nova (ver `salvar`).
@@ -277,6 +345,99 @@ function FormularioContagem({
               />
               {mostrar("codigo", erroCodigo) && <span className="field-erro">{mostrar("codigo", erroCodigo)}</span>}
             </label>
+          )}
+
+          {modal.modo === "nova" ? (
+            <div className="estoque-produto-voltagem">
+              <label className="field">
+                <span className="field-label">
+                  Produto <span className="field-obrigatorio">*</span>
+                </span>
+                <select
+                  ref={produtoRef}
+                  className={`field-input${mostrar("produto", erroProduto) ? " field-input--erro" : ""}`}
+                  value={produto}
+                  onChange={(event) => setProduto(event.target.value)}
+                  onBlur={() => tocar("produto")}
+                >
+                  <option value="">Selecione…</option>
+                  {produtos.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                {produtos.length === 0 && (
+                  <span className="field-value--muted">Nenhum produto cadastrado ainda — use "Configurar produtos" na tela principal.</span>
+                )}
+                {mostrar("produto", erroProduto) && <span className="field-erro">{mostrar("produto", erroProduto)}</span>}
+              </label>
+              <label className="field">
+                <span className="field-label">
+                  Voltagem <span className="field-obrigatorio">*</span>
+                </span>
+                <select
+                  ref={voltagemRef}
+                  className={`field-input${mostrar("voltagem", erroVoltagem) ? " field-input--erro" : ""}`}
+                  value={voltagem}
+                  onChange={(event) => setVoltagem(event.target.value)}
+                  onBlur={() => tocar("voltagem")}
+                >
+                  <option value="">Selecione…</option>
+                  {VOLTAGENS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                {mostrar("voltagem", erroVoltagem) && <span className="field-erro">{mostrar("voltagem", erroVoltagem)}</span>}
+              </label>
+            </div>
+          ) : (
+            <div className="estoque-produto-voltagem-atual">
+              {editandoMetadados ? (
+                <>
+                  <label className="field">
+                    <span className="field-label">Produto</span>
+                    <select className="field-input" value={produtoEdit} onChange={(event) => setProdutoEdit(event.target.value)}>
+                      <option value="">Selecione…</option>
+                      {produtos.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Voltagem</span>
+                    <select className="field-input" value={voltagemEdit} onChange={(event) => setVoltagemEdit(event.target.value)}>
+                      <option value="">Selecione…</option>
+                      {VOLTAGENS.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {erroMetadados && <p className="error-banner">{erroMetadados}</p>}
+                  <div className="estoque-produto-voltagem-acoes">
+                    <button type="button" className="btn-primario" onClick={() => void salvarMetadados()} disabled={salvandoMetadados}>
+                      {salvandoMetadados ? "Salvando..." : "Salvar produto/voltagem"}
+                    </button>
+                    <button type="button" className="refresh-btn" onClick={() => setEditandoMetadados(false)}>
+                      Cancelar
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="field-value--muted">
+                  Produto: <strong>{modal.produto ?? "não definido"}</strong> · Voltagem: <strong>{modal.voltagem ?? "não definida"}</strong>{" "}
+                  <button type="button" className="estoque-editar-metadados" onClick={() => setEditandoMetadados(true)}>
+                    Editar
+                  </button>
+                </p>
+              )}
+            </div>
           )}
 
           <div className="field">
@@ -399,6 +560,17 @@ export function Estoque() {
   const [toast, setToast] = useState<string | null>(null);
   const [cardDestacado, setCardDestacado] = useState<string | null>(null);
 
+  const [produtos, setProdutos] = useState<string[]>([]);
+  const [mostrarConfigProdutos, setMostrarConfigProdutos] = useState(false);
+  const [novoProduto, setNovoProduto] = useState("");
+  const [erroProdutos, setErroProdutos] = useState<string | null>(null);
+  const [salvandoProduto, setSalvandoProduto] = useState(false);
+
+  // Filtro/relatório: quando qualquer um dos dois está ativo, a grade deixa de mostrar só a rua
+  // selecionada e passa a mostrar as posições de TODAS as ruas que combinam com o filtro.
+  const [filtroProduto, setFiltroProduto] = useState("");
+  const [filtroVoltagem, setFiltroVoltagem] = useState("");
+
   const carregar = useCallback(async () => {
     try {
       const resposta = await fetch(`${API_URL}/api/estoque`, { cache: "no-store" });
@@ -412,6 +584,16 @@ export function Estoque() {
     }
   }, []);
 
+  const carregarProdutos = useCallback(async () => {
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos`, { cache: "no-store" });
+      const json = await resposta.json();
+      if (resposta.ok) setProdutos(json.produtos ?? []);
+    } catch {
+      // Catálogo é só pra tela de configuração/criação de posição — uma falha aqui não trava o resto.
+    }
+  }, []);
+
   useEffect(() => {
     const kickoff = setTimeout(() => void carregar(), 0);
     const id = setInterval(() => void carregar(), POLL_MS);
@@ -421,8 +603,21 @@ export function Estoque() {
     };
   }, [carregar]);
 
+  useEffect(() => {
+    const kickoff = setTimeout(() => void carregarProdutos(), 0);
+    return () => clearTimeout(kickoff);
+  }, [carregarProdutos]);
+
   const todasAsRuas = [...ruas.map((r) => r.rua), ...ruasExtras.filter((rua) => !ruas.some((r) => r.rua === rua))];
   const posicoesDaRuaAtiva = ruas.find((r) => r.rua === ruaAtiva)?.posicoes ?? [];
+
+  const filtroAtivo = filtroProduto !== "" || filtroVoltagem !== "";
+  const todasAsPosicoes = ruas.flatMap((r) => r.posicoes);
+  const posicoesFiltradas = todasAsPosicoes.filter(
+    (p) => (!filtroProduto || p.produto === filtroProduto) && (!filtroVoltagem || p.voltagem === filtroVoltagem),
+  );
+  const posicoesExibidas = filtroAtivo ? posicoesFiltradas : posicoesDaRuaAtiva;
+  const totalUnidadesFiltro = posicoesFiltradas.reduce((soma, p) => soma + p.ultima.quantidade, 0);
 
   const confirmarNovaRua = useCallback(() => {
     const nome = nomeNovaRua.trim().toUpperCase();
@@ -442,13 +637,140 @@ export function Estoque() {
     setTimeout(() => setCardDestacado(null), TOAST_MS);
   }, [carregar]);
 
+  const aoSalvarMetadados = useCallback(() => {
+    setModal(null);
+    void carregar();
+  }, [carregar]);
+
+  const adicionarProdutoCatalogo = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      const nome = novoProduto.trim();
+      if (!nome) return;
+      setSalvandoProduto(true);
+      setErroProdutos(null);
+      try {
+        const resposta = await fetch(`${API_URL}/api/estoque/produtos`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome }),
+        });
+        const json = await resposta.json();
+        if (!resposta.ok) throw new Error(json.error ?? "Não consegui cadastrar o produto.");
+        setProdutos(json.produtos ?? []);
+        setNovoProduto("");
+      } catch (error) {
+        setErroProdutos(error instanceof Error ? error.message : "Não consegui cadastrar o produto.");
+      } finally {
+        setSalvandoProduto(false);
+      }
+    },
+    [novoProduto],
+  );
+
+  const removerProdutoCatalogo = useCallback(async (nome: string) => {
+    if (!window.confirm(`Remover "${nome}" do catálogo de produtos?`)) return;
+    setErroProdutos(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos/${encodeURIComponent(nome)}`, { method: "DELETE" });
+      if (!resposta.ok) throw new Error("Não consegui remover esse produto agora.");
+      setProdutos((atuais) => atuais.filter((p) => p !== nome));
+    } catch (error) {
+      setErroProdutos(error instanceof Error ? error.message : "Não consegui remover esse produto agora.");
+    }
+  }, []);
+
   return (
     <div className="page pagina-formulario pagina-formulario--larga">
       <header className="header">
         <h1 className="title">Estoque</h1>
+        <button type="button" className="refresh-btn" onClick={() => setMostrarConfigProdutos((atual) => !atual)}>
+          {mostrarConfigProdutos ? "Esconder produtos" : "Configurar produtos"}
+        </button>
       </header>
 
       {erroCarregamento && <p className="error-banner">{erroCarregamento}</p>}
+
+      {mostrarConfigProdutos && (
+        <div className="colab-painel-info estoque-config-produtos">
+          <p className="estoque-vazio-titulo">Catálogo de produtos</p>
+          <p className="field-value--muted">
+            Produtos disponíveis pra escolher ao criar uma posição nova. Remover um produto daqui não afeta posições que já usam ele.
+          </p>
+          <ul className="estoque-lista-produtos">
+            {produtos.length === 0 ? (
+              <li className="field-value--muted">Nenhum produto cadastrado ainda.</li>
+            ) : (
+              produtos.map((nome) => (
+                <li key={nome}>
+                  <span>{nome}</span>
+                  <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => void removerProdutoCatalogo(nome)}>
+                    Excluir
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+          <form className="estoque-form-produto" onSubmit={adicionarProdutoCatalogo}>
+            <label className="field">
+              <span className="field-label">Novo produto</span>
+              <input
+                className="field-input"
+                value={novoProduto}
+                onChange={(event) => setNovoProduto(event.target.value)}
+                placeholder="Ex.: Liquidificador 110V"
+              />
+            </label>
+            <button className="btn-primario" type="submit" disabled={salvandoProduto}>
+              {salvandoProduto ? "Salvando..." : "Adicionar"}
+            </button>
+          </form>
+          {erroProdutos && <p className="error-banner">{erroProdutos}</p>}
+        </div>
+      )}
+
+      <div className="estoque-filtro">
+        <label className="field">
+          <span className="field-label">Filtrar por produto</span>
+          <select className="field-input" value={filtroProduto} onChange={(event) => setFiltroProduto(event.target.value)}>
+            <option value="">Todos</option>
+            {produtos.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Filtrar por voltagem</span>
+          <select className="field-input" value={filtroVoltagem} onChange={(event) => setFiltroVoltagem(event.target.value)}>
+            <option value="">Todas</option>
+            {VOLTAGENS.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+        {filtroAtivo && (
+          <button
+            type="button"
+            className="refresh-btn"
+            onClick={() => {
+              setFiltroProduto("");
+              setFiltroVoltagem("");
+            }}
+          >
+            Limpar filtro
+          </button>
+        )}
+      </div>
+
+      {filtroAtivo && (
+        <p className="nota-info">
+          {posicoesFiltradas.length} posiç{posicoesFiltradas.length === 1 ? "ão" : "ões"} · {totalUnidadesFiltro} un. no total (todas as ruas)
+        </p>
+      )}
 
       <div className="estoque-ruas">
         {todasAsRuas.map((rua) => (
@@ -494,14 +816,16 @@ export function Estoque() {
 
       {ruaAtiva && (
         <div className="estoque-grid">
-          {posicoesDaRuaAtiva.map((posicao) => {
+          {posicoesExibidas.map((posicao) => {
             const url = posicao.ultima.fotoUrl;
             const destacado = cardDestacado === `${posicao.rua}::${posicao.codigo}`;
             return (
               <button
-                key={posicao.codigo}
+                key={`${posicao.rua}::${posicao.codigo}`}
                 className={`estoque-card${destacado ? " estoque-card--destacado" : ""}`}
-                onClick={() => setModal({ modo: "existente", rua: posicao.rua, codigo: posicao.codigo, ultima: posicao.ultima })}
+                onClick={() =>
+                  setModal({ modo: "existente", rua: posicao.rua, codigo: posicao.codigo, ultima: posicao.ultima, produto: posicao.produto, voltagem: posicao.voltagem })
+                }
               >
                 {url ? (
                   <img
@@ -518,7 +842,12 @@ export function Estoque() {
                   <IconeGondola className="estoque-card-icone" />
                   <span>{url ? "Foto indisponível" : "Sem foto"}</span>
                 </div>
-                <span className="estoque-card-codigo">{posicao.codigo}</span>
+                <span className="estoque-card-codigo">{filtroAtivo ? `${posicao.rua} · ${posicao.codigo}` : posicao.codigo}</span>
+                {posicao.produto && (
+                  <span className="estoque-card-produto">
+                    {posicao.produto} · {posicao.voltagem}
+                  </span>
+                )}
                 <span className="estoque-card-qtd">{posicao.ultima.quantidade} un.</span>
                 <span className="estoque-card-meta">
                   {posicao.ultima.responsavel} · {formatarDataHora(posicao.ultima.criadoEm)}
@@ -526,16 +855,20 @@ export function Estoque() {
               </button>
             );
           })}
-          <button
-            className="estoque-card estoque-card--nova"
-            onClick={() => setModal({ modo: "nova", rua: ruaAtiva, codigosExistentes: posicoesDaRuaAtiva.map((p) => p.codigo) })}
-          >
-            + Nova posição
-          </button>
+          {!filtroAtivo && (
+            <button
+              className="estoque-card estoque-card--nova"
+              onClick={() => setModal({ modo: "nova", rua: ruaAtiva, codigosExistentes: posicoesDaRuaAtiva.map((p) => p.codigo) })}
+            >
+              + Nova posição
+            </button>
+          )}
         </div>
       )}
 
-      {modal && <FormularioContagem modal={modal} onFechar={() => setModal(null)} onSalvo={aoSalvar} />}
+      {modal && (
+        <FormularioContagem modal={modal} produtos={produtos} onFechar={() => setModal(null)} onSalvo={aoSalvar} onMetadadosSalvos={aoSalvarMetadados} />
+      )}
 
       {toast && (
         <div className="toast" role="status">

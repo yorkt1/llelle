@@ -1213,6 +1213,11 @@ body:has(.settings-overlay) .nav-corner {
   font-size: 1rem;
 }
 
+.estoque-card-produto {
+  font-size: 0.8rem;
+  color: var(--brand);
+}
+
 .estoque-card-qtd {
   font-size: 0.9rem;
 }
@@ -1327,5 +1332,96 @@ body:has(.settings-overlay) .nav-corner {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 600;
+}
+
+/* Produto + Voltagem na criação de posição — lado a lado em telas largas, cada um ocupando a
+   linha toda em telas estreitas (mesma ideia do colab-form, mas em 2 colunas aqui). */
+.estoque-produto-voltagem {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 480px) {
+  .estoque-produto-voltagem {
+    grid-template-columns: 1fr;
+  }
+}
+
+.estoque-produto-voltagem-atual {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.estoque-produto-voltagem-atual .field-value--muted {
+  margin: 0;
+}
+
+.estoque-produto-voltagem-atual .field {
+  margin-bottom: 0.75rem;
+}
+
+.estoque-editar-metadados {
+  background: none;
+  border: none;
+  color: var(--brand);
+  font-size: 0.85rem;
+  padding: 0;
+  margin-left: 0.35rem;
+  cursor: pointer;
+}
+
+.estoque-produto-voltagem-acoes {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.estoque-config-produtos {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 1.25rem 1.5rem;
+  max-width: 28rem;
+}
+
+.estoque-lista-produtos {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.estoque-lista-produtos li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.estoque-form-produto {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.estoque-form-produto .field {
+  flex: 1;
+}
+
+.estoque-filtro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.estoque-filtro .field {
+  min-width: 10rem;
 }
 

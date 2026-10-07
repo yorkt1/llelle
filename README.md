@@ -425,11 +425,28 @@ trás.
   maior, JPEG) — foto de celular sai de 3-8MB, pesado demais pra mandar sem
   isso. Atualiza a lista a cada 30s (mesmo padrão "quase tempo real" do
   painel de separação).
+- **Produto + Voltagem** — fixos da posição, não da contagem: definidos uma
+  vez ao criar a posição (`POST /api/estoque/:rua/:codigo` exige os dois só
+  nesse momento — `lib/estoque.ts` checa se já existe metadado pra decidir
+  se é posição nova) e herdados automaticamente em toda recontagem seguinte,
+  sem perguntar de novo. Voltagem é uma lista fixa (`110V`/`220V`/`Bivolt`).
+  Produto vem de um catálogo próprio (`GET/POST /api/estoque/produtos`,
+  `DELETE /api/estoque/produtos/:nome`) gerenciado em "Configurar produtos"
+  na própria tela — remover um produto do catálogo não afeta posições que já
+  usam ele, só tira da lista pra novas posições. Pra corrigir produto/voltagem
+  de uma posição já existente (sem contar nada), tem um "Editar" dentro do
+  próprio card da posição, que chama `PUT /api/estoque/:rua/:codigo/metadados`.
+- **Filtro/relatório** — dois selects (produto, voltagem) acima da grade:
+  com qualquer um dos dois preenchido, a grade troca de "só a rua ativa" pra
+  "todas as ruas que combinam com o filtro" (com o código mostrando a rua
+  junto, já que mistura ruas) e aparece um total de posições + unidades
+  combinando. É uma visão/filtro só na própria tela — sem exportação.
 
 **Não implementado nesta fase** (fora do escopo pedido): nenhuma integração
 com o Tiny pra pré-preencher produtos esperados por posição — seria um
 facilitador puramente opcional, e a contagem continuaria sendo sempre manual
-mesmo com isso.
+mesmo com isso. Exportação do relatório (CSV/planilha) também não — por
+enquanto é só a visão filtrada na tela.
 
 ## Embalagem
 
