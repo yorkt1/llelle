@@ -2214,6 +2214,187 @@ body:has(.settings-overlay) .app-bottom-nav {
 }
 
 .compras-produto {
-  max-width: 22rem;
+  min-width: 14rem;
+  max-width: 24rem;
   white-space: normal !important;
+}
+
+/* ---------- Shell: seção "Em breve", menu "Mais" do celular ---------- */
+
+.app-sidebar-secao {
+  margin: 0.9rem 0 0.25rem;
+  padding: 0 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.app-shell--recolhida .app-sidebar-secao {
+  height: 1px;
+  margin: 0.6rem 0.5rem;
+  padding: 0;
+  overflow: hidden;
+  background: var(--line);
+  color: transparent;
+}
+
+.app-sidebar-item--ideia,
+.app-mais-item--ideia {
+  opacity: 0.75;
+}
+
+@media (min-width: 1024px) {
+  /* Com as ideias "Em breve" a lista cresce — rola por dentro em vez de empurrar o rodapé pra fora. */
+  .app-sidebar-nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+
+  .app-mais-overlay {
+    display: none;
+  }
+}
+
+button.app-bottom-item {
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.app-mais-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 14;
+  background: var(--overlay);
+}
+
+.app-mais {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 0.5rem);
+  max-height: 70dvh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.6rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+}
+
+.app-mais-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border-radius: var(--radius-control);
+  color: var(--fg-secondary);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.app-mais-item--ativo {
+  background: var(--brand-soft);
+  color: var(--fg);
+}
+
+/* ---------- Página-base "Em breve" ---------- */
+
+.selo-em-breve {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.05rem 0.55rem;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.painel-triplo {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .painel-triplo {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lista-ideia {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--fg-secondary);
+}
+
+.previa-linha {
+  display: block;
+  height: 0.55rem;
+  width: 70%;
+  border-radius: 999px;
+  background: var(--surface-active);
+}
+
+.previa-linha--forte {
+  width: 85%;
+  background: var(--line);
+}
+
+.previa-tabela td {
+  padding-top: 0.9rem;
+  padding-bottom: 0.9rem;
+}
+
+.previa-colunas {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(10rem, 1fr);
+  gap: 0.75rem;
+  overflow-x: auto;
+}
+
+.previa-coluna {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.previa-coluna-titulo {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.previa-cartao {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.7rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
 }

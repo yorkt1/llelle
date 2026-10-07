@@ -83,3 +83,56 @@ export function IconeCompras({ className }: PropsIcone) {
     </IconeBase>
   );
 }
+
+export function IconeCrm({ className }: PropsIcone) {
+  return (
+    <IconeBase className={className}>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20c.6-3.4 3-5.5 6-5.5s5.4 2.1 6 5.5" />
+      <path d="M16 4.6a3.2 3.2 0 0 1 0 6.3" />
+      <path d="M18 14.8c1.7.7 2.8 2.5 3 5.2" />
+    </IconeBase>
+  );
+}
+
+export function IconeConciliacao({ className }: PropsIcone) {
+  return (
+    <IconeBase className={className}>
+      <path d="M12 3v18" />
+      <path d="M5 7h14" />
+      <path d="m5 7-3 7a3.5 3.5 0 0 0 6 0Z" />
+      <path d="m19 7-3 7a3.5 3.5 0 0 0 6 0Z" />
+      <path d="M8 21h8" />
+    </IconeBase>
+  );
+}
+
+export function IconeGargalos({ className }: PropsIcone) {
+  return (
+    <IconeBase className={className}>
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l2.5 2.5" />
+      <path d="M10 2h4" />
+    </IconeBase>
+  );
+}
+
+export function IconeFotoIa({ className }: PropsIcone) {
+  return (
+    <IconeBase className={className}>
+      <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 19 8.5V18a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 18Z" />
+      <circle cx="11" cy="13" r="3.2" />
+      <path d="M21 3v3M19.5 4.5h3" />
+    </IconeBase>
+  );
+}
+
+export function IconeAcesso({ className }: PropsIcone) {
+  return (
+    <IconeBase className={className}>
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2" />
+      <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+      <path d="M12 15v2" />
+    </IconeBase>
+  );
+}
