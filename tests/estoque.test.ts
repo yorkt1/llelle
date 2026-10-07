@@ -106,6 +106,36 @@ describe("estoque", () => {
     expect(cloudinaryUploadMock).not.toHaveBeenCalled();
   });
 
+  it("posição vazia: sem produto/voltagem é aceita com 0 un. e aparece sem produto", async () => {
+    const { registrarContagem, listarEstoque } = await freshEstoque();
+    await registrarContagem({ rua: "B", codigo: "B7", quantidade: 0, responsavel: "Ana", fotoDataUri: FOTO_1X1 });
+
+    const [rua] = await listarEstoque();
+    expect(rua.posicoes[0]).toMatchObject({ codigo: "B7", produto: null, voltagem: null, ultima: { quantidade: 0 } });
+  });
+
+  it("posição vazia ganha produto/voltagem na primeira contagem com unidades — e sem eles é rejeitada", async () => {
+    const { registrarContagem, listarEstoque, adicionarProduto } = await freshEstoque();
+    await adicionarProduto("Liquidificador");
+    await registrarContagem({ rua: "B", codigo: "B7", quantidade: 0, responsavel: "Ana", fotoDataUri: FOTO_1X1 });
+
+    await expect(
+      registrarContagem({ rua: "B", codigo: "B7", quantidade: 5, responsavel: "Ana", fotoDataUri: FOTO_1X1 }),
+    ).rejects.toThrow(/produto e voltagem são obrigatórios/i);
+
+    await registrarContagem({
+      rua: "B",
+      codigo: "B7",
+      quantidade: 5,
+      responsavel: "Ana",
+      fotoDataUri: FOTO_1X1,
+      produto: "Liquidificador",
+      voltagem: "Bivolt",
+    });
+    const [rua] = await listarEstoque();
+    expect(rua.posicoes[0]).toMatchObject({ produto: "Liquidificador", voltagem: "Bivolt", ultima: { quantidade: 5 } });
+  });
+
   it("produto que não está no catálogo é rejeitado", async () => {
     const { registrarContagem } = await freshEstoque();
     await expect(

@@ -199,8 +199,9 @@ export interface RegistrarContagemParams {
    */
   fotoDataUri: string;
   /**
-   * Só usados ao criar uma posição NOVA (primeira contagem dela) — depois ficam fixos, só
-   * mudam por uma correção explícita (ver `definirMetadados`), nunca de novo aqui.
+   * Só usados enquanto a posição ainda não tem produto (posição nova, ou registrada vazia) — depois
+   * ficam fixos, só mudam por uma correção explícita (ver `definirMetadados`), nunca de novo aqui.
+   * Opcionais quando quantidade = 0: aí a posição é registrada vazia, sem produto.
    */
   produto?: string;
   voltagem?: string;
@@ -210,8 +211,13 @@ export async function registrarContagem(params: RegistrarContagemParams): Promis
   const k = chave(params.rua, params.codigo);
   const metadadosAtuais = await obterMetadados(params.rua, params.codigo);
   if (!metadadosAtuais) {
-    if (!params.produto || !params.voltagem) throw new Error("Produto e voltagem são obrigatórios ao criar uma posição nova.");
-    await definirMetadados(params.rua, params.codigo, params.produto, params.voltagem);
+    // Posição sem produto definido (nova, ou registrada vazia antes): só pode ser contada com 0 un.
+    // — é a "posição vazia". Pra ter unidades, precisa produto+voltagem, que ficam fixos daí em diante.
+    if (params.produto && params.voltagem) {
+      await definirMetadados(params.rua, params.codigo, params.produto, params.voltagem);
+    } else if (params.quantidade > 0) {
+      throw new Error("Produto e voltagem são obrigatórios pra contar unidades numa posição — sem produto, ela só pode ser registrada vazia (0 un.).");
+    }
   }
 
   const fotoUrl = await salvarFoto(params.fotoDataUri);

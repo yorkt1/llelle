@@ -121,7 +121,10 @@ function validarVoltagem(voltagem: string): string | null {
   return (VOLTAGENS as readonly string[]).includes(voltagem) ? null : "Selecione a voltagem dessa posição.";
 }
 
-/** "H" + [H2, H3, H7] → "H8". Sem nenhuma posição ainda na rua, sugere "H1". */
+/** Valor da opção "Posição vazia" no select de produto — não é um produto do catálogo, nunca vai pro backend. */
+const PRODUTO_VAZIA = "__vazia__";
+
+/** "H" +[H2, H3, H7] → "H8". Sem nenhuma posição ainda na rua, sugere "H1". */
 function proximoCodigoSugerido(rua: string, codigosExistentes: string[]): string {
   const numeros = codigosExistentes
     .map((codigo) => codigo.match(/^([A-Z]+)(\d+)$/))
@@ -147,7 +150,10 @@ function FormularioContagem({
   const [codigo, setCodigo] = useState(modal.modo === "nova" ? proximoCodigoSugerido(modal.rua, modal.codigosExistentes) : "");
   const [quantidade, setQuantidade] = useState(modal.modo === "existente" ? String(modal.ultima.quantidade) : "");
   const [responsavel, setResponsavel] = useState(() => (modal.modo === "existente" ? modal.ultima.responsavel : lerUltimoResponsavel()));
-  const [produto, setProduto] = useState("");
+  // Posição nova, ou existente que foi registrada vazia (sem produto): escolhe o produto aqui — ou
+  // "Posição vazia", que registra 0 un. sem produto nem voltagem.
+  const definirProduto = modal.modo === "nova" || !modal.produto;
+  const [produto, setProduto] = useState(modal.modo === "existente" && !modal.produto ? PRODUTO_VAZIA : "");
   const [voltagem, setVoltagem] = useState("");
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
@@ -190,9 +196,12 @@ function FormularioContagem({
   const erroCodigoDuplicado =
     modal.modo === "nova" && !erroCodigoFormato && modal.codigosExistentes.includes(codigo.trim()) ? "Essa posição já existe nessa rua." : null;
   const erroCodigo = erroCodigoFormato ?? erroCodigoDuplicado;
-  const erroProduto = modal.modo === "nova" ? validarProduto(produto) : null;
-  const erroVoltagem = modal.modo === "nova" ? validarVoltagem(voltagem) : null;
-  const erroQuantidade = validarQuantidade(quantidade);
+  const vazia = definirProduto && produto === PRODUTO_VAZIA;
+  const erroProduto = definirProduto ? validarProduto(produto) : null;
+  const erroVoltagem = definirProduto && !vazia ? validarVoltagem(voltagem) : null;
+  const erroQuantidade =
+    validarQuantidade(quantidade) ??
+    (vazia && Number(quantidade) > 0 ? "Posição vazia fica com 0 un. — pra contar unidades, escolha o produto." : null);
   const erroResponsavel = validarResponsavel(responsavel);
   const erroFoto = validarFoto(fotoPreview);
   const formularioInvalido = Boolean(erroCodigo || erroProduto || erroVoltagem || erroQuantidade || erroResponsavel || erroFoto);
@@ -228,9 +237,9 @@ function FormularioContagem({
     const refAlvo =
       modal.modo === "nova" && erroCodigo
         ? codigoRef.current
-        : modal.modo === "nova" && erroProduto
+        : definirProduto && erroProduto
           ? produtoRef.current
-          : modal.modo === "nova" && erroVoltagem
+          : definirProduto && erroVoltagem
             ? voltagemRef.current
             : erroFoto
               ? fotoBotaoRef.current
@@ -241,7 +250,7 @@ function FormularioContagem({
                   : null;
     refAlvo?.scrollIntoView({ behavior: "smooth", block: "center" });
     refAlvo?.focus();
-  }, [modal, erroCodigo, erroProduto, erroVoltagem, erroFoto, erroQuantidade, erroResponsavel]);
+  }, [modal, definirProduto, erroCodigo, erroProduto, erroVoltagem, erroFoto, erroQuantidade, erroResponsavel]);
 
   const salvar = useCallback(async () => {
     setTentouSalvar(true);
@@ -261,7 +270,7 @@ function FormularioContagem({
           quantidade: Number(quantidade),
           responsavel: responsavel.trim(),
           fotoDataUri: fotoPreview,
-          ...(modal.modo === "nova" ? { produto: produto.trim(), voltagem } : {}),
+          ...(definirProduto && !vazia ? { produto: produto.trim(), voltagem } : {}),
         }),
       });
       const json = await resposta.json();
@@ -274,7 +283,7 @@ function FormularioContagem({
     } finally {
       setSalvando(false);
     }
-  }, [codigo, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, voltagem]);
+  }, [codigo, definirProduto, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, vazia, voltagem]);
 
   const salvarMetadados = useCallback(async () => {
     if (modal.modo !== "existente") return;
@@ -348,7 +357,7 @@ function FormularioContagem({
             </label>
           )}
 
-          {modal.modo === "nova" ? (
+          {definirProduto ? (
             <div className="estoque-produto-voltagem">
               <label className="field">
                 <span className="field-label">
@@ -358,41 +367,54 @@ function FormularioContagem({
                   ref={produtoRef}
                   className={`field-input${mostrar("produto", erroProduto) ? " field-input--erro" : ""}`}
                   value={produto}
-                  onChange={(event) => setProduto(event.target.value)}
+                  onChange={(event) => {
+                    setProduto(event.target.value);
+                    if (event.target.value === PRODUTO_VAZIA) {
+                      setVoltagem("");
+                      setQuantidade("0");
+                    }
+                  }}
                   onBlur={() => tocar("produto")}
                 >
                   <option value="">Selecione…</option>
+                  <option value={PRODUTO_VAZIA}>Posição vazia (sem produto)</option>
                   {produtos.map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>
                   ))}
                 </select>
-                {produtos.length === 0 && (
+                {produtos.length === 0 && !vazia && (
                   <span className="field-value--muted">Nenhum produto cadastrado ainda — use "+ Produto" no topo da tela de Estoque.</span>
                 )}
                 {mostrar("produto", erroProduto) && <span className="field-erro">{mostrar("produto", erroProduto)}</span>}
               </label>
-              <label className="field">
-                <span className="field-label">
-                  Voltagem <span className="field-obrigatorio">*</span>
-                </span>
-                <select
-                  ref={voltagemRef}
-                  className={`field-input${mostrar("voltagem", erroVoltagem) ? " field-input--erro" : ""}`}
-                  value={voltagem}
-                  onChange={(event) => setVoltagem(event.target.value)}
-                  onBlur={() => tocar("voltagem")}
-                >
-                  <option value="">Selecione…</option>
-                  {VOLTAGENS.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-                {mostrar("voltagem", erroVoltagem) && <span className="field-erro">{mostrar("voltagem", erroVoltagem)}</span>}
-              </label>
+              {vazia ? (
+                <p className="field-value--muted estoque-vazia-nota">
+                  Registra a posição com 0 un., sem produto nem voltagem. Quando chegar mercadoria, é só recontar escolhendo o produto.
+                </p>
+              ) : (
+                <label className="field">
+                  <span className="field-label">
+                    Voltagem <span className="field-obrigatorio">*</span>
+                  </span>
+                  <select
+                    ref={voltagemRef}
+                    className={`field-input${mostrar("voltagem", erroVoltagem) ? " field-input--erro" : ""}`}
+                    value={voltagem}
+                    onChange={(event) => setVoltagem(event.target.value)}
+                    onBlur={() => tocar("voltagem")}
+                  >
+                    <option value="">Selecione…</option>
+                    {VOLTAGENS.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                  {mostrar("voltagem", erroVoltagem) && <span className="field-erro">{mostrar("voltagem", erroVoltagem)}</span>}
+                </label>
+              )}
             </div>
           ) : (
             <div className="estoque-produto-voltagem-atual">
@@ -477,7 +499,7 @@ function FormularioContagem({
               Quantidade contada <span className="field-obrigatorio">*</span>
             </span>
             <div className="estoque-qtd-controle">
-              <button type="button" className="estoque-qtd-btn" onClick={() => ajustarQuantidade(-1)} aria-label="Diminuir quantidade">
+              <button type="button" className="estoque-qtd-btn" onClick={() => ajustarQuantidade(-1)} disabled={vazia} aria-label="Diminuir quantidade">
                 −
               </button>
               <input
@@ -486,12 +508,13 @@ function FormularioContagem({
                 type="number"
                 min={0}
                 inputMode="numeric"
+                disabled={vazia}
                 value={quantidade}
                 onChange={(event) => setQuantidade(event.target.value)}
                 onBlur={() => tocar("quantidade")}
                 placeholder="Ex.: 48"
               />
-              <button type="button" className="estoque-qtd-btn" onClick={() => ajustarQuantidade(1)} aria-label="Aumentar quantidade">
+              <button type="button" className="estoque-qtd-btn" onClick={() => ajustarQuantidade(1)} disabled={vazia} aria-label="Aumentar quantidade">
                 +
               </button>
               <span className="estoque-qtd-unidade">un.</span>
@@ -1178,10 +1201,12 @@ export function Estoque() {
                       <span className="estoque-card-codigo">{emTodas ? `${posicao.rua} · ${posicao.codigo}` : posicao.codigo}</span>
                       <span className={`estado-chip estado-chip--${estado}`}>{ESTADO_LABEL[estado]}</span>
                     </span>
-                    {posicao.produto && (
+                    {posicao.produto ? (
                       <span className="estoque-card-produto">
                         {posicao.produto} · {posicao.voltagem}
                       </span>
+                    ) : (
+                      <span className="estoque-card-meta">Sem produto</span>
                     )}
                     <span className="estoque-card-qtd tabular">{posicao.ultima.quantidade} un.</span>
                     <span className="estoque-card-meta">

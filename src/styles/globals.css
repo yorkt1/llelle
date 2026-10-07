@@ -639,6 +639,12 @@ textarea.field-input {
   border-color: var(--muted);
 }
 
+.estoque-qtd-btn:disabled,
+.estoque-qtd-controle .field-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .estoque-qtd-unidade {
   flex-shrink: 0;
   color: var(--muted);
@@ -1899,6 +1905,12 @@ body:has(.settings-overlay) .app-bottom-nav {
   .estoque-produto-voltagem {
     grid-template-columns: 1fr;
   }
+}
+
+/* Ocupa o lugar do select de voltagem quando "Posição vazia" está escolhida. */
+.estoque-vazia-nota {
+  margin: 0;
+  align-self: end;
 }
 
 .estoque-produto-voltagem-atual {
