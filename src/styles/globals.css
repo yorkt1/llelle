@@ -2398,3 +2398,144 @@ button.app-bottom-item {
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
 }
+
+/* ---------- Embalagem: relatório do dia / mês ---------- */
+
+.dia-navegacao {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dia-navegacao .field-input {
+  width: auto;
+  min-width: 11rem;
+}
+
+.variacao--alta {
+  color: var(--success);
+}
+
+.variacao--baixa {
+  color: var(--danger);
+}
+
+.painel-card-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.painel-card-cabecalho .painel-card-titulo {
+  margin: 0;
+}
+
+.meta-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Colunas por dia do mês: uma série só (total do dia), cor da marca; dia parcial mais apagado. */
+.colunas-dia {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(1.1rem, 1fr);
+  gap: 2px;
+  height: 11rem;
+  overflow-x: auto;
+}
+
+.colunas-dia-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  border-radius: 4px;
+}
+
+.colunas-dia-item--fds {
+  background: var(--surface-subtle);
+}
+
+.colunas-dia-item:hover {
+  background: var(--surface-active);
+}
+
+.colunas-dia-barra-area {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.colunas-dia-barra {
+  display: block;
+  width: 70%;
+  min-height: 1px;
+  background: var(--brand);
+  border-radius: 4px 4px 0 0;
+}
+
+.colunas-dia-barra--parcial {
+  opacity: 0.45;
+}
+
+.colunas-dia-rotulo {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Matriz colaborador × dia (mesmo formato da planilha de desempenho). */
+.matriz-mensal th,
+.matriz-mensal td {
+  padding: 0.5rem 0.4rem;
+}
+
+.matriz-mensal .matriz-fixa {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--panel);
+  min-width: 11rem;
+  padding-left: 0.75rem;
+}
+
+.matriz-dia {
+  text-align: center !important;
+  min-width: 2.1rem;
+}
+
+th.matriz-dia {
+  line-height: 1.2;
+}
+
+.matriz-dia > span {
+  display: block;
+}
+
+.matriz-semana {
+  font-size: 0.62rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.matriz-dia--fds {
+  background: var(--surface-subtle);
+}
+
+.matriz-zero {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+/* Separa as colunas de resumo (total/média/meta) das colunas de dia na matriz mensal. */
+.matriz-separador {
+  border-right: 2px solid var(--line);
+}

@@ -12,7 +12,7 @@ import { embalagemRouter } from "./routes/embalagem";
 import { comprasRouter } from "./routes/compras";
 import { tickVendas } from "../lib/vendasSync";
 import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
-import { sincronizarEmbalagemHoje } from "../lib/embalagem";
+import { sincronizarEmbalagemHoje, verificarDiaPassado } from "../lib/embalagem";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -173,4 +173,26 @@ if (VENDAS_SYNC_INTERVAL_MS > 0) {
     tickVendas().catch((error: unknown) => console.error("[vendas] falha na coleta:", error));
   setTimeout(() => void syncVendasOnce(), 45_000);
   setInterval(() => void syncVendasOnce(), VENDAS_SYNC_INTERVAL_MS);
+}
+
+// Confere os dias já fechados do mês atual e do anterior (relatório de embalagem / bonificação):
+// completa no cache o que ficou faltando enquanto o servidor estava dormindo. Um passo pequeno a
+// cada ciclo (lista as separações do dia uma vez, depois resolve até 40 por passo) — mais espaçado
+// que os outros syncs pra não disputar o limite de taxa do Tiny. 0 desliga.
+const EMBALAGEM_VERIFICACAO_INTERVAL_MS = Number(process.env.EMBALAGEM_VERIFICACAO_INTERVAL_MS ?? 3 * 60_000);
+if (EMBALAGEM_VERIFICACAO_INTERVAL_MS > 0) {
+  let verificandoEmbalagem = false;
+  const verificarEmbalagemOnce = async () => {
+    if (!isConfigured() || verificandoEmbalagem) return;
+    verificandoEmbalagem = true;
+    try {
+      await verificarDiaPassado();
+    } catch (error) {
+      console.error("[embalagem] falha ao verificar dia passado:", error);
+    } finally {
+      verificandoEmbalagem = false;
+    }
+  };
+  setTimeout(() => void verificarEmbalagemOnce(), 90_000);
+  setInterval(() => void verificarEmbalagemOnce(), EMBALAGEM_VERIFICACAO_INTERVAL_MS);
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BarrasHorizontais } from "@/Barras";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -52,33 +53,6 @@ function contarPor(registros: RegistroDevolucao[], campo: (r: RegistroDevolucao)
     mapa.set(chave, (mapa.get(chave) ?? 0) + r.quantidade);
   }
   return [...mapa.entries()].map(([rotulo, unidades]) => ({ rotulo, unidades })).sort((a, b) => b.unidades - a.unidades);
-}
-
-/** Lista de barras horizontais (uma série só: cor única, valor em texto ao lado, nunca cor sozinha). */
-function BarrasHorizontais({ titulo, itens, total }: { titulo: string; itens: { rotulo: string; unidades: number }[]; total: number }) {
-  const maximo = Math.max(1, ...itens.map((i) => i.unidades));
-  return (
-    <section className="painel-card">
-      <h2 className="painel-card-titulo">{titulo}</h2>
-      {itens.length === 0 ? (
-        <p className="field-value--muted">Sem dados no período.</p>
-      ) : (
-        <ul className="barras">
-          {itens.map((item) => (
-            <li key={item.rotulo} className="barras-item" title={`${item.rotulo}: ${item.unidades} un. (${pct(item.unidades, total)})`}>
-              <span className="barras-rotulo">{item.rotulo}</span>
-              <span className="barras-trilho" aria-hidden="true">
-                <span className="barras-barra" style={{ width: `${(item.unidades / maximo) * 100}%` }} />
-              </span>
-              <span className="barras-valor tabular">
-                {item.unidades} <span className="field-value--muted">· {pct(item.unidades, total)}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
 }
 
 function ModalImportar({ onFechar, onImportado }: { onFechar: () => void; onImportado: (mensagem: string) => void }) {
@@ -283,8 +257,8 @@ export function DevolucoesHistorico() {
       </section>
 
       <div className="painel-duplo">
-        <BarrasHorizontais titulo="Por motivo (unidades)" itens={porMotivo} total={unidades} />
-        <BarrasHorizontais titulo="Por marketplace (unidades)" itens={porMarketplace} total={unidades} />
+        <BarrasHorizontais titulo="Por motivo (unidades)" itens={porMotivo.map((i) => ({ rotulo: i.rotulo, valor: i.unidades }))} total={unidades} />
+        <BarrasHorizontais titulo="Por marketplace (unidades)" itens={porMarketplace.map((i) => ({ rotulo: i.rotulo, valor: i.unidades }))} total={unidades} />
       </div>
 
       <section className="painel-card">

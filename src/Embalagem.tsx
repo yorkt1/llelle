@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PageHeader } from "@/PageHeader";
+import { EmbalagemRelatorio } from "@/EmbalagemRelatorio";
 
 interface DesempenhoColaborador {
   idUsuarioEmbalador: string;
@@ -109,6 +110,7 @@ export function Embalagem() {
 
   const [colaboradores, setColaboradores] = useState<ColaboradorEmbalagem[]>([]);
   const [mostrarConfig, setMostrarConfig] = useState(false);
+  const [aba, setAba] = useState<"painel" | "relatorio">("painel");
   const [mostrarSaibaMais, setMostrarSaibaMais] = useState(false);
   const [novoId, setNovoId] = useState("");
   const [novoNome, setNovoNome] = useState("");
@@ -311,6 +313,20 @@ export function Embalagem() {
           {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
         </button>
       </PageHeader>
+
+      <div className="abas" role="tablist" aria-label="Seções da Embalagem">
+        <button type="button" role="tab" aria-selected={aba === "painel"} className={`aba${aba === "painel" ? " aba--ativa" : ""}`} onClick={() => setAba("painel")}>
+          Painel (TV)
+        </button>
+        <button type="button" role="tab" aria-selected={aba === "relatorio"} className={`aba${aba === "relatorio" ? " aba--ativa" : ""}`} onClick={() => setAba("relatorio")}>
+          Relatório
+        </button>
+      </div>
+
+      {aba === "relatorio" ? (
+        <EmbalagemRelatorio />
+      ) : (
+        <>
 
       <form className="busca-linha busca-linha--alinhada" onSubmit={(event) => event.preventDefault()}>
         <label className="field">
@@ -534,6 +550,8 @@ export function Embalagem() {
             {erroConfig && <p className="error-banner">{erroConfig}</p>}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

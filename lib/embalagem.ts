@@ -401,3 +401,194 @@ export async function obterDesempenho(diaBr?: string): Promise<DesempenhoEmbalag
   const { resolucoes, completo } = await resolverEmbaladores(resumos);
   return montarRelatorio(diaPedido, resumos, resolucoes, completo, colaboradoresCadastrados);
 }
+
+// ---------- Relatório mensal (bonificação) e verificação de dias passados ----------
+
+/**
+ * O relatório do dia/mês sai inteiro do cache de resoluções (`CHAVE_RESOLUCOES`), que já guarda,
+ * pra sempre, quem embalou cada separação e o `dataCheckout` dela — zero chamada ao Tiny pra
+ * montar. O ponto fraco desse cache: só tem o que foi resolvido enquanto o servidor estava no ar
+ * (o job de "hoje" roda a cada minuto; o Render Free dorme quando ninguém acessa). Por isso existe
+ * `verificarDiaPassado`: um job de fundo que reconsulta, um dia por vez, os dias já fechados do mês
+ * atual e do anterior, resolve o que faltar e marca o dia como COMPLETO — o relatório mostra quais
+ * dias ainda estão parciais, pra bonificação nunca ser fechada em cima de dado incompleto sem
+ * ninguém saber.
+ */
+
+const CHAVE_DIAS_VERIFICADOS = "embalagem:diasVerificados"; // dias (dd/mm/aaaa) com 100% resolvido
+const CHAVE_VERIFICACAO_EM_ANDAMENTO = "embalagem:verificacaoEmAndamento";
+const CHAVE_META_MENSAL = "embalagem:metaMensal";
+const SEMANA = ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SÁB"];
+
+export interface DiaRelatorio {
+  dia: number;
+  /** dd/mm/aaaa */
+  data: string;
+  semana: string;
+  /** Todas as separações do dia já resolvidas (dia verificado, ou hoje com o job em dia). */
+  completo: boolean;
+  /** Dia ainda não chegou. */
+  futuro: boolean;
+}
+
+export interface ColaboradorRelatorio {
+  idUsuarioEmbalador: string;
+  nome: string;
+  bancada?: string;
+  /** Índice = dia − 1. */
+  porDia: number[];
+  total: number;
+  diasTrabalhados: number;
+}
+
+export interface RelatorioMensalEmbalagem {
+  /** aaaa-mm */
+  mes: string;
+  hoje: string;
+  pedidosPorHora: number;
+  metaMensal: number | null;
+  dias: DiaRelatorio[];
+  colaboradores: ColaboradorRelatorio[];
+  naoIdentificadosPorDia: number[];
+  totalPorDia: number[];
+  total: number;
+}
+
+function brParaPartes(diaBr: string): { d: number; m: number; a: number } | null {
+  const m = diaBr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? { d: Number(m[1]), m: Number(m[2]), a: Number(m[3]) } : null;
+}
+
+function diaBr(ano: number, mes: number, dia: number): string {
+  return `${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
+}
+
+/** dd/mm/aaaa → número comparável aaaammdd. */
+function ordemDia(br: string): number {
+  const p = brParaPartes(br);
+  return p ? p.a * 10_000 + p.m * 100 + p.d : 0;
+}
+
+export async function obterMetaMensal(): Promise<number | null> {
+  return (await store.get<number>(CHAVE_META_MENSAL)) ?? null;
+}
+
+export async function salvarMetaMensal(meta: number | null): Promise<number | null> {
+  const valor = meta !== null && Number.isFinite(meta) && meta > 0 ? Math.round(meta) : null;
+  await store.set(CHAVE_META_MENSAL, valor);
+  return valor;
+}
+
+export async function relatorioMensal(mesIso: string): Promise<RelatorioMensalEmbalagem> {
+  const partes = mesIso.match(/^(\d{4})-(\d{2})$/);
+  if (!partes) throw new Error("Mês inválido (use aaaa-mm).");
+  const ano = Number(partes[1]);
+  const mes = Number(partes[2]);
+  const totalDias = new Date(ano, mes, 0).getDate();
+  const hoje = todayInSaoPaulo();
+  const ordemHoje = ordemDia(hoje);
+
+  const [resolucoes, cadastrados, verificados, snapshot, metaMensal] = await Promise.all([
+    store.get<ResolucoesPorSeparacao>(CHAVE_RESOLUCOES).then((r) => r ?? {}),
+    listarColaboradores(),
+    store.get<string[]>(CHAVE_DIAS_VERIFICADOS).then((v) => new Set(v ?? [])),
+    store.get<SnapshotResumosHoje>(CHAVE_RESUMOS_HOJE),
+    obterMetaMensal(),
+  ]);
+
+  const hojeCompleto = snapshot?.dia === hoje && snapshot.resumos.every((r) => r.id in resolucoes);
+
+  const dias: DiaRelatorio[] = Array.from({ length: totalDias }, (_, i) => {
+    const data = diaBr(ano, mes, i + 1);
+    const ordem = ordemDia(data);
+    return {
+      dia: i + 1,
+      data,
+      semana: SEMANA[new Date(ano, mes - 1, i + 1).getDay()],
+      completo: verificados.has(data) || (data === hoje && hojeCompleto),
+      futuro: ordem > ordemHoje,
+    };
+  });
+
+  const porColaborador = new Map<string, number[]>();
+  const naoIdentificadosPorDia = new Array<number>(totalDias).fill(0);
+  for (const { idUsuarioEmbalador, dataCheckout } of Object.values(resolucoes)) {
+    const p = brParaPartes(dataCheckout);
+    if (!p || p.a !== ano || p.m !== mes) continue;
+    if (!idUsuarioEmbalador) {
+      naoIdentificadosPorDia[p.d - 1]++;
+      continue;
+    }
+    const linha = porColaborador.get(idUsuarioEmbalador) ?? new Array<number>(totalDias).fill(0);
+    linha[p.d - 1]++;
+    porColaborador.set(idUsuarioEmbalador, linha);
+  }
+
+  const porId = new Map(cadastrados.map((c) => [c.idUsuarioEmbalador, c]));
+  const ids = new Set([...cadastrados.map((c) => c.idUsuarioEmbalador), ...porColaborador.keys()]);
+  const colaboradores: ColaboradorRelatorio[] = [...ids]
+    .map((id) => {
+      const porDia = porColaborador.get(id) ?? new Array<number>(totalDias).fill(0);
+      const cadastro = porId.get(id);
+      return {
+        idUsuarioEmbalador: id,
+        nome: cadastro?.nome ?? `ID ${id} (sem nome cadastrado)`,
+        bancada: cadastro?.bancada,
+        porDia,
+        total: porDia.reduce((s, n) => s + n, 0),
+        diasTrabalhados: porDia.filter((n) => n > 0).length,
+      };
+    })
+    .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, "pt-BR"));
+
+  const totalPorDia = dias.map((_, i) => colaboradores.reduce((s, c) => s + c.porDia[i], 0));
+
+  return {
+    mes: mesIso,
+    hoje,
+    pedidosPorHora: pedidosPorHoraPadrao(),
+    metaMensal,
+    dias,
+    colaboradores,
+    naoIdentificadosPorDia,
+    totalPorDia,
+    total: totalPorDia.reduce((s, n) => s + n, 0),
+  };
+}
+
+type VerificacaoEmAndamento = { dia: string; ids: string[] };
+
+/**
+ * Um passo da verificação de dias passados (mês atual + anterior, mais recentes primeiro): na
+ * primeira vez que pega um dia, lista as separações dele (paginação, uma vez só — guardada em
+ * `CHAVE_VERIFICACAO_EM_ANDAMENTO`); a cada passo resolve até MAX_RESOLUCOES_POR_CHAMADA das que
+ * ainda não estão no cache. Quando todas estão, o dia vira "verificado" e passa pro próximo.
+ * Chamada pelo job de fundo em server/index.ts — nunca por requisição HTTP.
+ */
+export async function verificarDiaPassado(): Promise<void> {
+  const hoje = todayInSaoPaulo();
+  const p = brParaPartes(hoje)!;
+  const verificados = new Set((await store.get<string[]>(CHAVE_DIAS_VERIFICADOS)) ?? []);
+
+  let andamento = await store.get<VerificacaoEmAndamento>(CHAVE_VERIFICACAO_EM_ANDAMENTO);
+  if (!andamento || verificados.has(andamento.dia)) {
+    const candidatos: string[] = [];
+    for (let d = p.d - 1; d >= 1; d--) candidatos.push(diaBr(p.a, p.m, d));
+    const [anoAnt, mesAnt] = p.m === 1 ? [p.a - 1, 12] : [p.a, p.m - 1];
+    for (let d = new Date(anoAnt, mesAnt, 0).getDate(); d >= 1; d--) candidatos.push(diaBr(anoAnt, mesAnt, d));
+    const proximo = candidatos.find((dia) => !verificados.has(dia));
+    if (!proximo) return;
+    const resumos = await buscarResumosEmbaladosNoDia(proximo);
+    andamento = { dia: proximo, ids: resumos.map((r) => r.id) };
+    await store.set(CHAVE_VERIFICACAO_EM_ANDAMENTO, andamento);
+  }
+
+  const { completo } = await resolverEmbaladores(andamento.ids.map((id) => ({ id, dataCheckout: andamento!.dia })));
+  if (completo) {
+    verificados.add(andamento.dia);
+    // Só guarda os ~últimos 3 meses de dias verificados — o relatório só olha mês atual/anterior.
+    const recentes = [...verificados].sort((a, b) => ordemDia(b) - ordemDia(a)).slice(0, 100);
+    await store.set(CHAVE_DIAS_VERIFICADOS, recentes);
+    await store.del(CHAVE_VERIFICACAO_EM_ANDAMENTO);
+  }
+}
