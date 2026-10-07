@@ -369,7 +369,7 @@ function FormularioContagem({
                   ))}
                 </select>
                 {produtos.length === 0 && (
-                  <span className="field-value--muted">Nenhum produto cadastrado ainda — use "Configurar produtos" na tela principal.</span>
+                  <span className="field-value--muted">Nenhum produto cadastrado ainda — use "+ Produto" no topo da tela de Estoque.</span>
                 )}
                 {mostrar("produto", erroProduto) && <span className="field-erro">{mostrar("produto", erroProduto)}</span>}
               </label>
@@ -550,6 +550,238 @@ function FormularioContagem({
   );
 }
 
+type EstadoPosicao = "vazia" | "baixo" | "ocupada";
+
+/**
+ * Ainda não existe regra de negócio pra "estoque baixo" (nem por produto, nem global) — com null o
+ * estado fica desligado e o card de resumo mostra "—". Pra ativar, troque por um número de unidades
+ * (ex.: 10): posições com 1..N un. passam a aparecer em amarelo e contam no resumo.
+ */
+const LIMITE_ESTOQUE_BAIXO = null as number | null;
+
+const ESTADO_LABEL: Record<EstadoPosicao, string> = {
+  vazia: "Vazia",
+  baixo: "Estoque baixo",
+  ocupada: "Ocupada",
+};
+
+function estadoDaPosicao(posicao: PosicaoResumo): EstadoPosicao {
+  const quantidade = posicao.ultima.quantidade;
+  if (quantidade <= 0) return "vazia";
+  if (LIMITE_ESTOQUE_BAIXO !== null && quantidade <= LIMITE_ESTOQUE_BAIXO) return "baixo";
+  return "ocupada";
+}
+
+function normalizar(texto: string): string {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/** Aba especial "Todas" — mostra as posições de todas as ruas (é pra onde a tela vai quando um filtro é aplicado). */
+const TODAS = "*";
+const VISAO_STORAGE_KEY = "estoque:visao";
+
+type Visao = "grade" | "tabela";
+type ColunaTabela = "rua" | "codigo" | "produto" | "voltagem" | "quantidade" | "estado" | "responsavel" | "criadoEm";
+
+const COLUNAS_TABELA: { coluna: ColunaTabela; label: string; numerica?: boolean }[] = [
+  { coluna: "rua", label: "Rua" },
+  { coluna: "codigo", label: "Posição" },
+  { coluna: "produto", label: "Produto" },
+  { coluna: "voltagem", label: "Voltagem" },
+  { coluna: "quantidade", label: "Quantidade", numerica: true },
+  { coluna: "estado", label: "Estado" },
+  { coluna: "responsavel", label: "Contado por" },
+  { coluna: "criadoEm", label: "Atualizado em" },
+];
+
+function valorColuna(posicao: PosicaoResumo, coluna: ColunaTabela): string | number {
+  switch (coluna) {
+    case "rua":
+      return posicao.rua;
+    case "codigo":
+      return posicao.codigo;
+    case "produto":
+      return posicao.produto ?? "";
+    case "voltagem":
+      return posicao.voltagem ?? "";
+    case "quantidade":
+      return posicao.ultima.quantidade;
+    case "estado":
+      return ESTADO_LABEL[estadoDaPosicao(posicao)];
+    case "responsavel":
+      return posicao.ultima.responsavel;
+    case "criadoEm":
+      return posicao.ultima.criadoEm;
+  }
+}
+
+function compararPosicoes(a: PosicaoResumo, b: PosicaoResumo, coluna: ColunaTabela): number {
+  const va = valorColuna(a, coluna);
+  const vb = valorColuna(b, coluna);
+  if (typeof va === "number" && typeof vb === "number") return va - vb;
+  // numeric: true → "H2" antes de "H10", como na prateleira.
+  return String(va).localeCompare(String(vb), "pt-BR", { numeric: true, sensitivity: "base" });
+}
+
+function lerVisao(): Visao {
+  try {
+    return localStorage.getItem(VISAO_STORAGE_KEY) === "tabela" ? "tabela" : "grade";
+  } catch {
+    return "grade";
+  }
+}
+
+function IconeGrade({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+function IconeTabela({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+function IconeBusca({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function CardResumo({ rotulo, valor, detalhe, tom }: { rotulo: string; valor: string | number; detalhe: string; tom?: EstadoPosicao | "marca" }) {
+  return (
+    <div className={`resumo-card${tom ? ` resumo-card--${tom}` : ""}`}>
+      <span className="resumo-card-rotulo">{rotulo}</span>
+      <span className="resumo-card-valor tabular">{valor}</span>
+      <span className="resumo-card-detalhe">{detalhe}</span>
+    </div>
+  );
+}
+
+/** Catálogo de produtos — antes um painel no topo da tela, agora um modal aberto pelo "+ Produto" do cabeçalho. */
+function ModalProdutos({
+  produtos,
+  onFechar,
+  onAlterado,
+}: {
+  produtos: string[];
+  onFechar: () => void;
+  onAlterado: (produtos: string[]) => void;
+}) {
+  const [novoProduto, setNovoProduto] = useState("");
+  const [erroProdutos, setErroProdutos] = useState<string | null>(null);
+  const [salvandoProduto, setSalvandoProduto] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const adicionarProdutoCatalogo = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      const nome = novoProduto.trim();
+      if (!nome) return;
+      setSalvandoProduto(true);
+      setErroProdutos(null);
+      try {
+        const resposta = await fetch(`${API_URL}/api/estoque/produtos`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome }),
+        });
+        const json = await resposta.json();
+        if (!resposta.ok) throw new Error(json.error ?? "Não consegui cadastrar o produto.");
+        onAlterado(json.produtos ?? []);
+        setNovoProduto("");
+      } catch (error) {
+        setErroProdutos(error instanceof Error ? error.message : "Não consegui cadastrar o produto.");
+      } finally {
+        setSalvandoProduto(false);
+      }
+    },
+    [novoProduto, onAlterado],
+  );
+
+  const removerProdutoCatalogo = useCallback(
+    async (nome: string) => {
+      if (!window.confirm(`Remover "${nome}" do catálogo de produtos?`)) return;
+      setErroProdutos(null);
+      try {
+        const resposta = await fetch(`${API_URL}/api/estoque/produtos/${encodeURIComponent(nome)}`, { method: "DELETE" });
+        if (!resposta.ok) throw new Error("Não consegui remover esse produto agora.");
+        onAlterado(produtos.filter((p) => p !== nome));
+      } catch (error) {
+        setErroProdutos(error instanceof Error ? error.message : "Não consegui remover esse produto agora.");
+      }
+    },
+    [onAlterado, produtos],
+  );
+
+  return (
+    <div className="settings-overlay" onClick={onFechar}>
+      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="settings-panel-header">
+          <button className="settings-close" onClick={onFechar} aria-label="Fechar">
+            ×
+          </button>
+          <h2 className="settings-title">Produtos</h2>
+          <p className="settings-hint">
+            Produtos disponíveis pra escolher ao criar uma posição nova. Remover um produto daqui não afeta posições que já usam ele.
+          </p>
+        </div>
+
+        <div className="settings-panel-body">
+          <form className="estoque-form-produto" onSubmit={adicionarProdutoCatalogo}>
+            <label className="field">
+              <span className="field-label">Novo produto</span>
+              <input
+                ref={inputRef}
+                className="field-input"
+                value={novoProduto}
+                onChange={(event) => setNovoProduto(event.target.value)}
+                placeholder="Ex.: Liquidificador 110V"
+                autoFocus
+              />
+            </label>
+            <button className="btn-primario" type="submit" disabled={salvandoProduto || !novoProduto.trim()}>
+              {salvandoProduto ? "Salvando..." : "Adicionar"}
+            </button>
+          </form>
+          {erroProdutos && <p className="error-banner">{erroProdutos}</p>}
+
+          {produtos.length === 0 ? (
+            <div className="estado-vazio estado-vazio--compacto">
+              <p className="estado-vazio-titulo">Nenhum produto cadastrado.</p>
+              <button type="button" className="btn-primario" onClick={() => inputRef.current?.focus()}>
+                + Adicionar produto
+              </button>
+            </div>
+          ) : (
+            <ul className="estoque-lista-produtos">
+              {produtos.map((nome) => (
+                <li key={nome}>
+                  <span>{nome}</span>
+                  <button type="button" className="refresh-btn" onClick={() => void removerProdutoCatalogo(nome)}>
+                    Excluir
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Estoque() {
   const [ruas, setRuas] = useState<RuaResumo[]>([]);
   const [ruasExtras, setRuasExtras] = useState<string[]>([]); // ruas criadas na hora, ainda sem nenhuma posição salva
@@ -557,20 +789,22 @@ export function Estoque() {
   const [adicionandoRua, setAdicionandoRua] = useState(false);
   const [nomeNovaRua, setNomeNovaRua] = useState("");
   const [modal, setModal] = useState<Modal>(null);
+  const [carregou, setCarregou] = useState(false);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [cardDestacado, setCardDestacado] = useState<string | null>(null);
 
   const [produtos, setProdutos] = useState<string[]>([]);
-  const [mostrarConfigProdutos, setMostrarConfigProdutos] = useState(false);
-  const [novoProduto, setNovoProduto] = useState("");
-  const [erroProdutos, setErroProdutos] = useState<string | null>(null);
-  const [salvandoProduto, setSalvandoProduto] = useState(false);
+  const [mostrarModalProdutos, setMostrarModalProdutos] = useState(false);
 
-  // Filtro/relatório: quando qualquer um dos dois está ativo, a grade deixa de mostrar só a rua
-  // selecionada e passa a mostrar as posições de TODAS as ruas que combinam com o filtro.
+  // Filtro/relatório: aplicar qualquer filtro leva a tela pra aba "Todas" (posições de TODAS as
+  // ruas que combinam), como sempre foi; daí dá pra clicar numa rua pra restringir.
+  const [busca, setBusca] = useState("");
   const [filtroProduto, setFiltroProduto] = useState("");
   const [filtroVoltagem, setFiltroVoltagem] = useState("");
+
+  const [visao, setVisao] = useState<Visao>(lerVisao);
+  const [ordenacao, setOrdenacao] = useState<{ coluna: ColunaTabela; crescente: boolean }>({ coluna: "codigo", crescente: true });
 
   const carregar = useCallback(async () => {
     try {
@@ -582,6 +816,8 @@ export function Estoque() {
       setRuaAtiva((atual) => atual ?? json.ruas?.[0]?.rua ?? null);
     } catch (error) {
       setErroCarregamento(error instanceof Error ? error.message : "Não consegui carregar o estoque.");
+    } finally {
+      setCarregou(true);
     }
   }, []);
 
@@ -610,15 +846,64 @@ export function Estoque() {
   }, [carregarProdutos]);
 
   const todasAsRuas = [...ruas.map((r) => r.rua), ...ruasExtras.filter((rua) => !ruas.some((r) => r.rua === rua))];
+  const todasAsPosicoes = ruas.flatMap((r) => r.posicoes);
   const posicoesDaRuaAtiva = ruas.find((r) => r.rua === ruaAtiva)?.posicoes ?? [];
 
-  const filtroAtivo = filtroProduto !== "" || filtroVoltagem !== "";
-  const todasAsPosicoes = ruas.flatMap((r) => r.posicoes);
-  const posicoesFiltradas = todasAsPosicoes.filter(
-    (p) => (!filtroProduto || p.produto === filtroProduto) && (!filtroVoltagem || p.voltagem === filtroVoltagem),
+  const termoBusca = normalizar(busca.trim());
+  const filtroAtivo = termoBusca !== "" || filtroProduto !== "" || filtroVoltagem !== "";
+  const combinaComFiltro = (p: PosicaoResumo) =>
+    (!filtroProduto || p.produto === filtroProduto) &&
+    (!filtroVoltagem || p.voltagem === filtroVoltagem) &&
+    (!termoBusca ||
+      [p.codigo, `${p.rua}${p.codigo}`, p.produto ?? "", p.voltagem ?? "", p.ultima.responsavel].some((campo) => normalizar(campo).includes(termoBusca)));
+  const posicoesFiltradas = todasAsPosicoes.filter(combinaComFiltro);
+
+  const emTodas = ruaAtiva === TODAS;
+  const posicoesExibidas = (emTodas ? posicoesFiltradas : posicoesDaRuaAtiva.filter(combinaComFiltro))
+    .slice()
+    .sort((a, b) => {
+      if (visao === "tabela") {
+        const r = compararPosicoes(a, b, ordenacao.coluna);
+        return ordenacao.crescente ? r : -r;
+      }
+      return compararPosicoes(a, b, "rua") || compararPosicoes(a, b, "codigo");
+    });
+  const totalUnidadesExibidas = posicoesExibidas.reduce((soma, p) => soma + p.ultima.quantidade, 0);
+
+  const contagemPorEstado = todasAsPosicoes.reduce<Record<EstadoPosicao, number>>(
+    (acc, p) => {
+      acc[estadoDaPosicao(p)] += 1;
+      return acc;
+    },
+    { vazia: 0, baixo: 0, ocupada: 0 },
   );
-  const posicoesExibidas = filtroAtivo ? posicoesFiltradas : posicoesDaRuaAtiva;
-  const totalUnidadesFiltro = posicoesFiltradas.reduce((soma, p) => soma + p.ultima.quantidade, 0);
+  const totalUnidades = todasAsPosicoes.reduce((soma, p) => soma + p.ultima.quantidade, 0);
+
+  /** Sair de "sem filtro" pra "com filtro" leva pra aba "Todas" — o filtro é um relatório do galpão
+   * inteiro. Depois disso, quem clicar numa rua continua nela enquanto refina o filtro. */
+  const aoFiltrar = (aplicar: () => void, novoValor: string) => {
+    aplicar();
+    if (novoValor && !filtroAtivo) setRuaAtiva(TODAS);
+  };
+
+  const limparFiltros = useCallback(() => {
+    setBusca("");
+    setFiltroProduto("");
+    setFiltroVoltagem("");
+  }, []);
+
+  const trocarVisao = useCallback((nova: Visao) => {
+    setVisao(nova);
+    try {
+      localStorage.setItem(VISAO_STORAGE_KEY, nova);
+    } catch {
+      // localStorage bloqueado — só não lembra a preferência.
+    }
+  }, []);
+
+  const ordenarPor = useCallback((coluna: ColunaTabela) => {
+    setOrdenacao((atual) => (atual.coluna === coluna ? { coluna, crescente: !atual.crescente } : { coluna, crescente: true }));
+  }, []);
 
   const confirmarNovaRua = useCallback(() => {
     const nome = nomeNovaRua.trim().toUpperCase();
@@ -643,228 +928,339 @@ export function Estoque() {
     void carregar();
   }, [carregar]);
 
-  const adicionarProdutoCatalogo = useCallback(
-    async (event: FormEvent) => {
-      event.preventDefault();
-      const nome = novoProduto.trim();
-      if (!nome) return;
-      setSalvandoProduto(true);
-      setErroProdutos(null);
-      try {
-        const resposta = await fetch(`${API_URL}/api/estoque/produtos`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nome }),
-        });
-        const json = await resposta.json();
-        if (!resposta.ok) throw new Error(json.error ?? "Não consegui cadastrar o produto.");
-        setProdutos(json.produtos ?? []);
-        setNovoProduto("");
-      } catch (error) {
-        setErroProdutos(error instanceof Error ? error.message : "Não consegui cadastrar o produto.");
-      } finally {
-        setSalvandoProduto(false);
-      }
-    },
-    [novoProduto],
-  );
+  const abrirPosicao = (posicao: PosicaoResumo) =>
+    setModal({ modo: "existente", rua: posicao.rua, codigo: posicao.codigo, ultima: posicao.ultima, produto: posicao.produto, voltagem: posicao.voltagem });
 
-  const removerProdutoCatalogo = useCallback(async (nome: string) => {
-    if (!window.confirm(`Remover "${nome}" do catálogo de produtos?`)) return;
-    setErroProdutos(null);
-    try {
-      const resposta = await fetch(`${API_URL}/api/estoque/produtos/${encodeURIComponent(nome)}`, { method: "DELETE" });
-      if (!resposta.ok) throw new Error("Não consegui remover esse produto agora.");
-      setProdutos((atuais) => atuais.filter((p) => p !== nome));
-    } catch (error) {
-      setErroProdutos(error instanceof Error ? error.message : "Não consegui remover esse produto agora.");
-    }
-  }, []);
+  const ruaParaNovaPosicao = ruaAtiva && !emTodas ? ruaAtiva : null;
+  const abrirNovaPosicao = () => {
+    if (!ruaParaNovaPosicao) return;
+    setModal({ modo: "nova", rua: ruaParaNovaPosicao, codigosExistentes: posicoesDaRuaAtiva.map((p) => p.codigo) });
+  };
+
+  const contadorDaRua = (rua: string) => {
+    const posicoes = ruas.find((r) => r.rua === rua)?.posicoes ?? [];
+    return filtroAtivo ? posicoes.filter(combinaComFiltro).length : posicoes.length;
+  };
+
+  const semRuas = carregou && todasAsRuas.length === 0;
 
   return (
     <div className="page pagina-formulario">
-      <PageHeader titulo="Estoque">
-        <button type="button" className="refresh-btn" onClick={() => setMostrarConfigProdutos((atual) => !atual)}>
-          {mostrarConfigProdutos ? "Esconder produtos" : "Configurar produtos"}
+      <PageHeader titulo="Estoque" subtitulo="Contagem por rua e posição do galpão">
+        <button type="button" className="refresh-btn" onClick={() => setMostrarModalProdutos(true)}>
+          + Produto
         </button>
+        <button type="button" className="refresh-btn" onClick={() => setAdicionandoRua(true)}>
+          + Nova rua
+        </button>
+        {ruaParaNovaPosicao && (
+          <button type="button" className="btn-primario" onClick={abrirNovaPosicao}>
+            + Nova posição
+          </button>
+        )}
       </PageHeader>
 
       {erroCarregamento && <p className="error-banner">{erroCarregamento}</p>}
 
-      {mostrarConfigProdutos && (
-        <div className="colab-painel-info estoque-config-produtos">
-          <p className="estoque-vazio-titulo">Catálogo de produtos</p>
-          <p className="field-value--muted">
-            Produtos disponíveis pra escolher ao criar uma posição nova. Remover um produto daqui não afeta posições que já usam ele.
-          </p>
-          <ul className="estoque-lista-produtos">
-            {produtos.length === 0 ? (
-              <li className="field-value--muted">Nenhum produto cadastrado ainda.</li>
-            ) : (
-              produtos.map((nome) => (
-                <li key={nome}>
-                  <span>{nome}</span>
-                  <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => void removerProdutoCatalogo(nome)}>
-                    Excluir
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-          <form className="estoque-form-produto" onSubmit={adicionarProdutoCatalogo}>
-            <label className="field">
-              <span className="field-label">Novo produto</span>
+      <section className="resumo-grid" aria-label="Resumo do estoque">
+        <CardResumo rotulo="Produtos" valor={produtos.length} detalhe="no catálogo" tom="marca" />
+        <CardResumo
+          rotulo="Posições ocupadas"
+          valor={contagemPorEstado.ocupada + contagemPorEstado.baixo}
+          detalhe={`${totalUnidades} un. em ${todasAsRuas.length} rua${todasAsRuas.length === 1 ? "" : "s"}`}
+          tom="ocupada"
+        />
+        <CardResumo rotulo="Posições livres" valor={contagemPorEstado.vazia} detalhe="contadas com 0 un." tom="vazia" />
+        <CardResumo
+          rotulo="Estoque baixo"
+          valor={LIMITE_ESTOQUE_BAIXO === null ? "—" : contagemPorEstado.baixo}
+          detalhe={LIMITE_ESTOQUE_BAIXO === null ? "limite ainda não definido" : `até ${LIMITE_ESTOQUE_BAIXO} un. por posição`}
+          tom="baixo"
+        />
+      </section>
+
+      <div className="filtro-barra" role="search">
+        <label className="filtro-busca">
+          <IconeBusca className="filtro-busca-icone" />
+          <input
+            className="field-input"
+            type="search"
+            aria-label="Buscar posição"
+            value={busca}
+            onChange={(event) => aoFiltrar(() => setBusca(event.target.value), event.target.value.trim())}
+            placeholder="Buscar por posição, produto ou responsável"
+          />
+        </label>
+        <select
+          className="field-input"
+          aria-label="Filtrar por produto"
+          value={filtroProduto}
+          onChange={(event) => aoFiltrar(() => setFiltroProduto(event.target.value), event.target.value)}
+        >
+          <option value="">Todos os produtos</option>
+          {produtos.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <select
+          className="field-input"
+          aria-label="Filtrar por voltagem"
+          value={filtroVoltagem}
+          onChange={(event) => aoFiltrar(() => setFiltroVoltagem(event.target.value), event.target.value)}
+        >
+          <option value="">Todas as voltagens</option>
+          {VOLTAGENS.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        {filtroAtivo && (
+          <button type="button" className="refresh-btn" onClick={limparFiltros}>
+            Limpar filtros
+          </button>
+        )}
+        <div className="alternar-visao" role="group" aria-label="Modo de exibição">
+          <button
+            type="button"
+            className={`alternar-visao-btn${visao === "grade" ? " alternar-visao-btn--ativo" : ""}`}
+            aria-pressed={visao === "grade"}
+            onClick={() => trocarVisao("grade")}
+            title="Visão em grade"
+          >
+            <IconeGrade className="btn-icone" />
+            <span>Grade</span>
+          </button>
+          <button
+            type="button"
+            className={`alternar-visao-btn${visao === "tabela" ? " alternar-visao-btn--ativo" : ""}`}
+            aria-pressed={visao === "tabela"}
+            onClick={() => trocarVisao("tabela")}
+            title="Visão em tabela"
+          >
+            <IconeTabela className="btn-icone" />
+            <span>Tabela</span>
+          </button>
+        </div>
+      </div>
+
+      {(todasAsRuas.length > 0 || adicionandoRua) && (
+        <div className="ruas-barra">
+          <div className="ruas-abas" role="tablist" aria-label="Ruas">
+            {todasAsRuas.length > 1 || filtroAtivo || emTodas ? (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={emTodas}
+                className={`ruas-aba${emTodas ? " ruas-aba--ativa" : ""}`}
+                onClick={() => setRuaAtiva(TODAS)}
+              >
+                Todas
+                <span className="ruas-aba-contador tabular">{filtroAtivo ? posicoesFiltradas.length : todasAsPosicoes.length}</span>
+              </button>
+            ) : null}
+            {todasAsRuas.map((rua) => (
+              <button
+                key={rua}
+                type="button"
+                role="tab"
+                aria-selected={rua === ruaAtiva}
+                className={`ruas-aba${rua === ruaAtiva ? " ruas-aba--ativa" : ""}`}
+                onClick={() => setRuaAtiva(rua)}
+              >
+                Rua {rua}
+                <span className="ruas-aba-contador tabular">{contadorDaRua(rua)}</span>
+              </button>
+            ))}
+          </div>
+          {adicionandoRua && (
+            <span className="estoque-nova-rua">
               <input
                 className="field-input"
-                value={novoProduto}
-                onChange={(event) => setNovoProduto(event.target.value)}
-                placeholder="Ex.: Liquidificador 110V"
+                autoFocus
+                aria-label="Nova rua"
+                value={nomeNovaRua}
+                onChange={(event) => setNomeNovaRua(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") confirmarNovaRua();
+                  if (event.key === "Escape") setAdicionandoRua(false);
+                }}
+                placeholder="Nova rua (ex.: D)"
               />
-            </label>
-            <button className="btn-primario" type="submit" disabled={salvandoProduto}>
-              {salvandoProduto ? "Salvando..." : "Adicionar"}
-            </button>
-          </form>
-          {erroProdutos && <p className="error-banner">{erroProdutos}</p>}
+              <button type="button" className="btn-primario" onClick={confirmarNovaRua} disabled={!nomeNovaRua.trim()}>
+                Criar
+              </button>
+              <button type="button" className="refresh-btn" onClick={() => setAdicionandoRua(false)}>
+                Cancelar
+              </button>
+            </span>
+          )}
         </div>
       )}
 
-      <div className="estoque-filtro">
-        <label className="field">
-          <span className="field-label">Filtrar por produto</span>
-          <select className="field-input" value={filtroProduto} onChange={(event) => setFiltroProduto(event.target.value)}>
-            <option value="">Todos</option>
-            {produtos.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span className="field-label">Filtrar por voltagem</span>
-          <select className="field-input" value={filtroVoltagem} onChange={(event) => setFiltroVoltagem(event.target.value)}>
-            <option value="">Todas</option>
-            {VOLTAGENS.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        {filtroAtivo && (
-          <button
-            type="button"
-            className="refresh-btn"
-            onClick={() => {
-              setFiltroProduto("");
-              setFiltroVoltagem("");
-            }}
-          >
-            Limpar filtro
-          </button>
-        )}
-      </div>
+      {!carregou && <p className="nota-info">Carregando estoque…</p>}
 
-      {filtroAtivo && (
-        <p className="nota-info">
-          {posicoesFiltradas.length} posiç{posicoesFiltradas.length === 1 ? "ão" : "ões"} · {totalUnidadesFiltro} un. no total (todas as ruas)
-        </p>
-      )}
-
-      <div className="estoque-ruas">
-        {todasAsRuas.map((rua) => (
-          <button
-            key={rua}
-            className={`nav-corner-item${rua === ruaAtiva ? " nav-corner-item--active" : ""}`}
-            onClick={() => setRuaAtiva(rua)}
-          >
-            Rua {rua}
-          </button>
-        ))}
-        {adicionandoRua ? (
-          <span className="estoque-nova-rua">
-            <input
-              className="field-input"
-              autoFocus
-              aria-label="Nova rua"
-              value={nomeNovaRua}
-              onChange={(event) => setNomeNovaRua(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && confirmarNovaRua()}
-              placeholder="Nova rua (ex.: D)"
-            />
-            <button className="refresh-btn" onClick={confirmarNovaRua}>
-              Ok
-            </button>
-          </span>
-        ) : (
-          <button className="nav-corner-item" onClick={() => setAdicionandoRua(true)}>
+      {semRuas && !adicionandoRua && (
+        <div className="estado-vazio">
+          <IconeGondola className="estado-vazio-icone" />
+          <p className="estado-vazio-titulo">Nenhuma rua cadastrada ainda.</p>
+          <p className="field-value--muted">Crie a primeira rua pra começar a registrar as posições do galpão — rua e posição são criadas na hora, direto daqui.</p>
+          <button type="button" className="btn-primario" onClick={() => setAdicionandoRua(true)}>
             + Nova rua
           </button>
-        )}
-      </div>
-
-      {!ruaAtiva && (
-        <div className="estoque-vazio">
-          <p className="estoque-vazio-titulo">Nenhuma rua cadastrada ainda</p>
-          <p className="field-value--muted">
-            Clique em <strong>"+ Nova rua"</strong> acima pra criar a primeira e começar a registrar as posições do
-            galpão — rua e posição são criadas na hora, direto daqui, sem precisar configurar nada antes.
-          </p>
         </div>
       )}
 
       {ruaAtiva && (
-        <div className="estoque-grid">
-          {posicoesExibidas.map((posicao) => {
-            const url = posicao.ultima.fotoUrl;
-            const destacado = cardDestacado === `${posicao.rua}::${posicao.codigo}`;
-            return (
-              <button
-                key={`${posicao.rua}::${posicao.codigo}`}
-                className={`estoque-card${destacado ? " estoque-card--destacado" : ""}`}
-                onClick={() =>
-                  setModal({ modo: "existente", rua: posicao.rua, codigo: posicao.codigo, ultima: posicao.ultima, produto: posicao.produto, voltagem: posicao.voltagem })
-                }
-              >
-                {url ? (
-                  <img
-                    className="estoque-card-foto"
-                    src={url}
-                    alt={`Posição ${posicao.codigo}`}
-                    onError={(event) => {
-                      event.currentTarget.style.display = "none";
-                      event.currentTarget.nextElementSibling?.classList.remove("estoque-card-foto--oculta");
-                    }}
-                  />
-                ) : null}
-                <div className={`estoque-card-foto estoque-card-foto--vazia${url ? " estoque-card-foto--oculta" : ""}`}>
-                  <IconeGondola className="estoque-card-icone" />
-                  <span>{url ? "Foto indisponível" : "Sem foto"}</span>
-                </div>
-                <span className="estoque-card-codigo">{filtroAtivo ? `${posicao.rua} · ${posicao.codigo}` : posicao.codigo}</span>
-                {posicao.produto && (
-                  <span className="estoque-card-produto">
-                    {posicao.produto} · {posicao.voltagem}
-                  </span>
-                )}
-                <span className="estoque-card-qtd">{posicao.ultima.quantidade} un.</span>
-                <span className="estoque-card-meta">
-                  {posicao.ultima.responsavel} · {formatarDataHora(posicao.ultima.criadoEm)}
-                </span>
-              </button>
-            );
-          })}
-          {!filtroAtivo && (
-            <button
-              className="estoque-card estoque-card--nova"
-              onClick={() => setModal({ modo: "nova", rua: ruaAtiva, codigosExistentes: posicoesDaRuaAtiva.map((p) => p.codigo) })}
-            >
-              + Nova posição
-            </button>
+        <>
+          <div className="estoque-legenda">
+            <span className="nota-info">
+              {posicoesExibidas.length} posiç{posicoesExibidas.length === 1 ? "ão" : "ões"} · {totalUnidadesExibidas} un.
+              {emTodas ? " · todas as ruas" : ` · Rua ${ruaAtiva}`}
+            </span>
+            <span className="estoque-legenda-itens" aria-label="Legenda de cores">
+              <span className="estoque-legenda-item estoque-legenda-item--ocupada">Ocupada</span>
+              <span className="estoque-legenda-item estoque-legenda-item--vazia">Vazia</span>
+              {LIMITE_ESTOQUE_BAIXO !== null && <span className="estoque-legenda-item estoque-legenda-item--baixo">Estoque baixo</span>}
+            </span>
+          </div>
+
+          {posicoesExibidas.length === 0 && (filtroAtivo || visao === "tabela" || emTodas) ? (
+            <div className="estado-vazio">
+              {filtroAtivo ? (
+                <>
+                  <p className="estado-vazio-titulo">Nenhuma posição encontrada com esses filtros.</p>
+                  <button type="button" className="refresh-btn" onClick={limparFiltros}>
+                    Limpar filtros
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="estado-vazio-titulo">Nenhuma posição cadastrada {emTodas ? "ainda" : `na Rua ${ruaAtiva}`}.</p>
+                  {ruaParaNovaPosicao && (
+                    <button type="button" className="btn-primario" onClick={abrirNovaPosicao}>
+                      + Nova posição
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          ) : visao === "grade" ? (
+            <div className="estoque-grid">
+              {posicoesExibidas.map((posicao) => {
+                const url = posicao.ultima.fotoUrl;
+                const destacado = cardDestacado === `${posicao.rua}::${posicao.codigo}`;
+                const estado = estadoDaPosicao(posicao);
+                return (
+                  <button
+                    key={`${posicao.rua}::${posicao.codigo}`}
+                    className={`estoque-card estoque-card--${estado}${destacado ? " estoque-card--destacado" : ""}`}
+                    onClick={() => abrirPosicao(posicao)}
+                  >
+                    {url ? (
+                      <img
+                        className="estoque-card-foto"
+                        src={url}
+                        alt={`Posição ${posicao.codigo}`}
+                        onError={(event) => {
+                          event.currentTarget.style.display = "none";
+                          event.currentTarget.nextElementSibling?.classList.remove("estoque-card-foto--oculta");
+                        }}
+                      />
+                    ) : null}
+                    <div className={`estoque-card-foto estoque-card-foto--vazia${url ? " estoque-card-foto--oculta" : ""}`}>
+                      <IconeGondola className="estoque-card-icone" />
+                      <span>{url ? "Foto indisponível" : "Sem foto"}</span>
+                    </div>
+                    <span className="estoque-card-linha">
+                      <span className="estoque-card-codigo">{emTodas ? `${posicao.rua} · ${posicao.codigo}` : posicao.codigo}</span>
+                      <span className={`estado-chip estado-chip--${estado}`}>{ESTADO_LABEL[estado]}</span>
+                    </span>
+                    {posicao.produto && (
+                      <span className="estoque-card-produto">
+                        {posicao.produto} · {posicao.voltagem}
+                      </span>
+                    )}
+                    <span className="estoque-card-qtd tabular">{posicao.ultima.quantidade} un.</span>
+                    <span className="estoque-card-meta">
+                      {posicao.ultima.responsavel} · {formatarDataHora(posicao.ultima.criadoEm)}
+                    </span>
+                  </button>
+                );
+              })}
+              {ruaParaNovaPosicao && !filtroAtivo && (
+                <button className="estoque-card estoque-card--nova" onClick={abrirNovaPosicao}>
+                  + Nova posição
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="tabela-wrap">
+              <table className="tabela tabela--clicavel">
+                <thead>
+                  <tr>
+                    {COLUNAS_TABELA.map(({ coluna, label, numerica }) => {
+                      const ativa = ordenacao.coluna === coluna;
+                      return (
+                        <th
+                          key={coluna}
+                          className={numerica ? "tabela-num" : undefined}
+                          aria-sort={ativa ? (ordenacao.crescente ? "ascending" : "descending") : "none"}
+                        >
+                          <button type="button" className={`tabela-ordenar${ativa ? " tabela-ordenar--ativa" : ""}`} onClick={() => ordenarPor(coluna)}>
+                            {label}
+                            <span className="tabela-ordenar-seta" aria-hidden="true">
+                              {ativa ? (ordenacao.crescente ? "▲" : "▼") : "↕"}
+                            </span>
+                          </button>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {posicoesExibidas.map((posicao) => {
+                    const estado = estadoDaPosicao(posicao);
+                    const destacado = cardDestacado === `${posicao.rua}::${posicao.codigo}`;
+                    return (
+                      <tr
+                        key={`${posicao.rua}::${posicao.codigo}`}
+                        className={destacado ? "tabela-linha--editando" : undefined}
+                        tabIndex={0}
+                        onClick={() => abrirPosicao(posicao)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            abrirPosicao(posicao);
+                          }
+                        }}
+                        aria-label={`Abrir posição ${posicao.rua} ${posicao.codigo}`}
+                      >
+                        <td>{posicao.rua}</td>
+                        <td>
+                          <strong>{posicao.codigo}</strong>
+                        </td>
+                        <td>{posicao.produto ?? <span className="field-value--muted">—</span>}</td>
+                        <td>{posicao.voltagem ?? <span className="field-value--muted">—</span>}</td>
+                        <td className="tabela-num tabular">{posicao.ultima.quantidade}</td>
+                        <td>
+                          <span className={`estado-chip estado-chip--${estado}`}>{ESTADO_LABEL[estado]}</span>
+                        </td>
+                        <td>{posicao.ultima.responsavel}</td>
+                        <td className="tabular">{formatarDataHora(posicao.ultima.criadoEm)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
-        </div>
+        </>
       )}
+
+      {mostrarModalProdutos && <ModalProdutos produtos={produtos} onFechar={() => setMostrarModalProdutos(false)} onAlterado={setProdutos} />}
 
       {modal && (
         <FormularioContagem modal={modal} produtos={produtos} onFechar={() => setModal(null)} onSalvo={aoSalvar} onMetadadosSalvos={aoSalvarMetadados} />

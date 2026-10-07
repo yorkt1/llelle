@@ -31,6 +31,8 @@
      caçar cor espalhada pelos componentes. */
   color-scheme: dark;
   --fg-on-light: #1a1a1a;
+  /* Texto secundário com mais peso que --muted (rótulos de formulário/cards) — ~11:1 contra --panel. */
+  --fg-secondary: #c3c8d1;
   --surface-subtle: rgba(255, 255, 255, 0.015);
   --surface-hover: rgba(255, 255, 255, 0.03);
   --surface-active: rgba(255, 255, 255, 0.05);
@@ -845,32 +847,6 @@ body:has(.settings-overlay) .app-bottom-nav {
   padding-bottom: 0;
 }
 
-/* Botão "pill" ainda usado pelas abas de rua do Estoque. */
-.nav-corner-item {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--muted);
-  padding: 0.35rem 0.85rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-family: inherit;
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease;
-}
-
-.nav-corner-item:hover,
-.nav-corner-item:focus-visible {
-  opacity: 1;
-  background: var(--surface-active);
-}
-
-.nav-corner-item--active {
-  opacity: 1;
-  color: var(--brand-contrast);
-  background: var(--brand);
-}
-
 @media (max-width: 640px) {
   .formulario-grade {
     grid-template-columns: 1fr;
@@ -1064,17 +1040,207 @@ body:has(.settings-overlay) .app-bottom-nav {
   color: var(--muted);
 }
 
-.estoque-ruas {
+/* ---------- Estoque: resumo, filtros, abas de rua, grade/tabela ---------- */
+
+.resumo-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .resumo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.resumo-card {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--resumo-cor, var(--line));
+  border-radius: var(--radius-card);
+  padding: 1rem 1.25rem;
+  min-width: 0;
+}
+
+.resumo-card--marca {
+  --resumo-cor: var(--brand);
+}
+
+.resumo-card--ocupada {
+  --resumo-cor: var(--success);
+}
+
+.resumo-card--vazia {
+  --resumo-cor: var(--muted);
+}
+
+.resumo-card--baixo {
+  --resumo-cor: var(--warning);
+}
+
+.resumo-card-rotulo {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+.resumo-card-valor {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.resumo-card-detalhe {
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Busca + produto + voltagem + alternância de visão, tudo numa linha só no desktop. */
+.filtro-barra {
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.filtro-barra > .field-input,
+.filtro-barra > select {
+  flex: 0 1 13rem;
+  min-width: 10rem;
+}
+
+.filtro-busca {
+  position: relative;
+  flex: 1 1 18rem;
+  min-width: 14rem;
+  display: flex;
+}
+
+.filtro-busca .field-input {
+  width: 100%;
+  padding-left: 2.25rem;
+}
+
+.filtro-busca-icone {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.alternar-visao {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  height: var(--control-h);
+}
+
+.alternar-visao-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.85rem;
+  background: var(--panel);
+  border: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.alternar-visao-btn + .alternar-visao-btn {
+  border-left: 1px solid var(--line);
+}
+
+.alternar-visao-btn:hover {
+  color: var(--fg);
+}
+
+.alternar-visao-btn--ativo {
+  background: var(--brand-soft);
+  color: var(--fg);
+}
+
+/* Abas de rua: sublinhado na ativa + contador de posições. Rolam na horizontal se não couberem. */
+.ruas-barra {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.ruas-abas {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  max-width: 100%;
+}
+
+.ruas-aba {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.75rem;
+  padding: 0 1rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.ruas-aba:hover {
+  color: var(--fg);
+}
+
+.ruas-aba--ativa {
+  color: var(--fg);
+  border-bottom-color: var(--brand);
+}
+
+.ruas-aba-contador {
+  min-width: 1.6rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-active);
+  color: var(--fg-secondary);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.ruas-aba--ativa .ruas-aba-contador {
+  background: var(--brand-soft);
+  color: var(--fg);
 }
 
 .estoque-nova-rua {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  padding-bottom: 0.5rem;
 }
 
 .estoque-nova-rua .field-input {
@@ -1082,10 +1248,129 @@ body:has(.settings-overlay) .app-bottom-nav {
   width: 11rem;
 }
 
+.estoque-legenda {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-bottom: -0.5rem;
+}
+
+.estoque-legenda-itens {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: var(--fg-secondary);
+}
+
+.estoque-legenda-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.estoque-legenda-item::before {
+  content: "";
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--estado-cor);
+}
+
+/* Cor de cada estado de posição — compartilhada por card, chip e legenda. */
+.estoque-card--ocupada,
+.estado-chip--ocupada,
+.estoque-legenda-item--ocupada {
+  --estado-cor: var(--success);
+  --estado-fundo: var(--success-soft);
+}
+
+.estoque-card--vazia,
+.estado-chip--vazia,
+.estoque-legenda-item--vazia {
+  --estado-cor: var(--muted);
+  --estado-fundo: var(--surface-active);
+}
+
+.estoque-card--baixo,
+.estado-chip--baixo,
+.estoque-legenda-item--baixo {
+  --estado-cor: var(--warning);
+  --estado-fundo: var(--warning-soft);
+}
+
+.estado-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: var(--estado-fundo);
+  color: var(--estado-cor);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .estoque-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
   gap: 1rem;
+}
+
+/* Tabela com linhas clicáveis (abre a posição) e cabeçalhos ordenáveis. */
+.tabela--clicavel tbody tr {
+  cursor: pointer;
+}
+
+.tabela--clicavel tbody tr:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.tabela th.tabela-num,
+.tabela td.tabela-num {
+  text-align: right;
+}
+
+.tabela-ordenar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.tabela-ordenar:hover,
+.tabela-ordenar--ativa {
+  color: var(--fg);
+}
+
+.tabela-ordenar-seta {
+  font-size: 0.65rem;
+  opacity: 0.7;
+}
+
+@media (max-width: 640px) {
+  .resumo-card-valor {
+    font-size: 1.6rem;
+  }
+
+  .filtro-barra > .field-input,
+  .filtro-barra > select,
+  .filtro-busca {
+    flex: 1 1 100%;
+  }
+
+  .alternar-visao {
+    margin-left: 0;
+  }
 }
 
 /* Painel fixo por bancada (substitui o grid dinâmico antigo nessa mesma tela — pedido explícito:
@@ -1363,6 +1648,8 @@ body:has(.settings-overlay) .app-bottom-nav {
   gap: 0.35rem;
   background: var(--panel);
   border: 1px solid var(--line);
+  /* Faixa no topo com a cor do estado (vazia/ocupada/baixo) — ver .estoque-card--<estado>. */
+  border-top: 3px solid var(--estado-cor, var(--line));
   border-radius: var(--radius-card);
   padding: 0.75rem;
   text-align: left;
@@ -1373,8 +1660,21 @@ body:has(.settings-overlay) .app-bottom-nav {
   transition: border-color 0.15s ease, transform 0.1s ease;
 }
 
+.estoque-card-linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.estoque-card--vazia .estoque-card-qtd {
+  color: var(--muted);
+}
+
 .estoque-card:hover {
   border-color: var(--muted);
+  border-top-color: var(--estado-cor, var(--muted));
   transform: translateY(-1px);
 }
 
@@ -1531,19 +1831,35 @@ body:has(.settings-overlay) .app-bottom-nav {
   letter-spacing: 0.02em;
 }
 
-.estoque-vazio {
+/* Estado vazio padrão: mensagem + botão de ação, ocupando a largura da área de conteúdo. */
+.estado-vazio {
   border: 1px dashed var(--line);
   border-radius: var(--radius-card);
   padding: 2.5rem 1.5rem;
-  max-width: 28rem;
   text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
   align-items: center;
   background: var(--surface-subtle);
 }
 
+.estado-vazio > .field-value--muted {
+  margin: 0;
+  max-width: 44ch;
+}
+
+.estado-vazio--compacto {
+  padding: 1.5rem 1rem;
+}
+
+.estado-vazio-icone {
+  width: 2.75rem;
+  height: 2.75rem;
+  color: var(--muted);
+}
+
+.estado-vazio-titulo,
 .estoque-vazio-titulo {
   margin: 0;
   font-size: 1.05rem;
@@ -1594,17 +1910,9 @@ body:has(.settings-overlay) .app-bottom-nav {
   gap: 0.75rem;
 }
 
-.estoque-config-produtos {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  padding: 1.25rem 1.5rem;
-  max-width: 28rem;
-}
-
 .estoque-lista-produtos {
   list-style: none;
-  margin: 0 0 1rem;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -1628,16 +1936,5 @@ body:has(.settings-overlay) .app-bottom-nav {
 
 .estoque-form-produto .field {
   flex: 1;
-}
-
-.estoque-filtro {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 1rem;
-}
-
-.estoque-filtro .field {
-  min-width: 10rem;
 }
 
