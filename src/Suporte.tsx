@@ -3,7 +3,7 @@ import { PageHeader } from "@/PageHeader";
 interface Guia {
   titulo: string;
   descricao: string;
-  marketplace: "MERCADO LIVRE" | "SHOPEE";
+  categoria: "MERCADO LIVRE" | "SHOPEE" | "COMERCIAL";
   arquivo: string;
 }
 
@@ -15,20 +15,27 @@ const GUIAS: Guia[] = [
   {
     titulo: "Devoluções — Mercado Livre",
     descricao: "Fluxo completo: triagem, prazos do painel, recebimento filmado, contestação e checklist de fechamento.",
-    marketplace: "MERCADO LIVRE",
+    categoria: "MERCADO LIVRE",
     arquivo: "mercado-livre-devolucoes.html",
   },
   {
     titulo: "Contestação de devoluções — Shopee",
     descricao: "Como analisar a alegação do cliente, reunir provas por caso, responder e acompanhar até o encerramento.",
-    marketplace: "SHOPEE",
+    categoria: "SHOPEE",
     arquivo: "shopee-contestacao.html",
+  },
+  {
+    titulo: "Manual do Vendedor B2B",
+    descricao: "Da prospecção à recompra: fluxo comercial, rotina diária, uso da planilha de follow-up e checklist de integração.",
+    categoria: "COMERCIAL",
+    arquivo: "manual-vendedor-b2b.html",
   },
 ];
 
-const COR_MARKETPLACE: Record<Guia["marketplace"], string> = {
+const COR_CATEGORIA: Record<Guia["categoria"], string> = {
   "MERCADO LIVRE": "#ffe600",
   SHOPEE: "#ff6200",
+  COMERCIAL: "#a9c4ff",
 };
 
 export function Suporte() {
@@ -39,8 +46,8 @@ export function Suporte() {
       <div className="guia-lista">
         {GUIAS.map((guia) => (
           <a key={guia.arquivo} className="guia-item" href={`/guias/${guia.arquivo}`} target="_blank" rel="noopener noreferrer">
-            <span className="guia-tag" style={{ background: COR_MARKETPLACE[guia.marketplace], color: "var(--fg-on-light)" }}>
-              {guia.marketplace}
+            <span className="guia-tag" style={{ background: COR_CATEGORIA[guia.categoria], color: "var(--fg-on-light)" }}>
+              {guia.categoria}
             </span>
             <span className="guia-titulo">{guia.titulo}</span>
             <span className="guia-descricao">{guia.descricao}</span>
