@@ -25,6 +25,38 @@
   --brand-glow: rgba(91, 141, 239, 0.28);
   --shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
   --radius-card: 0.85rem;
+
+  /* Tokens derivados — todo tom "translúcido" que antes era um rgba() solto no meio do arquivo mora
+     aqui, pra um tema claro futuro ser só redefinir este bloco (ex.: sob [data-theme="light"]) sem
+     caçar cor espalhada pelos componentes. */
+  color-scheme: dark;
+  --fg-on-light: #1a1a1a;
+  --surface-subtle: rgba(255, 255, 255, 0.015);
+  --surface-hover: rgba(255, 255, 255, 0.03);
+  --surface-active: rgba(255, 255, 255, 0.05);
+  --skeleton-highlight: #2a2e34;
+  --brand-soft: rgba(91, 141, 239, 0.14);
+  --brand-soft-hover: rgba(91, 141, 239, 0.24);
+  --brand-selected: rgba(91, 141, 239, 0.12);
+  --danger-glow: rgba(248, 113, 113, 0.28);
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --warning: var(--stage-2);
+  --warning-soft: rgba(242, 184, 75, 0.14);
+  --success-soft: rgba(74, 222, 128, 0.12);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+
+  /* Escala única de tamanhos — botões e inputs da mesma linha usam --control-h, pra nunca ficarem
+     com alturas diferentes por causa de padding/borda/fonte. */
+  --control-h: 2.5rem;
+  --radius-control: 0.5rem;
+  --space-page-x: clamp(1rem, 3vw, 2.5rem);
+  --space-page-y: clamp(1.25rem, 3vh, 2rem);
+  --font-display: "Space Grotesk", sans-serif;
+
+  /* Shell da aplicação (sidebar no desktop, barra inferior no celular). */
+  --sidebar-w: 15rem;
+  --sidebar-w-collapsed: 4.25rem;
+  --bottom-nav-h: 3.75rem;
 }
 
 * {
@@ -71,14 +103,14 @@ body {
 }
 
 .title {
-  font-family: "Space Grotesk", sans-serif;
+  font-family: var(--font-display);
   font-size: clamp(1.5rem, 2.4vw, 2.25rem);
   margin: 0;
   font-weight: 700;
 }
 
 .clock {
-  font-family: "Space Grotesk", sans-serif;
+  font-family: var(--font-display);
   font-size: clamp(1.5rem, 2.4vw, 2.25rem);
   font-variant-numeric: tabular-nums;
   color: var(--muted);
@@ -100,7 +132,7 @@ body {
 
 .refresh-btn:hover {
   border-color: var(--muted);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-hover);
 }
 
 .refresh-btn:disabled {
@@ -162,7 +194,7 @@ body {
 }
 
 .stage-value {
-  font-family: "Space Grotesk", sans-serif;
+  font-family: var(--font-display);
   font-weight: 700;
   font-size: min(11vw, 9rem);
   line-height: 1;
@@ -337,7 +369,7 @@ body {
 
 .settings-title {
   margin: 0;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.1rem;
 }
 
@@ -408,7 +440,7 @@ body {
 .skeleton {
   display: block;
   border-radius: 0.4rem;
-  background: linear-gradient(90deg, var(--line) 25%, #2a2e34 37%, var(--line) 63%);
+  background: linear-gradient(90deg, var(--line) 25%, var(--skeleton-highlight) 37%, var(--line) 63%);
   background-size: 400% 100%;
   animation: skeleton-pulse 1.6s ease-in-out infinite;
 }
@@ -520,7 +552,7 @@ body {
 }
 
 .field-input--erro:focus {
-  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.28);
+  box-shadow: 0 0 0 3px var(--danger-glow);
 }
 
 .field-obrigatorio {
@@ -610,7 +642,7 @@ body:has(.settings-overlay) .nav-corner {
 }
 
 .nav-corner-brand {
-  font-family: "Space Grotesk", sans-serif;
+  font-family: var(--font-display);
   font-weight: 700;
   font-size: 0.8rem;
   letter-spacing: 0.02em;
@@ -635,7 +667,7 @@ body:has(.settings-overlay) .nav-corner {
 .nav-corner-item:hover,
 .nav-corner-item:focus-visible {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-active);
 }
 
 .nav-corner-item--active {
@@ -727,11 +759,11 @@ body:has(.settings-overlay) .nav-corner {
 }
 
 .tabela tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--surface-subtle);
 }
 
 .tabela tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-hover);
 }
 
 .tabela tfoot td {
@@ -739,7 +771,7 @@ body:has(.settings-overlay) .nav-corner {
   color: var(--fg);
   border-bottom: none;
   border-top: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-hover);
 }
 
 .tabela-acoes {
@@ -749,7 +781,7 @@ body:has(.settings-overlay) .nav-corner {
 }
 
 .tabela-linha--editando {
-  background: rgba(91, 141, 239, 0.12);
+  background: var(--brand-selected);
 }
 
 .tabela input,
@@ -887,7 +919,7 @@ body:has(.settings-overlay) .nav-corner {
   background: var(--panel);
   border: 2px solid var(--line);
   border-radius: var(--radius-card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-sm);
   padding: 1.5rem 1.75rem;
 }
 
@@ -972,7 +1004,7 @@ body:has(.settings-overlay) .nav-corner {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-sm);
   padding: 1.25rem 1.5rem;
 }
 
@@ -997,7 +1029,7 @@ body:has(.settings-overlay) .nav-corner {
 .embalagem-card-badge {
   align-self: flex-start;
   margin: 0 0 0.85rem;
-  background: rgba(91, 141, 239, 0.14);
+  background: var(--brand-soft);
   border: 1px solid var(--brand);
   color: var(--fg);
   border-radius: 999px;
@@ -1008,7 +1040,7 @@ body:has(.settings-overlay) .nav-corner {
 }
 
 .embalagem-card-badge:hover {
-  background: rgba(91, 141, 239, 0.24);
+  background: var(--brand-soft-hover);
 }
 
 .embalagem-card-stats {
@@ -1307,7 +1339,7 @@ body:has(.settings-overlay) .nav-corner {
   align-self: flex-start;
   margin: 0 0 0.5rem;
   padding: 0.25rem 0.75rem;
-  background: rgba(91, 141, 239, 0.14);
+  background: var(--brand-soft);
   border: 1px solid var(--brand);
   border-radius: 0.4rem;
   font-size: 1.1rem;
@@ -1325,7 +1357,7 @@ body:has(.settings-overlay) .nav-corner {
   flex-direction: column;
   gap: 0.5rem;
   align-items: center;
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--surface-subtle);
 }
 
 .estoque-vazio-titulo {

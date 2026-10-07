@@ -39,7 +39,7 @@ export function Suporte() {
       <div className="guia-lista">
         {GUIAS.map((guia) => (
           <a key={guia.arquivo} className="guia-item" href={`/guias/${guia.arquivo}`} target="_blank" rel="noopener noreferrer">
-            <span className="guia-tag" style={{ background: COR_MARKETPLACE[guia.marketplace], color: "#1a1a1a" }}>
+            <span className="guia-tag" style={{ background: COR_MARKETPLACE[guia.marketplace], color: "var(--fg-on-light)" }}>
               {guia.marketplace}
             </span>
             <span className="guia-titulo">{guia.titulo}</span>
