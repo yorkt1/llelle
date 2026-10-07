@@ -12,7 +12,12 @@ diferentes acompanharem etapas diferentes sem afetar o que aparece em outra TV.
 
 ## Arquitetura
 
-- `lib/store.ts` — KV em arquivo JSON local (só guarda o último snapshot sincronizado).
+- `lib/store.ts` — KV com dois backends escolhidos automaticamente: **Supabase**
+  (Postgres gerenciado, grátis) se `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
+  estiverem configuradas — é o modo usado em produção, sobrevive a
+  redeploy/restart; sem elas, cai pro arquivo JSON local de sempre (modo usado
+  em dev, zero configuração). Ver seção de hospedagem abaixo pro porquê disso
+  importar em produção.
 - `lib/olist.ts` — `fetchCoreCountsLive()` (Aguardando/Em separação/Separadas) e
   `fetchEmbaladasCountLive()` (Embaladas) sincronizam **independente um do outro**
   — cada um preserva no cache o que o outro já tinha calculado. `fetchSeparacaoCountsLive()`
@@ -100,11 +105,17 @@ depende dos dois.
 2. Variáveis de ambiente: `OLIST_API_TOKEN` (obrigatório) e o resto do
    `.env.example` se quiser mudar os padrões. **Não** precisa de `CORS_ORIGIN`
    nem `VITE_API_URL` — front e API são o mesmo domínio.
-3. **Adicione um Persistent Disk** (Render > seu serviço > Disks) montado em,
-   por exemplo, `/data`, e defina `DATA_DIR=/data`. Sem isso, o cache do
-   último snapshot zera a cada redeploy — nada grave, o painel só mostra
-   "esqueleto" até a próxima sincronização automática rodar, mas evita esse
-   soluço.
+3. **Configure `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`** (ver `.env.example`
+   pro SQL da tabela) — o Render Free não tem disco persistente, então sem
+   isso o cadastro (colaboradores do Embalagem, catálogo de produtos e
+   produto/voltagem de cada posição do Estoque) **some de verdade** a cada
+   vez que o serviço "acorda" de inatividade ou é redeployado, já que é dado
+   digitado à mão, sem nenhuma fonte pra recriar sozinho. (O cache do último
+   snapshot sincronizado do Tiny também usa esse mesmo KV, mas perder ele é
+   inofensivo — só espera a próxima sincronização automática. Alternativa ao
+   Supabase: um **Persistent Disk** do Render, Render > seu serviço > Disks,
+   com `DATA_DIR` apontando pro mount path — mas isso só existe em planos
+   pagos do Render.)
 
 ### Opção B — front na Vercel, API no Render
 
@@ -114,9 +125,10 @@ Crie o Render **primeiro** (é de lá que sai a URL que a Vercel vai usar).
 1. Web Service novo, apontando pra este repo.
 2. Build command: `npm install && npx tsc --noEmit` (não precisa rodar
    `vite build` aqui — a Vercel cuida do front). Start command: `npm start`.
-3. Variáveis: `OLIST_API_TOKEN` (obrigatório), `DATA_DIR=/data` + Persistent
-   Disk (mesma razão da Opção A), e `CORS_ORIGIN=https://seu-painel.vercel.app`
-   (a URL que a Vercel vai te dar — pode ajustar depois de criar).
+3. Variáveis: `OLIST_API_TOKEN` (obrigatório), `SUPABASE_URL`/
+   `SUPABASE_SERVICE_ROLE_KEY` (mesma razão da Opção A), e
+   `CORS_ORIGIN=https://seu-painel.vercel.app` (a URL que a Vercel vai te
+   dar — pode ajustar depois de criar).
 4. Anote a URL pública que o Render gerou (algo como
    `https://olist-dashboard-xxxx.onrender.com`).
 
@@ -394,8 +406,10 @@ trás.
 
 - `lib/estoque.ts` — modelo de dados: cada posição guarda um **histórico**
   de contagens (nunca sobrescreve, só acrescenta — mais recente primeiro),
-  persistido via `lib/store.ts` (mesmo JSON em disco do resto do app). Foto
-  sobe pro **Cloudinary** (storage externo) — só a URL pública fica guardada
+  persistido via `lib/store.ts` (Supabase em produção, ver seção de
+  Arquitetura acima — isso inclui também o catálogo de produtos e o
+  produto/voltagem de cada posição). Foto sobe pro **Cloudinary** (storage
+  externo) — só a URL pública fica guardada
   no registro, nunca um arquivo local. Isso existe porque o servidor roda
   num plano sem disco persistente (ver seção de hospedagem): um arquivo
   salvo localmente desaparecia a cada deploy/"acordar" do serviço. Precisa
