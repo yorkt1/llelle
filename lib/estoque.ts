@@ -53,7 +53,10 @@ function chave(rua: string, codigo: string): string {
 }
 
 function pastaFotos(): string {
-  return path.join(store.dataDir(), FOTOS_SUBDIR);
+  // path.resolve (não path.join) de propósito: store.dataDir() cai em "./data" (relativo) quando
+  // DATA_DIR não está configurado, e o res.sendFile da rota de foto EXIGE caminho absoluto — sem
+  // isso, ele lança um erro síncrono (não dá 404 "não encontrada", dá 500 de verdade).
+  return path.resolve(store.dataDir(), FOTOS_SUBDIR);
 }
 
 export function caminhoDaFoto(arquivo: string): string {

@@ -64,14 +64,21 @@ estoqueRouter.post("/:rua/:codigo", async (req, res) => {
 
 // Serve a foto de um registro específico — indireto (por id, não pelo nome de arquivo direto)
 // pra não precisar expor a pasta de fotos inteira como estática.
-estoqueRouter.get("/foto/:arquivo", async (req, res) => {
+estoqueRouter.get("/foto/:arquivo", (req, res) => {
   const arquivo = String(req.params.arquivo);
   // Nunca deixa o parâmetro sair da pasta de fotos (ex.: "../../server/index.ts").
   if (!/^[\w-]+\.(jpg|jpeg|png|webp)$/i.test(arquivo)) {
     res.status(400).json({ error: "Nome de arquivo inválido." });
     return;
   }
-  res.sendFile(caminhoDaFoto(arquivo), (error) => {
-    if (error) res.status(404).json({ error: "Foto não encontrada." });
-  });
+  // caminhoDaFoto já devolve caminho absoluto (ver lib/estoque.ts) — sendFile exige isso, senão
+  // lança síncrono. Ainda assim, qualquer outra falha aqui vira 404 "não encontrada", nunca 500:
+  // uma foto que desapareceu (disco efêmero reiniciou) não é um erro do servidor, é só "não tem".
+  try {
+    res.sendFile(caminhoDaFoto(arquivo), (error) => {
+      if (error) res.status(404).json({ error: "Foto não encontrada." });
+    });
+  } catch {
+    res.status(404).json({ error: "Foto não encontrada." });
+  }
 });

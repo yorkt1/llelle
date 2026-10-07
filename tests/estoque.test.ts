@@ -99,6 +99,12 @@ describe("estoque", () => {
     expect(ruas[0].posicoes.map((p) => p.codigo)).toEqual(["A5", "A12"]);
   });
 
+  it("caminhoDaFoto devolve caminho ABSOLUTO mesmo sem DATA_DIR configurado — res.sendFile exige isso, senão lança síncrono (500 em vez de 404)", async () => {
+    delete process.env.DATA_DIR; // produção não tem essa variável — store.dataDir() cai no padrão relativo "./data"
+    const { caminhoDaFoto } = await freshEstoque();
+    expect(path.isAbsolute(caminhoDaFoto("qualquer.jpg"))).toBe(true);
+  });
+
   it("não perde nenhuma contagem quando duas posições diferentes são registradas ao mesmo tempo", async () => {
     const { registrarContagem, listarEstoque } = await freshEstoque();
 
