@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
+import { PageHeader } from "@/PageHeader";
 
 interface ItemDevolucao {
   codigo: string;
@@ -452,10 +453,8 @@ export function Devolucoes() {
   }, [preview, linhas]);
 
   return (
-    <div className="page pagina-formulario pagina-formulario--larga">
-      <header className="header">
-        <h1 className="title">Devoluções</h1>
-      </header>
+    <div className="page pagina-formulario">
+      <PageHeader titulo="Devoluções" />
 
       <form className="busca-linha" onSubmit={buscar}>
         <label className="field">

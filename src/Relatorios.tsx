@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { PageHeader } from "@/PageHeader";
 
 type Status = "idle" | "processando" | "concluido" | "erro";
 
@@ -157,9 +158,7 @@ export function Relatorios() {
 
   return (
     <div className="page pagina-formulario">
-      <header className="header">
-        <h1 className="title">Relatórios</h1>
-      </header>
+      <PageHeader titulo="Relatórios" />
 
       <form className="formulario" onSubmit={iniciar}>
         <label className="field">

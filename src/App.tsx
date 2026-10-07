@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { PageHeader } from "@/PageHeader";
 
 interface SeparacaoCounts {
   aguardandoSeparacao: number;
@@ -362,10 +363,9 @@ export function App() {
 
   return (
     <div className="page">
-      <header className="header">
-        <h1 className="title">Painel de Separação</h1>
+      <PageHeader titulo="Painel de Separação">
         <span className="clock tabular">{clock}</span>
-      </header>
+      </PageHeader>
 
       {data?.counts ? (
         <div className="grid" style={{ "--stage-count": stages.length } as CSSProperties}>

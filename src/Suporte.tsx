@@ -1,3 +1,5 @@
+import { PageHeader } from "@/PageHeader";
+
 interface Guia {
   titulo: string;
   descricao: string;
@@ -32,9 +34,7 @@ const COR_MARKETPLACE: Record<Guia["marketplace"], string> = {
 export function Suporte() {
   return (
     <div className="page pagina-formulario">
-      <header className="header">
-        <h1 className="title">Suporte</h1>
-      </header>
+      <PageHeader titulo="Suporte" />
 
       <div className="guia-lista">
         {GUIAS.map((guia) => (

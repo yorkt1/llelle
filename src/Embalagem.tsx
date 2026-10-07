@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { PageHeader } from "@/PageHeader";
 
 interface DesempenhoColaborador {
   idUsuarioEmbalador: string;
@@ -302,14 +303,13 @@ export function Embalagem() {
   );
 
   return (
-    <div className="page pagina-formulario pagina-formulario--larga">
-      <header className="header">
-        <h1 className="title">Controle de Tempo de Embalagem</h1>
+    <div className="page pagina-formulario">
+      <PageHeader titulo="Controle de Tempo de Embalagem">
         <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => setMostrarConfig((atual) => !atual)}>
           <IconeConfig className="btn-icone" />
           {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
         </button>
-      </header>
+      </PageHeader>
 
       <form className="busca-linha busca-linha--alinhada" onSubmit={(event) => event.preventDefault()}>
         <label className="field">

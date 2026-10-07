@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { PageHeader } from "@/PageHeader";
 
 interface RegistroContagem {
   id: string;
@@ -681,13 +682,12 @@ export function Estoque() {
   }, []);
 
   return (
-    <div className="page pagina-formulario pagina-formulario--larga">
-      <header className="header">
-        <h1 className="title">Estoque</h1>
+    <div className="page pagina-formulario">
+      <PageHeader titulo="Estoque">
         <button type="button" className="refresh-btn" onClick={() => setMostrarConfigProdutos((atual) => !atual)}>
           {mostrarConfigProdutos ? "Esconder produtos" : "Configurar produtos"}
         </button>
-      </header>
+      </PageHeader>
 
       {erroCarregamento && <p className="error-banner">{erroCarregamento}</p>}
 
