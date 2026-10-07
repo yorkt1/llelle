@@ -9,6 +9,8 @@ import { relatoriosRouter } from "./routes/relatorios";
 import { devolucaoRouter } from "./routes/devolucao";
 import { estoqueRouter } from "./routes/estoque";
 import { embalagemRouter } from "./routes/embalagem";
+import { comprasRouter } from "./routes/compras";
+import { tickVendas } from "../lib/vendasSync";
 import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
 import { sincronizarEmbalagemHoje } from "../lib/embalagem";
 
@@ -54,6 +56,7 @@ app.use("/api/relatorios", relatoriosRouter);
 app.use("/api/devolucao", devolucaoRouter);
 app.use("/api/estoque", estoqueRouter);
 app.use("/api/embalagem", embalagemRouter);
+app.use("/api/compras", comprasRouter);
 
 // Quando existe um build do Vite (dist/), o backend tambem serve o front — assim "npm start" sobe tudo.
 const staticDir = path.resolve(__dirname, "../dist");
@@ -159,3 +162,15 @@ setTimeout(() => void syncEmbalagemOnce(), 30_000);
 setInterval(() => void syncCoreOnce(), CORE_SYNC_INTERVAL_MS);
 setInterval(() => void syncEmbaladasOnce(), EMBALADAS_SYNC_INTERVAL_MS);
 setInterval(() => void syncEmbalagemOnce(), EMBALAGEM_SYNC_INTERVAL_MS);
+
+// Coleta de vendas+estoque pro Planejamento de compra e pra taxa de devolução (lib/vendasSync.ts).
+// Cada ciclo faz no máximo VENDAS_MAX_POR_TICK chamadas (padrão 40) — mesma ordem de grandeza do
+// sync da Embalagem — e a primeira só sai depois dos outros três, pra não somar na rajada do boot.
+// VENDAS_SYNC_INTERVAL_MS=0 desliga a coleta (ex.: se o limite de taxa do Tiny apertar).
+const VENDAS_SYNC_INTERVAL_MS = Number(process.env.VENDAS_SYNC_INTERVAL_MS ?? 60_000);
+if (VENDAS_SYNC_INTERVAL_MS > 0) {
+  const syncVendasOnce = () =>
+    tickVendas().catch((error: unknown) => console.error("[vendas] falha na coleta:", error));
+  setTimeout(() => void syncVendasOnce(), 45_000);
+  setInterval(() => void syncVendasOnce(), VENDAS_SYNC_INTERVAL_MS);
+}
