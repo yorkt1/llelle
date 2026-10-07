@@ -1390,10 +1390,15 @@ body:has(.settings-overlay) .app-bottom-nav {
     font-size: 1.6rem;
   }
 
-  .filtro-barra > .field-input,
-  .filtro-barra > select,
   .filtro-busca {
     flex: 1 1 100%;
+  }
+
+  /* Produto + voltagem lado a lado, pra barra de filtros não comer metade da tela do celular. */
+  .filtro-barra > .field-input,
+  .filtro-barra > select {
+    flex: 1 1 calc(50% - 0.375rem);
+    min-width: 0;
   }
 
   .alternar-visao {
@@ -1952,5 +1957,10 @@ body:has(.settings-overlay) .app-bottom-nav {
 
 .estoque-form-produto .field {
   flex: 1;
+  min-width: 0; /* sem isso o input mantém a largura intrínseca e empurra o botão pra fora do modal */
+}
+
+.estoque-form-produto .field-input {
+  width: 100%;
 }
 
