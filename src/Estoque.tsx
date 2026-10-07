@@ -237,6 +237,16 @@ function FormularioContagem({
   // nunca é reaproveitada ao salvar: toda contagem exige tirar uma foto nova (ver `salvar`).
   const fotoAnteriorUrl = modal.modo === "existente" ? modal.ultima.fotoUrl : null;
 
+  // "Anteriores" exclui a contagem atual (modal.ultima, sempre historico[0]) — já está nos campos
+  // do formulário logo acima, repetir ela na lista só confunde quem tá vendo.
+  const historicoAnterior = modal.modo === "existente" && historico ? historico.filter((item) => item.id !== modal.ultima.id) : [];
+
+  // Código em destaque pra bater com a etiqueta física da prateleira — só o código da posição
+  // (mesmo texto que já aparece no card e, em tese, na etiqueta colada na prateleira), sem juntar
+  // com a letra da rua, que já aparece em separado no título do modal. Na posição existente é
+  // fixo, numa posição nova acompanha o que a pessoa for digitando.
+  const codigoEmDestaque = modal.modo === "existente" ? modal.codigo : codigo.trim() || "?";
+
   return (
     <div className="settings-overlay" onClick={onFechar}>
       <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
@@ -273,6 +283,7 @@ function FormularioContagem({
             <span className="field-label">
               Foto desta contagem <span className="field-obrigatorio">*</span>
             </span>
+            <span className="estoque-codigo-destaque">Posição {codigoEmDestaque}</span>
             {fotoPreview ? (
               <img className="estoque-foto-preview" src={fotoPreview} alt="Foto tirada agora" />
             ) : fotoAnteriorUrl ? (
@@ -347,13 +358,20 @@ function FormularioContagem({
                 {mostrarHistorico ? "Ocultar histórico" : "Ver histórico"}
               </button>
               {mostrarHistorico && historico && (
-                <ul className="estoque-historico">
-                  {historico.map((item) => (
-                    <li key={item.id}>
-                      <strong>{item.quantidade}</strong> — {item.responsavel} · {formatarDataHora(item.criadoEm)}
-                    </li>
-                  ))}
-                </ul>
+                historicoAnterior.length === 0 ? (
+                  <p className="field-value--muted">Nenhuma contagem anterior.</p>
+                ) : (
+                  <ul className="estoque-historico">
+                    {historicoAnterior.map((item) => (
+                      <li key={item.id} className="estoque-historico-item">
+                        <img className="estoque-historico-miniatura" src={item.fotoUrl} alt={`Foto da contagem de ${formatarDataHora(item.criadoEm)}`} />
+                        <span>
+                          <strong>{item.quantidade}</strong> un. — {item.responsavel} · {formatarDataHora(item.criadoEm)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )
               )}
             </>
           )}
@@ -447,10 +465,11 @@ export function Estoque() {
             <input
               className="field-input"
               autoFocus
+              aria-label="Nova rua"
               value={nomeNovaRua}
               onChange={(event) => setNomeNovaRua(event.target.value)}
               onKeyDown={(event) => event.key === "Enter" && confirmarNovaRua()}
-              placeholder="Ex.: D"
+              placeholder="Nova rua (ex.: D)"
             />
             <button className="refresh-btn" onClick={confirmarNovaRua}>
               Ok

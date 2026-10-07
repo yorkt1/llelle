@@ -274,7 +274,8 @@ body {
 }
 
 .settings-panel-header {
-  padding: 2rem 2rem 0;
+  padding: 2rem 2rem 1rem;
+  border-bottom: 1px solid var(--line);
 }
 
 /* Único trecho que rola — título e botão Salvar ficam sempre visíveis, fixos no topo/rodapé do
@@ -286,6 +287,26 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  /* Fina e escura, do tema — Firefox (propriedade padrão) e Chrome/Safari (pseudo-elementos). */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.settings-panel-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-panel-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-panel-body::-webkit-scrollbar-thumb {
+  background-color: var(--line);
+  border-radius: 999px;
+}
+
+.settings-panel-body::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
 }
 
 .settings-panel-footer {
@@ -841,7 +862,8 @@ body:has(.settings-overlay) .nav-corner {
 }
 
 .estoque-nova-rua .field-input {
-  width: 6rem;
+  /* Largo o bastante pra caber o placeholder "Nova rua (ex.: D)" inteiro, não só "D". */
+  width: 11rem;
 }
 
 .estoque-grid {
@@ -1240,6 +1262,52 @@ body:has(.settings-overlay) .nav-corner {
   color: var(--muted);
   max-height: 10rem;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  /* Sem isso, dentro do flex column do .settings-panel-body (que já rola por conta própria), o
+     navegador trata overflow-y:auto como "tamanho mínimo automático = 0" e, num modal com pouca
+     altura (celular), espreme essa lista até 0px em vez de deixar o PAI rolar — é basicamente por
+     isso que "Ver histórico" parecia abrir vazio: a lista existia, só tinha 0px de altura. */
+  flex-shrink: 0;
+}
+
+.estoque-historico::-webkit-scrollbar {
+  width: 8px;
+}
+
+.estoque-historico::-webkit-scrollbar-thumb {
+  background-color: var(--line);
+  border-radius: 999px;
+}
+
+.estoque-historico-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.estoque-historico-miniatura {
+  width: 2.5rem;
+  height: 2.5rem;
+  object-fit: cover;
+  border-radius: 0.4rem;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+/* Código da posição, grande e em destaque logo acima da foto — pra bater visualmente com a
+   etiqueta física colada na prateleira enquanto se olha a foto tirada agora. */
+.estoque-codigo-destaque {
+  display: inline-block;
+  align-self: flex-start;
+  margin: 0 0 0.5rem;
+  padding: 0.25rem 0.75rem;
+  background: rgba(91, 141, 239, 0.14);
+  border: 1px solid var(--brand);
+  border-radius: 0.4rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .estoque-vazio {
