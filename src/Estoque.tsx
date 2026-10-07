@@ -4,7 +4,8 @@ interface RegistroContagem {
   id: string;
   quantidade: number;
   responsavel: string;
-  fotoArquivo: string | null;
+  /** URL pública do Cloudinary — nunca um caminho/arquivo local (ver lib/estoque.ts). */
+  fotoUrl: string;
   criadoEm: string;
 }
 
@@ -29,10 +30,6 @@ const POLL_MS = 30_000;
 const RESPONSAVEL_STORAGE_KEY = "estoque:ultimoResponsavel";
 const LADO_MAXIMO_FOTO = 1600; // px — reduz fotos de celular (3-8MB) pra algo leve de enviar/guardar.
 const TOAST_MS = 3_000;
-
-function fotoUrl(fotoArquivo: string | null): string | null {
-  return fotoArquivo ? `${API_URL}/api/estoque/foto/${fotoArquivo}` : null;
-}
 
 function formatarDataHora(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -238,7 +235,7 @@ function FormularioContagem({
 
   // A foto anterior só aparece como referência (pra comparar contra o que tem na posição agora) —
   // nunca é reaproveitada ao salvar: toda contagem exige tirar uma foto nova (ver `salvar`).
-  const fotoAnteriorUrl = modal.modo === "existente" ? fotoUrl(modal.ultima.fotoArquivo) : null;
+  const fotoAnteriorUrl = modal.modo === "existente" ? modal.ultima.fotoUrl : null;
 
   return (
     <div className="settings-overlay" onClick={onFechar}>
@@ -479,7 +476,7 @@ export function Estoque() {
       {ruaAtiva && (
         <div className="estoque-grid">
           {posicoesDaRuaAtiva.map((posicao) => {
-            const url = fotoUrl(posicao.ultima.fotoArquivo);
+            const url = posicao.ultima.fotoUrl;
             const destacado = cardDestacado === `${posicao.rua}::${posicao.codigo}`;
             return (
               <button

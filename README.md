@@ -395,11 +395,16 @@ trás.
 - `lib/estoque.ts` — modelo de dados: cada posição guarda um **histórico**
   de contagens (nunca sobrescreve, só acrescenta — mais recente primeiro),
   persistido via `lib/store.ts` (mesmo JSON em disco do resto do app). Foto
-  fica como arquivo separado em `<DATA_DIR>/estoque-fotos/`, não dentro do
-  JSON — só o nome do arquivo é guardado junto do registro. **Foto é
-  obrigatória em toda contagem, mesmo recontagem** — o ponto do sistema é um
-  registro visual auditável por evento, não um número solto ou uma foto
-  velha reaproveitada.
+  sobe pro **Cloudinary** (storage externo) — só a URL pública fica guardada
+  no registro, nunca um arquivo local. Isso existe porque o servidor roda
+  num plano sem disco persistente (ver seção de hospedagem): um arquivo
+  salvo localmente desaparecia a cada deploy/"acordar" do serviço. Precisa
+  de `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` e `CLOUDINARY_API_SECRET`
+  no ambiente (conta grátis em cloudinary.com) — sem isso, salvar uma
+  contagem falha com um erro claro (`CloudinaryConfigError`, HTTP 503) em
+  vez de uma falha genérica do SDK. **Foto é obrigatória em toda contagem,
+  mesmo recontagem** — o ponto do sistema é um registro visual auditável
+  por evento, não um número solto ou uma foto velha reaproveitada.
 - `lib/store.ts` ganhou `update()` — leitura+modificação+escrita atômica
   (dentro da mesma fila do `set`/`get` já existentes), necessário porque
   `set()` sozinho tem uma janela onde duas contagens em posições diferentes,
@@ -409,8 +414,8 @@ trás.
   só a contagem mais recente de cada posição), `GET /api/estoque/:rua/:codigo/historico`
   (histórico completo de uma posição), `POST /api/estoque/:rua/:codigo`
   (registra uma contagem — cria a rua/posição na hora, se não existir
-  ainda), `GET /api/estoque/foto/:arquivo` (serve o arquivo da foto,
-  validando o nome contra path traversal).
+  ainda). Não existe mais rota pra servir foto — o navegador busca a URL do
+  Cloudinary direto, sem passar pelo nosso backend.
 - `src/Estoque.tsx` — abas por rua (com "+ Nova rua", cria na hora — não
   tem lista fixa de ruas/posições no código, já que isso é a organização
   física real do galpão de cada um); grid de cards por posição, cada um

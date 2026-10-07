@@ -7,8 +7,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const FOTO_1X1 =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
+// Cloudinary nunca é chamado de verdade nos testes — devolve uma URL "fake" sempre diferente
+// (usa o public_id que a gente manda, que já é um crypto.randomUUID() por chamada).
+const cloudinaryUploadMock = vi.fn(async (_dataUri: string, opcoes: { public_id: string }) => ({
+  secure_url: `https://res.cloudinary.com/teste/image/upload/${opcoes.public_id}.png`,
+}));
+
+vi.mock("cloudinary", () => ({
+  v2: {
+    config: vi.fn(),
+    uploader: { upload: cloudinaryUploadMock },
+  },
+}));
+
 async function freshEstoque() {
   vi.resetModules();
+  cloudinaryUploadMock.mockClear();
   return import("../lib/estoque");
 }
 
@@ -18,10 +32,16 @@ describe("estoque", () => {
   beforeEach(async () => {
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "estoque-test-"));
     process.env.DATA_DIR = dataDir;
+    process.env.CLOUDINARY_CLOUD_NAME = "teste";
+    process.env.CLOUDINARY_API_KEY = "teste";
+    process.env.CLOUDINARY_API_SECRET = "teste";
   });
 
   afterEach(async () => {
     delete process.env.DATA_DIR;
+    delete process.env.CLOUDINARY_CLOUD_NAME;
+    delete process.env.CLOUDINARY_API_KEY;
+    delete process.env.CLOUDINARY_API_SECRET;
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
@@ -43,20 +63,30 @@ describe("estoque", () => {
     ]);
   });
 
-  it("salva a foto em arquivo separado e referencia pelo nome — toda contagem tem foto, é obrigatória", async () => {
-    const { registrarContagem, caminhoDaFoto } = await freshEstoque();
+  it("sobe a foto pro Cloudinary e guarda a URL retornada — toda contagem tem foto, é obrigatória", async () => {
+    const { registrarContagem } = await freshEstoque();
     const registro = await registrarContagem({ rua: "B", codigo: "A5", quantidade: 5, responsavel: "Ana", fotoDataUri: FOTO_1X1 });
 
-    expect(registro.fotoArquivo).toMatch(/\.png$/);
-    const conteudo = await fs.readFile(caminhoDaFoto(registro.fotoArquivo));
-    expect(conteudo.length).toBeGreaterThan(0);
+    expect(registro.fotoUrl).toMatch(/^https:\/\/res\.cloudinary\.com\//);
+    expect(cloudinaryUploadMock).toHaveBeenCalledTimes(1);
+    expect(cloudinaryUploadMock).toHaveBeenCalledWith(FOTO_1X1, expect.objectContaining({ folder: "llelle-estoque" }));
   });
 
-  it("rejeita data URI em formato inválido", async () => {
+  it("rejeita data URI em formato inválido — nem chega a chamar o Cloudinary", async () => {
     const { registrarContagem } = await freshEstoque();
     await expect(
       registrarContagem({ rua: "B", codigo: "A5", quantidade: 1, responsavel: "Ana", fotoDataUri: "nao-e-um-data-uri" }),
     ).rejects.toThrow(/formato inválido/i);
+    expect(cloudinaryUploadMock).not.toHaveBeenCalled();
+  });
+
+  it("sem CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET configurados, lança erro claro (CloudinaryConfigError) em vez de uma falha genérica do SDK", async () => {
+    delete process.env.CLOUDINARY_CLOUD_NAME;
+    const { registrarContagem, CloudinaryConfigError } = await freshEstoque();
+    await expect(
+      registrarContagem({ rua: "B", codigo: "A5", quantidade: 1, responsavel: "Ana", fotoDataUri: FOTO_1X1 }),
+    ).rejects.toThrow(CloudinaryConfigError);
+    expect(cloudinaryUploadMock).not.toHaveBeenCalled();
   });
 
   it("mantém histórico completo — contagem nova não apaga as antigas, e cada uma com sua própria foto", async () => {
@@ -69,8 +99,8 @@ describe("estoque", () => {
     // Mais recente primeiro.
     expect(historico[0]).toMatchObject({ quantidade: 8, responsavel: "Bruno" });
     expect(historico[1]).toMatchObject({ quantidade: 10, responsavel: "Ana" });
-    // Cada registro tem seu próprio arquivo de foto (não reaproveita o da contagem anterior).
-    expect(historico[0].fotoArquivo).not.toBe(historico[1].fotoArquivo);
+    // Cada registro tem seu próprio upload (não reaproveita a URL da contagem anterior).
+    expect(historico[0].fotoUrl).not.toBe(historico[1].fotoUrl);
   });
 
   it("listarEstoque mostra só a contagem mais recente de cada posição", async () => {
@@ -97,12 +127,6 @@ describe("estoque", () => {
     expect(ruas.map((r) => r.rua)).toEqual(["B", "C"]);
     // rua/código normalizados pra maiúsculo, mesma posição de "b"/"a12" e "B"/"A5" não se colidem.
     expect(ruas[0].posicoes.map((p) => p.codigo)).toEqual(["A5", "A12"]);
-  });
-
-  it("caminhoDaFoto devolve caminho ABSOLUTO mesmo sem DATA_DIR configurado — res.sendFile exige isso, senão lança síncrono (500 em vez de 404)", async () => {
-    delete process.env.DATA_DIR; // produção não tem essa variável — store.dataDir() cai no padrão relativo "./data"
-    const { caminhoDaFoto } = await freshEstoque();
-    expect(path.isAbsolute(caminhoDaFoto("qualquer.jpg"))).toBe(true);
   });
 
   it("não perde nenhuma contagem quando duas posições diferentes são registradas ao mesmo tempo", async () => {

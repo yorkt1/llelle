@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { v2 as cloudinary } from "cloudinary";
 import * as store from "./store";
 
 /**
@@ -8,9 +7,12 @@ import * as store from "./store";
  * (código, ex.: "A5"). Cada posição guarda um HISTÓRICO de contagens — nunca sobrescreve, só
  * acrescenta — pra dar pra ver a evolução ao longo do tempo, não só o valor mais recente.
  *
- * Foto fica como arquivo separado em `<DATA_DIR>/estoque-fotos/`, não dentro do JSON do store —
- * mantém o arquivo de metadados pequeno e rápido de ler/escrever a cada contagem. O nome do
- * arquivo é o único vínculo entre os dois.
+ * Foto vai pro Cloudinary (storage externo) — só a URL fica guardada no registro. Isso existe
+ * porque o servidor roda hoje num plano sem disco persistente (Render Free — ver README): um
+ * arquivo salvo localmente desaparecia a cada deploy/"acordar", e pior, `res.sendFile` com o
+ * caminho relativo resultante (quando DATA_DIR não está configurado) lançava síncrono e virava
+ * 500 em vez de um 404 "não encontrada" normal. Com a foto num storage de verdade, nenhum dos
+ * dois problemas existe mais: a URL funciona direto do navegador, sem passar pelo nosso backend.
  *
  * Contagem é 100% manual de propósito (ver server/routes/estoque.ts e src/Estoque.tsx) — sem
  * nenhuma lógica de visão computacional nesta fase.
@@ -23,8 +25,8 @@ export interface RegistroContagem {
   id: string;
   quantidade: number;
   responsavel: string;
-  /** Nome do arquivo em `<DATA_DIR>/estoque-fotos/`. */
-  fotoArquivo: string;
+  /** URL pública do Cloudinary — não um caminho/arquivo local. */
+  fotoUrl: string;
   criadoEm: string;
 }
 
@@ -42,7 +44,7 @@ export interface RuaResumo {
 }
 
 const CHAVE_STORE = "estoque";
-const FOTOS_SUBDIR = "estoque-fotos";
+const PASTA_CLOUDINARY = "llelle-estoque";
 
 function normalizar(texto: string): string {
   return texto.trim().toUpperCase();
@@ -50,17 +52,6 @@ function normalizar(texto: string): string {
 
 function chave(rua: string, codigo: string): string {
   return `${normalizar(rua)}::${normalizar(codigo)}`;
-}
-
-function pastaFotos(): string {
-  // path.resolve (não path.join) de propósito: store.dataDir() cai em "./data" (relativo) quando
-  // DATA_DIR não está configurado, e o res.sendFile da rota de foto EXIGE caminho absoluto — sem
-  // isso, ele lança um erro síncrono (não dá 404 "não encontrada", dá 500 de verdade).
-  return path.resolve(store.dataDir(), FOTOS_SUBDIR);
-}
-
-export function caminhoDaFoto(arquivo: string): string {
-  return path.join(pastaFotos(), arquivo);
 }
 
 export async function listarEstoque(): Promise<RuaResumo[]> {
@@ -90,19 +81,47 @@ export async function obterHistorico(rua: string, codigo: string): Promise<Regis
 
 const FORMATOS_AUTORIZADOS = new Set(["jpeg", "jpg", "png", "webp"]);
 
+export class CloudinaryConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CloudinaryConfigError";
+  }
+}
+
+function cloudinaryConfigurado(): boolean {
+  return Boolean(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
+}
+
+// Lido a cada chamada (não config() uma vez só no import) pelo mesmo motivo de lib/olist.ts: o
+// dotenv carrega o .env.local/.env depois que os imports já rodaram em dev.
+function configurarCloudinary(): void {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+}
+
 async function salvarFoto(fotoDataUri: string): Promise<string> {
   const compatibilidade = fotoDataUri.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
   if (!compatibilidade) throw new Error("Imagem em formato inválido (esperado data URI base64).");
 
-  const [, formatoBruto, base64] = compatibilidade;
-  const formato = formatoBruto.toLowerCase();
+  const formato = compatibilidade[1].toLowerCase();
   if (!FORMATOS_AUTORIZADOS.has(formato)) throw new Error(`Formato de imagem não aceito: ${formato}`);
 
-  const extensao = formato === "jpeg" ? "jpg" : formato;
-  const arquivo = `${crypto.randomUUID()}.${extensao}`;
-  await fs.mkdir(pastaFotos(), { recursive: true });
-  await fs.writeFile(path.join(pastaFotos(), arquivo), Buffer.from(base64, "base64"));
-  return arquivo;
+  if (!cloudinaryConfigurado()) {
+    throw new CloudinaryConfigError(
+      "Upload de foto não configurado — faltam CLOUDINARY_CLOUD_NAME/CLOUDINARY_API_KEY/CLOUDINARY_API_SECRET no ambiente.",
+    );
+  }
+
+  configurarCloudinary();
+  const resultado = await cloudinary.uploader.upload(fotoDataUri, {
+    folder: PASTA_CLOUDINARY,
+    public_id: crypto.randomUUID(),
+    resource_type: "image",
+  });
+  return resultado.secure_url;
 }
 
 export interface RegistrarContagemParams {
@@ -119,13 +138,13 @@ export interface RegistrarContagemParams {
 }
 
 export async function registrarContagem(params: RegistrarContagemParams): Promise<RegistroContagem> {
-  const fotoArquivo = await salvarFoto(params.fotoDataUri);
+  const fotoUrl = await salvarFoto(params.fotoDataUri);
 
   const registro: RegistroContagem = {
     id: crypto.randomUUID(),
     quantidade: params.quantidade,
     responsavel: params.responsavel,
-    fotoArquivo,
+    fotoUrl,
     criadoEm: new Date().toISOString(),
   };
 
