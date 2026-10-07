@@ -5,7 +5,8 @@ import { Estoque } from "@/Estoque";
 import { Embalagem } from "@/Embalagem";
 import { Relatorios } from "@/Relatorios";
 import { Suporte } from "@/Suporte";
-import { IconeDevolucoes, IconeEmbalagem, IconeEstoque, IconePainel, IconeRelatorios, IconeSuporte, type PropsIcone } from "@/icones";
+import { IconeCompras, IconeDevolucoes, IconeEmbalagem, IconeEstoque, IconePainel, IconeRelatorios, IconeSuporte, type PropsIcone } from "@/icones";
+import { Compras } from "@/Compras";
 
 export interface Modulo {
   key: string;
@@ -27,6 +28,7 @@ export const MODULOS: Modulo[] = [
   { key: "devolucoes", label: "Devoluções", hash: "devolucoes", Icone: IconeDevolucoes, Tela: Devolucoes },
   { key: "estoque", label: "Estoque", hash: "estoque", Icone: IconeEstoque, Tela: Estoque },
   { key: "embalagem", label: "Embalagem", hash: "embalagem", Icone: IconeEmbalagem, Tela: Embalagem },
+  { key: "compras", label: "Compras", hash: "compras", Icone: IconeCompras, Tela: Compras },
   { key: "relatorios", label: "Relatórios", hash: "relatorios", Icone: IconeRelatorios, Tela: Relatorios },
   { key: "suporte", label: "Suporte", hash: "suporte", Icone: IconeSuporte, Tela: Suporte, secundario: true },
 ];

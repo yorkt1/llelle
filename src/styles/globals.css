@@ -2122,3 +2122,98 @@ body:has(.settings-overlay) .app-bottom-nav {
     grid-template-columns: minmax(5rem, 8rem) 1fr auto;
   }
 }
+
+/* ---------- Compras ---------- */
+
+.resumo-card--perigo {
+  --resumo-cor: var(--danger);
+}
+
+/* Status de compra: cor de estado SEMPRE com o texto do status junto (nunca só cor). */
+.estado-chip--compra-comprar {
+  --estado-cor: var(--danger);
+  --estado-fundo: var(--danger-soft);
+}
+
+.estado-chip--compra-atencao {
+  --estado-cor: var(--warning);
+  --estado-fundo: var(--warning-soft);
+}
+
+.estado-chip--compra-ok {
+  --estado-cor: var(--success);
+  --estado-fundo: var(--success-soft);
+}
+
+.estado-chip--compra-excesso {
+  --estado-cor: var(--brand);
+  --estado-fundo: var(--brand-soft);
+}
+
+.estado-chip--compra-sem-venda {
+  --estado-cor: var(--muted);
+  --estado-fundo: var(--surface-active);
+}
+
+.coleta-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--success);
+  border-radius: var(--radius-card);
+  padding: 0.85rem 1.1rem;
+  font-size: 0.875rem;
+}
+
+.coleta-status--andamento {
+  border-left-color: var(--brand);
+}
+
+.coleta-barra {
+  display: block;
+  height: 0.4rem;
+  background: var(--surface-active);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.coleta-barra > span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.filtro-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: var(--control-h);
+  font-size: 0.875rem;
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.filtro-check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--brand);
+}
+
+.tabela .tabela-input-num {
+  width: 5.5rem;
+  min-width: 0;
+  text-align: right;
+}
+
+.tabela-linha--apagada td {
+  opacity: 0.5;
+}
+
+.compras-produto {
+  max-width: 22rem;
+  white-space: normal !important;
+}
