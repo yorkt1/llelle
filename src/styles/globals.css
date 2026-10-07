@@ -87,10 +87,6 @@ body {
   flex-direction: column;
   justify-content: center;
   padding: 4vh 5vw;
-  /* Sobra embaixo pro conteúdo nunca ficar escondido atrás do .nav-corner (posição fixa) — sem
-     isso, o fim de uma tela com bastante conteúdo rolável (ex.: Embalagem, Suporte) fica coberto
-     pela pill de navegação, principalmente em telas estreitas. */
-  padding-bottom: max(4vh, 6rem);
   gap: 6vh;
 }
 
@@ -259,7 +255,8 @@ body {
 /* Discreto de propósito — o painel é pra ser limpo, não uma tela de app com botões por todo lado. */
 .settings-trigger {
   position: fixed;
-  bottom: 1.5rem;
+  /* Acima da barra inferior no celular; no desktop (sem barra) a variável é zerada abaixo. */
+  bottom: calc(1.5rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
   right: 1.5rem;
   width: 2.25rem;
   height: 2.25rem;
@@ -618,39 +615,214 @@ body {
   z-index: 20;
 }
 
-/* Virou uma "pill de navegação" coesa (fundo + sombra), em vez de botões fantasma soltos — ainda
-   discreta e no mesmo canto de sempre, só com cara de chrome de produto em vez de dev tool. */
-.nav-corner {
-  position: fixed;
-  bottom: 1.5rem;
-  left: 1.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.35rem;
-  box-shadow: var(--shadow);
+/* ---------- Shell: sidebar (desktop) + barra inferior (celular/tablet) ---------- */
+
+.app-shell {
+  min-height: 100%;
 }
 
-/* Com qualquer modal (.settings-overlay) aberto em qualquer tela, a nav some por completo em vez
-   de só ficar visualmente escondida atrás do overlay — mais limpo, e sem depender só do z-index
-   pra garantir que ela nunca intercepte um toque por cima do modal. */
-body:has(.settings-overlay) .nav-corner {
+.app-main {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-main > .page {
+  flex: 1 1 auto;
+}
+
+.app-sidebar {
   display: none;
 }
 
-.nav-corner-brand {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.8rem;
-  letter-spacing: 0.02em;
-  color: var(--brand);
-  padding: 0 0.6rem 0 0.75rem;
-  user-select: none;
+.app-nav-icone {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
 }
 
+/* Barra inferior: padrão (celular/tablet). Some no desktop, onde a sidebar assume. */
+.app-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  height: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.app-bottom-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-width: 0;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.app-bottom-item .app-nav-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-bottom-item--ativo {
+  color: var(--brand);
+}
+
+/* Conteúdo nunca fica escondido atrás da barra inferior fixa. */
+.app-main {
+  padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+}
+
+/* Com qualquer modal (.settings-overlay) aberto, a navegação some por completo em vez de só ficar
+   atrás do overlay — sem depender só do z-index pra nunca interceptar um toque por cima do modal. */
+body:has(.settings-overlay) .app-bottom-nav {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .app-bottom-nav {
+    display: none;
+  }
+
+  .settings-trigger {
+    bottom: 1.5rem;
+  }
+
+  .app-main {
+    padding-bottom: 0;
+    margin-left: var(--sidebar-w);
+    transition: margin-left 0.2s ease;
+  }
+
+  .app-shell--recolhida .app-main {
+    margin-left: var(--sidebar-w-collapsed);
+  }
+
+  .app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 15;
+    width: var(--sidebar-w);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem 0.75rem;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    transition: width 0.2s ease;
+    overflow: hidden;
+  }
+
+  .app-shell--recolhida .app-sidebar {
+    width: var(--sidebar-w-collapsed);
+  }
+
+  .app-sidebar-topo {
+    display: flex;
+    align-items: center;
+    height: 2.75rem;
+    padding: 0 0.6rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .app-brand {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.35rem;
+    letter-spacing: 0.02em;
+    color: var(--brand);
+    user-select: none;
+  }
+
+  .app-sidebar-nav,
+  .app-sidebar-rodape {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .app-sidebar-rodape {
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .app-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: var(--control-h);
+    padding: 0 0.75rem;
+    border: none;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .app-sidebar-item:hover,
+  .app-sidebar-item:focus-visible {
+    color: var(--fg);
+    background: var(--surface-active);
+  }
+
+  .app-sidebar-item--ativo,
+  .app-sidebar-item--ativo:hover {
+    color: var(--fg);
+    background: var(--brand-soft);
+    box-shadow: inset 3px 0 0 var(--brand);
+  }
+
+  .app-sidebar-item--ativo .app-nav-icone {
+    color: var(--brand);
+  }
+
+  .app-shell--recolhida .app-nav-label {
+    display: none;
+  }
+
+  .app-shell--recolhida .app-sidebar-item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .app-shell--recolhida .app-sidebar-recolher .app-nav-icone {
+    transform: scaleX(-1);
+  }
+}
+
+/* Tela cheia (botão do Painel, pra TV): some todo o chrome de navegação, como era antes. */
+:root:fullscreen .app-sidebar,
+:root:fullscreen .app-bottom-nav {
+  display: none;
+}
+
+:root:fullscreen .app-main {
+  margin-left: 0;
+  padding-bottom: 0;
+}
+
+/* Botão "pill" ainda usado pelas abas de rua do Estoque. */
 .nav-corner-item {
   background: none;
   border: 1px solid transparent;
@@ -679,17 +851,6 @@ body:has(.settings-overlay) .nav-corner {
 @media (max-width: 640px) {
   .formulario-grade {
     grid-template-columns: 1fr;
-  }
-
-  /* Em tela estreita a pill de navegação (marca + 6 abas) não cabe numa linha só — espalha de
-     ponta a ponta e quebra em mais de uma linha em vez de espremer ou cortar item. */
-  .nav-corner {
-    left: 0.6rem;
-    right: 0.6rem;
-    bottom: 0.6rem;
-    justify-content: center;
-    flex-wrap: wrap;
-    row-gap: 0.3rem;
   }
 
   .busca-linha {

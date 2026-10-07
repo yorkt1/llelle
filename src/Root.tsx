@@ -1,73 +1,114 @@
-import { useEffect, useState } from "react";
-import { App } from "@/App";
-import { Devolucoes } from "@/Devolucoes";
-import { Estoque } from "@/Estoque";
-import { Embalagem } from "@/Embalagem";
-import { Relatorios } from "@/Relatorios";
-import { Suporte } from "@/Suporte";
+import { useCallback, useEffect, useState } from "react";
+import { MODULOS, type Modulo } from "@/modulos";
 
-type View = "separacao" | "devolucoes" | "estoque" | "embalagem" | "relatorios" | "suporte";
+const SIDEBAR_STORAGE_KEY = "shell:sidebarRecolhida";
 
-const VIEWS: { key: View; label: string; hash: string }[] = [
-  { key: "separacao", label: "Painel", hash: "" },
-  { key: "devolucoes", label: "Devoluções", hash: "devolucoes" },
-  { key: "estoque", label: "Estoque", hash: "estoque" },
-  { key: "embalagem", label: "Embalagem", hash: "embalagem" },
-  { key: "relatorios", label: "Relatórios", hash: "relatorios" },
-  { key: "suporte", label: "Suporte", hash: "suporte" },
-];
-
-function viewFromHash(): View {
-  const encontrada = VIEWS.find((item) => item.hash !== "" && window.location.hash === `#${item.hash}`);
-  return encontrada?.key ?? "separacao";
+function moduloFromHash(): Modulo {
+  return MODULOS.find((item) => item.hash !== "" && window.location.hash === `#${item.hash}`) ?? MODULOS[0];
 }
 
-/**
- * Discreto de propósito, no mesmo espírito do botão de configurações do painel:
- * o painel de separação é feito pra TV do estoque, sem chrome de navegação por
- * cima. A troca de tela mora num link no canto, não numa barra de menu — e
- * serve também como "saída" pra voltar de Devoluções/Relatórios pro Painel.
- */
-function NavCorner({ view, onChange }: { view: View; onChange: (view: View) => void }) {
+function lerSidebarRecolhida(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function IconeRecolher({ className }: { className?: string }) {
   return (
-    <nav className="nav-corner">
-      <span className="nav-corner-brand">LLE</span>
-      {VIEWS.map((item) => (
-        <button
-          key={item.key}
-          className={`nav-corner-item${item.key === view ? " nav-corner-item--active" : ""}`}
-          onClick={() => onChange(item.key)}
-        >
-          {item.label}
-        </button>
-      ))}
-    </nav>
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="m15 10-2 2 2 2" />
+    </svg>
   );
 }
 
+function ItemNav({ modulo, ativo, className }: { modulo: Modulo; ativo: boolean; className: string }) {
+  return (
+    <a
+      href={`#${modulo.hash}`}
+      className={`${className}${ativo ? ` ${className}--ativo` : ""}`}
+      aria-current={ativo ? "page" : undefined}
+      title={modulo.label}
+    >
+      <modulo.Icone className="app-nav-icone" />
+      <span className="app-nav-label">{modulo.label}</span>
+    </a>
+  );
+}
+
+/**
+ * Desktop (≥1024px): sidebar fixa à esquerda, recolhível (só ícones — preferência lembrada no
+ * navegador, útil pra TV do Painel/Embalagem). Celular/tablet: barra inferior fixa. Em tela cheia
+ * (botão do Painel) todo o chrome some, pra TV continuar limpa como antes.
+ */
 export function Root() {
-  const [view, setView] = useState<View>(viewFromHash);
+  const [modulo, setModulo] = useState<Modulo>(moduloFromHash);
+  const [recolhida, setRecolhida] = useState(lerSidebarRecolhida);
 
   useEffect(() => {
-    const onHashChange = () => setView(viewFromHash());
+    const onHashChange = () => setModulo(moduloFromHash());
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  const go = (next: View) => {
-    window.location.hash = VIEWS.find((item) => item.key === next)?.hash ?? "";
-    setView(next);
-  };
+  const alternarSidebar = useCallback(() => {
+    setRecolhida((atual) => {
+      try {
+        localStorage.setItem(SIDEBAR_STORAGE_KEY, atual ? "0" : "1");
+      } catch {
+        // localStorage bloqueado — só não lembra a preferência.
+      }
+      return !atual;
+    });
+  }, []);
+
+  const principais = MODULOS.filter((item) => !item.secundario);
+  const secundarios = MODULOS.filter((item) => item.secundario);
+  const Tela = modulo.Tela;
 
   return (
-    <>
-      {view === "separacao" && <App />}
-      {view === "devolucoes" && <Devolucoes />}
-      {view === "estoque" && <Estoque />}
-      {view === "embalagem" && <Embalagem />}
-      {view === "relatorios" && <Relatorios />}
-      {view === "suporte" && <Suporte />}
-      <NavCorner view={view} onChange={go} />
-    </>
+    <div className={`app-shell${recolhida ? " app-shell--recolhida" : ""}`}>
+      <aside className="app-sidebar">
+        <div className="app-sidebar-topo">
+          <span className="app-brand" aria-label="LLE Importadora">
+            LLE
+          </span>
+        </div>
+        <nav className="app-sidebar-nav" aria-label="Módulos">
+          {principais.map((item) => (
+            <ItemNav key={item.key} modulo={item} ativo={item.key === modulo.key} className="app-sidebar-item" />
+          ))}
+        </nav>
+        <div className="app-sidebar-rodape">
+          {secundarios.map((item) => (
+            <ItemNav key={item.key} modulo={item} ativo={item.key === modulo.key} className="app-sidebar-item" />
+          ))}
+          <button
+            type="button"
+            className="app-sidebar-item app-sidebar-recolher"
+            onClick={alternarSidebar}
+            aria-label={recolhida ? "Expandir menu" : "Recolher menu"}
+            aria-expanded={!recolhida}
+            title={recolhida ? "Expandir menu" : "Recolher menu"}
+          >
+            <IconeRecolher className="app-nav-icone" />
+            <span className="app-nav-label">Recolher menu</span>
+          </button>
+        </div>
+      </aside>
+
+      <main className="app-main">
+        <Tela />
+      </main>
+
+      <nav className="app-bottom-nav" aria-label="Módulos">
+        {MODULOS.map((item) => (
+          <ItemNav key={item.key} modulo={item} ativo={item.key === modulo.key} className="app-bottom-item" />
+        ))}
+      </nav>
+    </div>
   );
 }
