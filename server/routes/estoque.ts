@@ -8,8 +8,13 @@ import {
   obterHistorico,
   registrarContagem,
   removerProduto,
+  adicionarProdutos,
+  removerPosicao,
+  removerRua,
 } from "../../lib/estoque";
 import { StoreConfigError } from "../../lib/store";
+import { OlistConfigError } from "../../lib/olist";
+import { buscarProdutosTiny } from "../../lib/catalogoTiny";
 
 export const estoqueRouter = Router();
 
@@ -62,6 +67,57 @@ estoqueRouter.delete("/produtos/:nome", async (req, res) => {
   }
 });
 
+
+// Rotas específicas ANTES das genéricas `/:rua/:codigo...` lá embaixo — senão "produtos/lote" e
+// "rua/X" seriam lidos como rua+código.
+
+estoqueRouter.post("/produtos/lote", async (req, res) => {
+  const nomes: unknown[] = Array.isArray(req.body?.nomes) ? req.body.nomes : [];
+  const validos = nomes.filter((n): n is string => typeof n === "string" && n.trim() !== "");
+  if (validos.length === 0) {
+    res.status(400).json({ error: "Nenhum nome de produto informado." });
+    return;
+  }
+  try {
+    res.status(201).json(await adicionarProdutos(validos));
+  } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao cadastrar os produtos." });
+  }
+});
+
+estoqueRouter.get("/produtos/tiny", async (req, res) => {
+  try {
+    res.status(200).json({ produtos: await buscarProdutosTiny(String(req.query.termo ?? "")) });
+  } catch (error) {
+    if (error instanceof OlistConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
+    res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao buscar no Tiny." });
+  }
+});
+
+estoqueRouter.delete("/rua/:rua", async (req, res) => {
+  try {
+    const posicoes = await removerRua(String(req.params.rua));
+    res.status(200).json({ posicoesExcluidas: posicoes });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao excluir a rua." });
+  }
+});
+
+estoqueRouter.delete("/posicao/:rua/:codigo", async (req, res) => {
+  try {
+    await removerPosicao(String(req.params.rua), String(req.params.codigo));
+    res.status(204).end();
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao excluir a posição." });
+  }
+});
 estoqueRouter.get("/:rua/:codigo/historico", async (req, res) => {
   try {
     const historico = await obterHistorico(String(req.params.rua), String(req.params.codigo));

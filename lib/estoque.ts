@@ -142,6 +142,78 @@ export async function removerProduto(nome: string): Promise<void> {
   await store.update<string[]>(CHAVE_PRODUTOS, (atual) => (atual ?? []).filter((p) => p !== nome));
 }
 
+
+/** Cadastra vários produtos de uma vez (lista colada ou importada do Tiny). Já existentes são ignorados, sem erro. */
+export async function adicionarProdutos(nomes: string[]): Promise<{ produtos: string[]; adicionados: number }> {
+  let adicionados = 0;
+  const produtos = await store.update<string[]>(CHAVE_PRODUTOS, (atual) => {
+    const lista = [...(atual ?? [])];
+    const existentes = new Set(lista.map((p) => p.toLowerCase()));
+    for (const nome of nomes) {
+      const limpo = nome.trim().replace(/\s+/g, " ");
+      if (!limpo || existentes.has(limpo.toLowerCase())) continue;
+      lista.push(limpo);
+      existentes.add(limpo.toLowerCase());
+      adicionados++;
+    }
+    return lista.sort((a, b) => a.localeCompare(b, "pt-BR"));
+  });
+  return { produtos, adicionados };
+}
+
+// Exclusão de posição/rua: nunca apaga de vez — o histórico (contagens + fotos) e o produto/voltagem
+// vão pra `estoque:excluidos`, com data, pra dar pra recuperar se alguém excluir por engano.
+const CHAVE_EXCLUIDOS = "estoque:excluidos";
+
+interface PosicaoExcluida {
+  rua: string;
+  codigo: string;
+  historico: RegistroContagem[];
+  metadados: MetadadosPosicao | null;
+  excluidoEm: string;
+}
+
+async function excluirChaves(chaves: string[]): Promise<number> {
+  if (chaves.length === 0) return 0;
+  const historicos = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
+  const metadados = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
+  const excluidoEm = new Date().toISOString();
+  const arquivados: PosicaoExcluida[] = chaves.map((k) => {
+    const [rua, codigo] = k.split("::");
+    return { rua, codigo, historico: historicos[k] ?? [], metadados: metadados[k] ?? null, excluidoEm };
+  });
+
+  // Arquiva PRIMEIRO: se algo falhar depois, no pior caso a posição fica duplicada (ativa + arquivo),
+  // nunca perdida.
+  await store.update<PosicaoExcluida[]>(CHAVE_EXCLUIDOS, (atual) => [...(atual ?? []), ...arquivados]);
+  await store.update<HistoricoPorPosicao>(CHAVE_STORE, (atual) => {
+    const copia = { ...(atual ?? {}) };
+    for (const k of chaves) delete copia[k];
+    return copia;
+  });
+  await store.update<MetadadosPorPosicao>(CHAVE_METADADOS, (atual) => {
+    const copia = { ...(atual ?? {}) };
+    for (const k of chaves) delete copia[k];
+    return copia;
+  });
+  return chaves.length;
+}
+
+export async function removerPosicao(rua: string, codigo: string): Promise<void> {
+  const k = chave(rua, codigo);
+  const historicos = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
+  if (!historicos[k]) throw new Error("Essa posição não existe.");
+  await excluirChaves([k]);
+}
+
+/** Exclui a rua inteira (todas as posições dela). Devolve quantas posições foram arquivadas. */
+export async function removerRua(rua: string): Promise<number> {
+  const prefixo = `${normalizar(rua)}::`;
+  const historicos = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
+  const metadados = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
+  const chaves = [...new Set([...Object.keys(historicos), ...Object.keys(metadados)])].filter((k) => k.startsWith(prefixo));
+  return excluirChaves(chaves);
+}
 const FORMATOS_AUTORIZADOS = new Set(["jpeg", "jpg", "png", "webp"]);
 
 export class CloudinaryConfigError extends Error {

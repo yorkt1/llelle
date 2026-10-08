@@ -2539,3 +2539,91 @@ th.matriz-dia {
 .matriz-separador {
   border-right: 2px solid var(--line);
 }
+
+/* ---------- Ações destrutivas e cadastro em lote ---------- */
+
+.btn-perigo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-h);
+  padding: 0 1.25rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-control);
+  background: var(--danger);
+  color: var(--fg-on-light);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-perigo:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Discreto de propósito — excluir não deve competir com a ação principal da tela. */
+.btn-perigo-texto {
+  align-self: center;
+  background: none;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  color: var(--danger);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-perigo-texto:hover {
+  text-decoration: underline;
+}
+
+.ruas-excluir {
+  margin-left: auto;
+  margin-bottom: 0.4rem;
+}
+
+.lote-acoes {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.lote-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  flex-shrink: 0;
+}
+
+.lote-lista li + li {
+  border-top: 1px solid var(--line);
+}
+
+.lote-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.lote-item input {
+  margin-top: 0.2rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--brand);
+  flex-shrink: 0;
+}
+
+.lote-item--desabilitado {
+  cursor: default;
+  opacity: 0.6;
+}

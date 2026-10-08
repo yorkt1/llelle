@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PageHeader } from "@/PageHeader";
 
 interface RegistroContagem {
@@ -20,6 +20,13 @@ interface PosicaoResumo {
   /** null só pra posição criada antes dessa funcionalidade existir. */
   produto: string | null;
   voltagem: Voltagem | null;
+}
+
+/** Item da busca no cadastro do Tiny (ver lib/catalogoTiny.ts). */
+interface ProdutoTiny {
+  sugestao: string;
+  nomesTiny: string[];
+  codigos: string[];
 }
 
 interface RuaResumo {
@@ -140,12 +147,14 @@ function FormularioContagem({
   onFechar,
   onSalvo,
   onMetadadosSalvos,
+  onExcluida,
 }: {
   modal: Exclude<Modal, null>;
   produtos: string[];
   onFechar: () => void;
   onSalvo: (rua: string, codigo: string) => void;
   onMetadadosSalvos: (rua: string, codigo: string, produto: string, voltagem: Voltagem) => void;
+  onExcluida: (rua: string, codigo: string) => void;
 }) {
   const [codigo, setCodigo] = useState(modal.modo === "nova" ? proximoCodigoSugerido(modal.rua, modal.codigosExistentes) : "");
   const [quantidade, setQuantidade] = useState(modal.modo === "existente" ? String(modal.ultima.quantidade) : "");
@@ -284,6 +293,19 @@ function FormularioContagem({
       setSalvando(false);
     }
   }, [codigo, definirProduto, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, vazia, voltagem]);
+
+  const excluirPosicao = useCallback(async () => {
+    if (modal.modo !== "existente") return;
+    if (!window.confirm(`Excluir a posição ${modal.codigo} da Rua ${modal.rua}? Ela some da tela (o histórico fica guardado no arquivo de excluídos).`)) return;
+    setErro(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/posicao/${encodeURIComponent(modal.rua)}/${encodeURIComponent(modal.codigo)}`, { method: "DELETE" });
+      if (!resposta.ok) throw new Error((await resposta.json().catch(() => ({}))).error ?? "Não consegui excluir a posição.");
+      onExcluida(modal.rua, modal.codigo);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não consegui excluir a posição.");
+    }
+  }, [modal, onExcluida]);
 
   const salvarMetadados = useCallback(async () => {
     if (modal.modo !== "existente") return;
@@ -567,6 +589,11 @@ function FormularioContagem({
           <button className="btn-primario" onClick={() => void salvar()} disabled={salvando || (tentouSalvar && formularioInvalido)}>
             {salvando ? "Salvando..." : "Salvar"}
           </button>
+          {modal.modo === "existente" && (
+            <button type="button" className="btn-perigo-texto" onClick={() => void excluirPosicao()} disabled={salvando}>
+              Excluir posição {modal.codigo}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -707,6 +734,60 @@ function ModalProdutos({
   const [salvandoProduto, setSalvandoProduto] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Cadastro em lote: "tiny" busca no cadastro de produtos do Tiny; "colar" aceita uma lista, um por linha.
+  const [modo, setModo] = useState<"lista" | "tiny" | "colar">("lista");
+  const [termoTiny, setTermoTiny] = useState("koti");
+  const [resultadosTiny, setResultadosTiny] = useState<ProdutoTiny[] | null>(null);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [buscandoTiny, setBuscandoTiny] = useState(false);
+  const [textoColado, setTextoColado] = useState("");
+  const [avisoLote, setAvisoLote] = useState<string | null>(null);
+  const noCatalogo = useMemo(() => new Set(produtos.map((p) => p.toLowerCase())), [produtos]);
+
+  const buscarNoTiny = useCallback(async () => {
+    setBuscandoTiny(true);
+    setErroProdutos(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos/tiny?termo=${encodeURIComponent(termoTiny.trim())}`);
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui buscar no Tiny.");
+      const lista: ProdutoTiny[] = json.produtos ?? [];
+      setResultadosTiny(lista);
+      setSelecionados(new Set(lista.map((p) => p.sugestao).filter((nome) => !noCatalogo.has(nome.toLowerCase()))));
+    } catch (error) {
+      setErroProdutos(error instanceof Error ? error.message : "Não consegui buscar no Tiny.");
+    } finally {
+      setBuscandoTiny(false);
+    }
+  }, [termoTiny, noCatalogo]);
+
+  const adicionarEmLote = useCallback(
+    async (nomes: string[]) => {
+      if (nomes.length === 0) return;
+      setSalvandoProduto(true);
+      setErroProdutos(null);
+      try {
+        const resposta = await fetch(`${API_URL}/api/estoque/produtos/lote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nomes }),
+        });
+        const json = await resposta.json();
+        if (!resposta.ok) throw new Error(json.error ?? "Não consegui cadastrar os produtos.");
+        onAlterado(json.produtos ?? []);
+        setAvisoLote(`${json.adicionados} produto(s) adicionado(s)${json.adicionados < nomes.length ? ` — ${nomes.length - json.adicionados} já estavam no catálogo` : ""}.`);
+        setModo("lista");
+        setResultadosTiny(null);
+        setTextoColado("");
+      } catch (error) {
+        setErroProdutos(error instanceof Error ? error.message : "Não consegui cadastrar os produtos.");
+      } finally {
+        setSalvandoProduto(false);
+      }
+    },
+    [onAlterado],
+  );
+
   const adicionarProdutoCatalogo = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
@@ -750,7 +831,7 @@ function ModalProdutos({
 
   return (
     <div className="settings-overlay" onClick={onFechar}>
-      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+      <div className={`settings-panel${modo === "lista" ? "" : " settings-panel--largo"}`} onClick={(event) => event.stopPropagation()}>
         <div className="settings-panel-header">
           <button className="settings-close" onClick={onFechar} aria-label="Fechar">
             ×
@@ -762,6 +843,139 @@ function ModalProdutos({
         </div>
 
         <div className="settings-panel-body">
+          <div className="abas" role="tablist" aria-label="Como cadastrar">
+            {(
+              [
+                ["lista", "Um por um"],
+                ["tiny", "Buscar no Tiny"],
+                ["colar", "Colar uma lista"],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                role="tab"
+                aria-selected={modo === valor}
+                className={`aba${modo === valor ? " aba--ativa" : ""}`}
+                onClick={() => {
+                  setModo(valor);
+                  setAvisoLote(null);
+                  setErroProdutos(null);
+                }}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+
+          {avisoLote && <p className="aviso-sucesso">{avisoLote}</p>}
+
+          {modo === "tiny" && (
+            <>
+              <p className="field-value--muted">
+                Busca no cadastro de produtos do Tiny (só ativos) e sugere o nome sem a voltagem — a voltagem é escolhida em cada posição. Variações
+                110V/220V do mesmo produto viram um item só.
+              </p>
+              <form
+                className="estoque-form-produto"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void buscarNoTiny();
+                }}
+              >
+                <label className="field">
+                  <span className="field-label">Palavra pra buscar no Tiny</span>
+                  <input className="field-input" value={termoTiny} onChange={(event) => setTermoTiny(event.target.value)} placeholder="Ex.: koti, chaleira, air fryer" />
+                </label>
+                <button className="btn-primario" type="submit" disabled={buscandoTiny || !termoTiny.trim()}>
+                  {buscandoTiny ? "Buscando..." : "Buscar"}
+                </button>
+              </form>
+              {erroProdutos && <p className="error-banner">{erroProdutos}</p>}
+              {resultadosTiny &&
+                (resultadosTiny.length === 0 ? (
+                  <p className="field-value--muted">Nenhum produto ativo no Tiny com "{termoTiny}".</p>
+                ) : (
+                  <>
+                    <div className="lote-acoes">
+                      <span className="field-value--muted">
+                        {resultadosTiny.length} encontrado(s) · {selecionados.size} selecionado(s)
+                      </span>
+                      <button
+                        type="button"
+                        className="refresh-btn"
+                        onClick={() =>
+                          setSelecionados(
+                            selecionados.size > 0 ? new Set() : new Set(resultadosTiny.map((p) => p.sugestao).filter((n) => !noCatalogo.has(n.toLowerCase()))),
+                          )
+                        }
+                      >
+                        {selecionados.size > 0 ? "Desmarcar todos" : "Marcar todos"}
+                      </button>
+                    </div>
+                    <ul className="lote-lista">
+                      {resultadosTiny.map((p) => {
+                        const jaTem = noCatalogo.has(p.sugestao.toLowerCase());
+                        return (
+                          <li key={p.sugestao}>
+                            <label className={`lote-item${jaTem ? " lote-item--desabilitado" : ""}`}>
+                              <input
+                                type="checkbox"
+                                disabled={jaTem}
+                                checked={jaTem || selecionados.has(p.sugestao)}
+                                onChange={(event) => {
+                                  const novo = new Set(selecionados);
+                                  if (event.target.checked) novo.add(p.sugestao);
+                                  else novo.delete(p.sugestao);
+                                  setSelecionados(novo);
+                                }}
+                              />
+                              <span>
+                                {p.sugestao}
+                                <span className="field-value--muted">
+                                  {jaTem ? " · já no catálogo" : p.nomesTiny.length > 1 ? ` · ${p.nomesTiny.length} variações no Tiny` : ""}
+                                  {p.codigos.length > 0 ? ` · ${p.codigos.slice(0, 3).join(", ")}${p.codigos.length > 3 ? "…" : ""}` : ""}
+                                </span>
+                              </span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <button className="btn-primario" type="button" disabled={salvandoProduto || selecionados.size === 0} onClick={() => void adicionarEmLote([...selecionados])}>
+                      {salvandoProduto ? "Salvando..." : `Adicionar ${selecionados.size} ao catálogo`}
+                    </button>
+                  </>
+                ))}
+            </>
+          )}
+
+          {modo === "colar" && (
+            <>
+              <label className="field">
+                <span className="field-label">Um produto por linha</span>
+                <textarea
+                  className="field-input importar-textarea"
+                  value={textoColado}
+                  onChange={(event) => setTextoColado(event.target.value)}
+                  placeholder={"Chaleira Koti Modern Preta\nAir Fryer Koti 4L\nSanduicheira Koti"}
+                  autoFocus
+                />
+              </label>
+              {erroProdutos && <p className="error-banner">{erroProdutos}</p>}
+              <button
+                className="btn-primario"
+                type="button"
+                disabled={salvandoProduto || !textoColado.trim()}
+                onClick={() => void adicionarEmLote(textoColado.split(/\r?\n/).map((l) => l.trim()).filter(Boolean))}
+              >
+                {salvandoProduto ? "Salvando..." : "Adicionar ao catálogo"}
+              </button>
+            </>
+          )}
+
+          {modo === "lista" && (
+          <>
           <form className="estoque-form-produto" onSubmit={adicionarProdutoCatalogo}>
             <label className="field">
               <span className="field-label">Novo produto</span>
@@ -798,6 +1012,8 @@ function ModalProdutos({
                 </li>
               ))}
             </ul>
+          )}
+          </>
           )}
         </div>
       </div>
@@ -945,6 +1161,49 @@ export function Estoque() {
     setTimeout(() => setToast(null), TOAST_MS);
     setTimeout(() => setCardDestacado(null), TOAST_MS);
   }, [carregar]);
+
+  const aoExcluirPosicao = useCallback(
+    (_rua: string, codigo: string) => {
+      setModal(null);
+      void carregar();
+      setToast(`Posição ${codigo} excluída`);
+      setTimeout(() => setToast(null), TOAST_MS);
+    },
+    [carregar],
+  );
+
+  // Excluir rua: confirmação digitando o nome da rua (apaga todas as posições dela de uma vez).
+  const [excluindoRua, setExcluindoRua] = useState<string | null>(null);
+  const [confirmacaoRua, setConfirmacaoRua] = useState("");
+  const [erroExcluirRua, setErroExcluirRua] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+
+  const confirmarExclusaoRua = useCallback(async () => {
+    if (!excluindoRua) return;
+    setExcluindo(true);
+    setErroExcluirRua(null);
+    try {
+      const temPosicoes = ruas.some((r) => r.rua === excluindoRua && r.posicoes.length > 0);
+      let posicoes = 0;
+      if (temPosicoes) {
+        const resposta = await fetch(`${API_URL}/api/estoque/rua/${encodeURIComponent(excluindoRua)}`, { method: "DELETE" });
+        const json = await resposta.json();
+        if (!resposta.ok) throw new Error(json.error ?? "Não consegui excluir a rua.");
+        posicoes = json.posicoesExcluidas ?? 0;
+      }
+      setRuasExtras((atuais) => atuais.filter((r) => r !== excluindoRua));
+      setRuaAtiva(null); // carregar() abaixo volta pra primeira rua que sobrou
+      setToast(`Rua ${excluindoRua} excluída${posicoes ? ` (${posicoes} posição(ões))` : ""}`);
+      setTimeout(() => setToast(null), TOAST_MS);
+      setExcluindoRua(null);
+      setConfirmacaoRua("");
+      void carregar();
+    } catch (error) {
+      setErroExcluirRua(error instanceof Error ? error.message : "Não consegui excluir a rua.");
+    } finally {
+      setExcluindo(false);
+    }
+  }, [carregar, excluindoRua, ruas]);
 
   const aoSalvarMetadados = useCallback(() => {
     setModal(null);
@@ -1120,6 +1379,62 @@ export function Estoque() {
               </button>
             </span>
           )}
+          {ruaAtiva && !emTodas && !adicionandoRua && (
+            <button
+              type="button"
+              className="btn-perigo-texto ruas-excluir"
+              onClick={() => {
+                setExcluindoRua(ruaAtiva);
+                setConfirmacaoRua("");
+                setErroExcluirRua(null);
+              }}
+            >
+              Excluir Rua {ruaAtiva}
+            </button>
+          )}
+        </div>
+      )}
+
+      {excluindoRua && (
+        <div className="settings-overlay" onClick={() => setExcluindoRua(null)}>
+          <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="settings-panel-header">
+              <button className="settings-close" onClick={() => setExcluindoRua(null)} aria-label="Fechar">
+                ×
+              </button>
+              <h2 className="settings-title">Excluir Rua {excluindoRua}?</h2>
+            </div>
+            <div className="settings-panel-body">
+              {(() => {
+                const n = ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0;
+                return n > 0 ? (
+                  <p className="field-value">
+                    As <strong>{n} posição(ões)</strong> dessa rua somem da tela, com o histórico de contagens. Nada é apagado de vez: fica guardado num
+                    arquivo de excluídos e dá pra recuperar se precisar.
+                  </p>
+                ) : (
+                  <p className="field-value">Essa rua ainda não tem nenhuma posição — só some da lista.</p>
+                );
+              })()}
+              <label className="field">
+                <span className="field-label">
+                  Pra confirmar, digite <strong>{excluindoRua}</strong>
+                </span>
+                <input className="field-input" value={confirmacaoRua} onChange={(event) => setConfirmacaoRua(event.target.value)} autoFocus />
+              </label>
+            </div>
+            <div className="settings-panel-footer">
+              {erroExcluirRua && <p className="error-banner">{erroExcluirRua}</p>}
+              <button
+                type="button"
+                className="btn-perigo"
+                disabled={excluindo || confirmacaoRua.trim().toUpperCase() !== excluindoRua.toUpperCase()}
+                onClick={() => void confirmarExclusaoRua()}
+              >
+                {excluindo ? "Excluindo..." : `Excluir Rua ${excluindoRua}`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1288,7 +1603,14 @@ export function Estoque() {
       {mostrarModalProdutos && <ModalProdutos produtos={produtos} onFechar={() => setMostrarModalProdutos(false)} onAlterado={setProdutos} />}
 
       {modal && (
-        <FormularioContagem modal={modal} produtos={produtos} onFechar={() => setModal(null)} onSalvo={aoSalvar} onMetadadosSalvos={aoSalvarMetadados} />
+        <FormularioContagem
+          modal={modal}
+          produtos={produtos}
+          onFechar={() => setModal(null)}
+          onSalvo={aoSalvar}
+          onMetadadosSalvos={aoSalvarMetadados}
+          onExcluida={aoExcluirPosicao}
+        />
       )}
 
       {toast && (
