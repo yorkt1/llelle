@@ -259,6 +259,23 @@ async function salvarFoto(fotoDataUri: string): Promise<string> {
   return resultado.secure_url;
 }
 
+/**
+ * Copia uma imagem de um link externo (ex.: anexo do produto no Tiny) pro Cloudinary — o link de
+ * origem pode expirar ou sumir; o do Cloudinary fica. `publicId` fixo + overwrite: buscar a foto
+ * do mesmo produto de novo substitui em vez de acumular cópias.
+ */
+export async function salvarImagemRemota(url: string, pasta: string, publicId: string): Promise<string> {
+  if (!/^https?:\/\//i.test(url)) throw new Error("Link de imagem inválido.");
+  if (!cloudinaryConfigurado()) {
+    throw new CloudinaryConfigError(
+      "Upload de foto não configurado — faltam CLOUDINARY_CLOUD_NAME/CLOUDINARY_API_KEY/CLOUDINARY_API_SECRET no ambiente.",
+    );
+  }
+  configurarCloudinary();
+  const resultado = await cloudinary.uploader.upload(url, { folder: pasta, public_id: publicId, overwrite: true, resource_type: "image" });
+  return resultado.secure_url;
+}
+
 export interface RegistrarContagemParams {
   rua: string;
   codigo: string;

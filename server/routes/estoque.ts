@@ -15,6 +15,7 @@ import {
 import { StoreConfigError } from "../../lib/store";
 import { OlistConfigError } from "../../lib/olist";
 import { buscarProdutosTiny } from "../../lib/catalogoTiny";
+import { listarInfoProdutos, registrarInfoProdutos, solicitarFotosFaltantes } from "../../lib/fotosProdutos";
 
 export const estoqueRouter = Router();
 
@@ -29,8 +30,9 @@ estoqueRouter.get("/", async (_req, res) => {
 
 estoqueRouter.get("/produtos", async (_req, res) => {
   try {
-    const produtos = await listarProdutos();
-    res.status(200).json({ produtos });
+    const [produtos, info] = await Promise.all([listarProdutos(), listarInfoProdutos()]);
+    // `info` = foto e IDs do Tiny por produto (chave: nome em minúsculas) — ver lib/fotosProdutos.ts.
+    res.status(200).json({ produtos, info });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao listar produtos." });
   }
@@ -44,6 +46,7 @@ estoqueRouter.post("/produtos", async (req, res) => {
   }
   try {
     const produtos = await adicionarProduto(nome);
+    await registrarInfoProdutos([{ nome }]);
     res.status(201).json({ produtos });
   } catch (error) {
     if (error instanceof StoreConfigError) {
@@ -78,8 +81,15 @@ estoqueRouter.post("/produtos/lote", async (req, res) => {
     res.status(400).json({ error: "Nenhum nome de produto informado." });
     return;
   }
+  // `itens` (opcional, vindo da busca do Tiny) traz os IDs de cada produto — a foto sai deles.
+  const itens: { nome: string; idsTiny?: string[]; codigos?: string[] }[] = Array.isArray(req.body?.itens)
+    ? req.body.itens.filter((i: unknown): i is { nome: string } => typeof (i as { nome?: unknown })?.nome === "string")
+    : [];
   try {
-    res.status(201).json(await adicionarProdutos(validos));
+    const resultado = await adicionarProdutos(validos);
+    const porNome = new Map(itens.map((i) => [i.nome.trim().toLowerCase(), i]));
+    await registrarInfoProdutos(validos.map((nome) => porNome.get(nome.trim().toLowerCase()) ?? { nome }));
+    res.status(201).json(resultado);
   } catch (error) {
     if (error instanceof StoreConfigError) {
       res.status(503).json({ error: error.message });
@@ -89,6 +99,14 @@ estoqueRouter.post("/produtos/lote", async (req, res) => {
   }
 });
 
+
+estoqueRouter.post("/produtos/fotos/buscar", async (_req, res) => {
+  try {
+    res.status(202).json({ pendentes: await solicitarFotosFaltantes() });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao pedir as fotos." });
+  }
+});
 estoqueRouter.get("/produtos/tiny", async (req, res) => {
   try {
     res.status(200).json({ produtos: await buscarProdutosTiny(String(req.query.termo ?? "")) });

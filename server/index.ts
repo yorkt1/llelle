@@ -11,6 +11,7 @@ import { estoqueRouter } from "./routes/estoque";
 import { embalagemRouter } from "./routes/embalagem";
 import { comprasRouter } from "./routes/compras";
 import { tickVendas } from "../lib/vendasSync";
+import { tickFotosProdutos } from "../lib/fotosProdutos";
 import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
 import { sincronizarEmbalagemHoje, verificarDiaPassado } from "../lib/embalagem";
 
@@ -195,4 +196,14 @@ if (EMBALAGEM_VERIFICACAO_INTERVAL_MS > 0) {
   };
   setTimeout(() => void verificarEmbalagemOnce(), 90_000);
   setInterval(() => void verificarEmbalagemOnce(), EMBALAGEM_VERIFICACAO_INTERVAL_MS);
+}
+
+// Fotos dos produtos do catálogo do Estoque: puxa do Tiny e guarda no Cloudinary (lib/fotosProdutos.ts).
+// Só trabalha quando há produto pendente (importado do Tiny ou botão "Buscar fotos no Tiny"); poucos
+// produtos por ciclo. 0 desliga.
+const FOTOS_PRODUTOS_INTERVAL_MS = Number(process.env.FOTOS_PRODUTOS_INTERVAL_MS ?? 60_000);
+if (FOTOS_PRODUTOS_INTERVAL_MS > 0) {
+  const fotosOnce = () => tickFotosProdutos().catch((error: unknown) => console.error("[fotos] falha ao buscar fotos:", error));
+  setTimeout(() => void fotosOnce(), 60_000);
+  setInterval(() => void fotosOnce(), FOTOS_PRODUTOS_INTERVAL_MS);
 }

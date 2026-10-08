@@ -30,6 +30,8 @@ export interface ProdutoTiny {
   /** Nomes originais no Tiny que viraram essa sugestão. */
   nomesTiny: string[];
   codigos: string[];
+  /** IDs dos produtos no Tiny — usados depois pra puxar a foto (lib/fotosProdutos.ts). */
+  idsTiny: string[];
 }
 
 export function nomeSemVoltagem(nome: string): string {
@@ -63,9 +65,10 @@ export async function buscarProdutosTiny(termo: string): Promise<ProdutoTiny[]> 
       if (!nome) continue;
       const sugestao = nomeSemVoltagem(nome);
       const chave = sugestao.toLowerCase();
-      const atual = porSugestao.get(chave) ?? { sugestao, nomesTiny: [], codigos: [] };
+      const atual = porSugestao.get(chave) ?? { sugestao, nomesTiny: [], codigos: [], idsTiny: [] };
       if (!atual.nomesTiny.includes(nome)) atual.nomesTiny.push(nome);
       if (produto.codigo && !atual.codigos.includes(produto.codigo)) atual.codigos.push(produto.codigo);
+      if (produto.id && !atual.idsTiny.includes(String(produto.id))) atual.idsTiny.push(String(produto.id));
       porSugestao.set(chave, atual);
     }
     totalPaginas = Math.min(retorno.numero_paginas ?? 1, MAX_PAGINAS);
