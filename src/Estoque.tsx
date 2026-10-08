@@ -27,6 +27,7 @@ interface ProdutoTiny {
   sugestao: string;
   nomesTiny: string[];
   codigos: string[];
+  idsTiny: string[];
 }
 
 interface RuaResumo {
@@ -36,7 +37,8 @@ interface RuaResumo {
 
 type Modal =
   | { modo: "existente"; rua: string; codigo: string; ultima: RegistroContagem; produto: string | null; voltagem: Voltagem | null }
-  | { modo: "nova"; rua: string; codigosExistentes: string[] }
+  // Longarina nova: a rua é escolhida no próprio formulário (a tela é por produto, não por rua).
+  | { modo: "nova"; ruasExistentes: string[]; codigosPorRua: Record<string, string[]>; produtoInicial?: string }
   | null;
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -100,7 +102,7 @@ const PADRAO_CODIGO = /^[A-Z]+\d+$/;
 
 function validarCodigo(codigo: string): string | null {
   const limpo = codigo.trim();
-  if (!limpo) return "Informe o código da posição.";
+  if (!limpo) return "Informe o código da longarina.";
   if (!PADRAO_CODIGO.test(limpo)) return "Use a letra da rua + número (ex.: H2).";
   return null;
 }
@@ -121,11 +123,11 @@ function validarFoto(fotoPreview: string | null): string | null {
 }
 
 function validarProduto(produto: string): string | null {
-  return produto.trim() ? null : "Selecione o produto dessa posição.";
+  return produto.trim() ? null : "Selecione o produto dessa longarina.";
 }
 
 function validarVoltagem(voltagem: string): string | null {
-  return (VOLTAGENS as readonly string[]).includes(voltagem) ? null : "Selecione a voltagem dessa posição.";
+  return (VOLTAGENS as readonly string[]).includes(voltagem) ? null : "Selecione a voltagem dessa longarina.";
 }
 
 /** Valor da opção "Posição vazia" no select de produto — não é um produto do catálogo, nunca vai pro backend. */
@@ -156,13 +158,17 @@ function FormularioContagem({
   onMetadadosSalvos: (rua: string, codigo: string, produto: string, voltagem: Voltagem) => void;
   onExcluida: (rua: string, codigo: string) => void;
 }) {
-  const [codigo, setCodigo] = useState(modal.modo === "nova" ? proximoCodigoSugerido(modal.rua, modal.codigosExistentes) : "");
+  // Rua: fixa numa longarina existente; numa nova, escolhida aqui (uma das existentes ou uma letra nova).
+  const [ruaNova, setRuaNova] = useState(() => (modal.modo === "nova" && modal.ruasExistentes.length === 1 ? modal.ruasExistentes[0] : ""));
+  const ruaAtual = modal.modo === "existente" ? modal.rua : ruaNova.trim().toUpperCase();
+  const codigosExistentes = modal.modo === "nova" ? modal.codigosPorRua[ruaAtual] ?? [] : [];
+  const [codigo, setCodigo] = useState(() => (modal.modo === "nova" && ruaAtual ? proximoCodigoSugerido(ruaAtual, codigosExistentes) : ""));
   const [quantidade, setQuantidade] = useState(modal.modo === "existente" ? String(modal.ultima.quantidade) : "");
   const [responsavel, setResponsavel] = useState(() => (modal.modo === "existente" ? modal.ultima.responsavel : lerUltimoResponsavel()));
   // Posição nova, ou existente que foi registrada vazia (sem produto): escolhe o produto aqui — ou
   // "Posição vazia", que registra 0 un. sem produto nem voltagem.
   const definirProduto = modal.modo === "nova" || !modal.produto;
-  const [produto, setProduto] = useState(modal.modo === "existente" && !modal.produto ? PRODUTO_VAZIA : "");
+  const [produto, setProduto] = useState(modal.modo === "existente" ? (modal.produto ? "" : PRODUTO_VAZIA) : (modal.produtoInicial ?? ""));
   const [voltagem, setVoltagem] = useState("");
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
@@ -201,16 +207,17 @@ function FormularioContagem({
    * em branco não começa gritando "obrigatório" em tudo de uma vez. */
   const mostrar = useCallback((campo: string, erroCampo: string | null) => (tentouSalvar || tocados.has(campo) ? erroCampo : null), [tentouSalvar, tocados]);
 
+  const erroRua = modal.modo === "nova" ? (!ruaAtual ? "Informe a rua (letra)." : !/^[A-Z]+$/.test(ruaAtual) ? "Rua é só a letra (ex.: F)." : null) : null;
   const erroCodigoFormato = modal.modo === "nova" ? validarCodigo(codigo) : null;
   const erroCodigoDuplicado =
-    modal.modo === "nova" && !erroCodigoFormato && modal.codigosExistentes.includes(codigo.trim()) ? "Essa posição já existe nessa rua." : null;
-  const erroCodigo = erroCodigoFormato ?? erroCodigoDuplicado;
+    modal.modo === "nova" && !erroCodigoFormato && codigosExistentes.includes(codigo.trim()) ? "Essa longarina já existe nessa rua." : null;
+  const erroCodigo = erroRua ?? erroCodigoFormato ?? erroCodigoDuplicado;
   const vazia = definirProduto && produto === PRODUTO_VAZIA;
   const erroProduto = definirProduto ? validarProduto(produto) : null;
   const erroVoltagem = definirProduto && !vazia ? validarVoltagem(voltagem) : null;
   const erroQuantidade =
     validarQuantidade(quantidade) ??
-    (vazia && Number(quantidade) > 0 ? "Posição vazia fica com 0 un. — pra contar unidades, escolha o produto." : null);
+    (vazia && Number(quantidade) > 0 ? "Longarina vazia fica com 0 un. — pra contar unidades, escolha o produto." : null);
   const erroResponsavel = validarResponsavel(responsavel);
   const erroFoto = validarFoto(fotoPreview);
   const formularioInvalido = Boolean(erroCodigo || erroProduto || erroVoltagem || erroQuantidade || erroResponsavel || erroFoto);
@@ -272,7 +279,7 @@ function FormularioContagem({
     setSalvando(true);
     setErro(null);
     try {
-      const resposta = await fetch(`${API_URL}/api/estoque/${encodeURIComponent(modal.rua)}/${encodeURIComponent(codigoFinal)}`, {
+      const resposta = await fetch(`${API_URL}/api/estoque/${encodeURIComponent(ruaAtual)}/${encodeURIComponent(codigoFinal)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -286,24 +293,24 @@ function FormularioContagem({
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui salvar a contagem.");
 
       salvarUltimoResponsavel(responsavel.trim());
-      onSalvo(modal.rua, codigoFinal);
+      onSalvo(ruaAtual, codigoFinal);
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Não consegui salvar a contagem.");
     } finally {
       setSalvando(false);
     }
-  }, [codigo, definirProduto, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, vazia, voltagem]);
+  }, [codigo, ruaAtual, definirProduto, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, vazia, voltagem]);
 
   const excluirPosicao = useCallback(async () => {
     if (modal.modo !== "existente") return;
-    if (!window.confirm(`Excluir a posição ${modal.codigo} da Rua ${modal.rua}? Ela some da tela (o histórico fica guardado no arquivo de excluídos).`)) return;
+    if (!window.confirm(`Excluir a longarina ${modal.codigo} da Rua ${modal.rua}? Ela some da tela (o histórico fica guardado no arquivo de excluídos).`)) return;
     setErro(null);
     try {
       const resposta = await fetch(`${API_URL}/api/estoque/posicao/${encodeURIComponent(modal.rua)}/${encodeURIComponent(modal.codigo)}`, { method: "DELETE" });
-      if (!resposta.ok) throw new Error((await resposta.json().catch(() => ({}))).error ?? "Não consegui excluir a posição.");
+      if (!resposta.ok) throw new Error((await resposta.json().catch(() => ({}))).error ?? "Não consegui excluir a longarina.");
       onExcluida(modal.rua, modal.codigo);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui excluir a posição.");
+      setErro(error instanceof Error ? error.message : "Não consegui excluir a longarina.");
     }
   }, [modal, onExcluida]);
 
@@ -355,28 +362,52 @@ function FormularioContagem({
             ×
           </button>
           <h2 className="settings-title">
-            Rua {modal.rua}
-            {modal.modo === "existente" ? ` · ${modal.codigo}` : " · nova posição"}
+            Rua {ruaAtual || "?"}
+            {modal.modo === "existente" ? ` · ${modal.codigo}` : " · nova longarina"}
           </h2>
         </div>
 
         <div className="settings-panel-body">
           {modal.modo === "nova" && (
-            <label className="field">
-              <span className="field-label">
-                Código da posição <span className="field-obrigatorio">*</span>
-              </span>
-              <input
-                ref={codigoRef}
-                className={`field-input${mostrar("codigo", erroCodigo) ? " field-input--erro" : ""}`}
-                value={codigo}
-                onChange={(event) => setCodigo(event.target.value.toUpperCase().replace(/\s+/g, ""))}
-                onBlur={() => tocar("codigo")}
-                placeholder="Ex.: H2"
-                autoFocus
-              />
-              {mostrar("codigo", erroCodigo) && <span className="field-erro">{mostrar("codigo", erroCodigo)}</span>}
-            </label>
+            <div className="estoque-rua-longarina">
+              <label className="field">
+                <span className="field-label">
+                  Rua <span className="field-obrigatorio">*</span>
+                </span>
+                <input
+                  className={`field-input${mostrar("codigo", erroRua) ? " field-input--erro" : ""}`}
+                  list="estoque-ruas-existentes"
+                  value={ruaNova}
+                  onChange={(event) => {
+                    const rua = event.target.value.toUpperCase().replace(/[^A-Z]/g, "");
+                    setRuaNova(rua);
+                    // Enquanto a pessoa não mexeu no código, ele acompanha a rua (F → próxima longarina livre da F).
+                    if (!tocados.has("codigo") && rua) setCodigo(proximoCodigoSugerido(rua, modal.codigosPorRua[rua] ?? []));
+                  }}
+                  placeholder="Ex.: F"
+                  autoFocus
+                />
+                <datalist id="estoque-ruas-existentes">
+                  {modal.ruasExistentes.map((r) => (
+                    <option key={r} value={r} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="field">
+                <span className="field-label">
+                  Longarina (etiqueta na viga) <span className="field-obrigatorio">*</span>
+                </span>
+                <input
+                  ref={codigoRef}
+                  className={`field-input${mostrar("codigo", erroCodigo) ? " field-input--erro" : ""}`}
+                  value={codigo}
+                  onChange={(event) => setCodigo(event.target.value.toUpperCase().replace(/\s+/g, ""))}
+                  onBlur={() => tocar("codigo")}
+                  placeholder="Ex.: F3"
+                />
+              </label>
+              {mostrar("codigo", erroCodigo) && <span className="field-erro estoque-rua-longarina-erro">{mostrar("codigo", erroCodigo)}</span>}
+            </div>
           )}
 
           {definirProduto ? (
@@ -399,7 +430,7 @@ function FormularioContagem({
                   onBlur={() => tocar("produto")}
                 >
                   <option value="">Selecione…</option>
-                  <option value={PRODUTO_VAZIA}>Posição vazia (sem produto)</option>
+                  <option value={PRODUTO_VAZIA}>Longarina vazia (sem produto)</option>
                   {produtos.map((item) => (
                     <option key={item} value={item}>
                       {item}
@@ -413,7 +444,7 @@ function FormularioContagem({
               </label>
               {vazia ? (
                 <p className="field-value--muted estoque-vazia-nota">
-                  Registra a posição com 0 un., sem produto nem voltagem. Quando chegar mercadoria, é só recontar escolhendo o produto.
+                  Registra a longarina com 0 un., sem produto nem voltagem. Quando chegar mercadoria, é só recontar escolhendo o produto.
                 </p>
               ) : (
                 <label className="field">
@@ -489,7 +520,7 @@ function FormularioContagem({
             <span className="field-label">
               Foto desta contagem <span className="field-obrigatorio">*</span>
             </span>
-            <span className="estoque-codigo-destaque">Posição {codigoEmDestaque}</span>
+            <span className="estoque-codigo-destaque">Longarina {codigoEmDestaque}</span>
             {fotoPreview ? (
               <img className="estoque-foto-preview" src={fotoPreview} alt="Foto tirada agora" />
             ) : fotoAnteriorUrl ? (
@@ -591,7 +622,7 @@ function FormularioContagem({
           </button>
           {modal.modo === "existente" && (
             <button type="button" className="btn-perigo-texto" onClick={() => void excluirPosicao()} disabled={salvando}>
-              Excluir posição {modal.codigo}
+              Excluir longarina {modal.codigo}
             </button>
           )}
         </div>
@@ -600,132 +631,15 @@ function FormularioContagem({
   );
 }
 
-type EstadoPosicao = "vazia" | "baixo" | "ocupada";
-
-/**
- * Ainda não existe regra de negócio pra "estoque baixo" (nem por produto, nem global) — com null o
- * estado fica desligado e o card de resumo mostra "—". Pra ativar, troque por um número de unidades
- * (ex.: 10): posições com 1..N un. passam a aparecer em amarelo e contam no resumo.
- */
-const LIMITE_ESTOQUE_BAIXO = null as number | null;
-
-const ESTADO_LABEL: Record<EstadoPosicao, string> = {
-  vazia: "Vazia",
-  baixo: "Estoque baixo",
-  ocupada: "Ocupada",
-};
-
-function estadoDaPosicao(posicao: PosicaoResumo): EstadoPosicao {
-  const quantidade = posicao.ultima.quantidade;
-  if (quantidade <= 0) return "vazia";
-  if (LIMITE_ESTOQUE_BAIXO !== null && quantidade <= LIMITE_ESTOQUE_BAIXO) return "baixo";
-  return "ocupada";
-}
-
-function normalizar(texto: string): string {
-  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-}
-
-/** Aba especial "Todas" — mostra as posições de todas as ruas (é pra onde a tela vai quando um filtro é aplicado). */
-const TODAS = "*";
-const VISAO_STORAGE_KEY = "estoque:visao";
-
-type Visao = "grade" | "tabela";
-type ColunaTabela = "rua" | "codigo" | "produto" | "voltagem" | "quantidade" | "estado" | "responsavel" | "criadoEm";
-
-const COLUNAS_TABELA: { coluna: ColunaTabela; label: string; numerica?: boolean }[] = [
-  { coluna: "rua", label: "Rua" },
-  { coluna: "codigo", label: "Posição" },
-  { coluna: "produto", label: "Produto" },
-  { coluna: "voltagem", label: "Voltagem" },
-  { coluna: "quantidade", label: "Quantidade", numerica: true },
-  { coluna: "estado", label: "Estado" },
-  { coluna: "responsavel", label: "Contado por" },
-  { coluna: "criadoEm", label: "Atualizado em" },
-];
-
-function valorColuna(posicao: PosicaoResumo, coluna: ColunaTabela): string | number {
-  switch (coluna) {
-    case "rua":
-      return posicao.rua;
-    case "codigo":
-      return posicao.codigo;
-    case "produto":
-      return posicao.produto ?? "";
-    case "voltagem":
-      return posicao.voltagem ?? "";
-    case "quantidade":
-      return posicao.ultima.quantidade;
-    case "estado":
-      return ESTADO_LABEL[estadoDaPosicao(posicao)];
-    case "responsavel":
-      return posicao.ultima.responsavel;
-    case "criadoEm":
-      return posicao.ultima.criadoEm;
-  }
-}
-
-function compararPosicoes(a: PosicaoResumo, b: PosicaoResumo, coluna: ColunaTabela): number {
-  const va = valorColuna(a, coluna);
-  const vb = valorColuna(b, coluna);
-  if (typeof va === "number" && typeof vb === "number") return va - vb;
-  // numeric: true → "H2" antes de "H10", como na prateleira.
-  return String(va).localeCompare(String(vb), "pt-BR", { numeric: true, sensitivity: "base" });
-}
-
-function lerVisao(): Visao {
-  try {
-    return localStorage.getItem(VISAO_STORAGE_KEY) === "tabela" ? "tabela" : "grade";
-  } catch {
-    return "grade";
-  }
-}
-
-function IconeGrade({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
-      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
-      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
-      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
-    </svg>
-  );
-}
-
-function IconeTabela({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-      <path d="M4 6h16M4 12h16M4 18h16" />
-    </svg>
-  );
-}
-
-function IconeBusca({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  );
-}
-
-function CardResumo({ rotulo, valor, detalhe, tom }: { rotulo: string; valor: string | number; detalhe: string; tom?: EstadoPosicao | "marca" }) {
-  return (
-    <div className={`resumo-card${tom ? ` resumo-card--${tom}` : ""}`}>
-      <span className="resumo-card-rotulo">{rotulo}</span>
-      <span className="resumo-card-valor tabular">{valor}</span>
-      <span className="resumo-card-detalhe">{detalhe}</span>
-    </div>
-  );
-}
-
 /** Catálogo de produtos — antes um painel no topo da tela, agora um modal aberto pelo "+ Produto" do cabeçalho. */
 function ModalProdutos({
   produtos,
+  info,
   onFechar,
   onAlterado,
 }: {
   produtos: string[];
+  info: Record<string, InfoProduto>;
   onFechar: () => void;
   onAlterado: (produtos: string[]) => void;
 }) {
@@ -762,7 +676,7 @@ function ModalProdutos({
   }, [termoTiny, noCatalogo]);
 
   const adicionarEmLote = useCallback(
-    async (nomes: string[]) => {
+    async (nomes: string[], itens?: { nome: string; idsTiny: string[]; codigos: string[] }[]) => {
       if (nomes.length === 0) return;
       setSalvandoProduto(true);
       setErroProdutos(null);
@@ -770,7 +684,7 @@ function ModalProdutos({
         const resposta = await fetch(`${API_URL}/api/estoque/produtos/lote`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nomes }),
+          body: JSON.stringify({ nomes, itens }),
         });
         const json = await resposta.json();
         if (!resposta.ok) throw new Error(json.error ?? "Não consegui cadastrar os produtos.");
@@ -942,7 +856,12 @@ function ModalProdutos({
                         );
                       })}
                     </ul>
-                    <button className="btn-primario" type="button" disabled={salvandoProduto || selecionados.size === 0} onClick={() => void adicionarEmLote([...selecionados])}>
+                    <button className="btn-primario" type="button" disabled={salvandoProduto || selecionados.size === 0} onClick={() =>
+                        void adicionarEmLote(
+                          [...selecionados],
+                          resultadosTiny.filter((p) => selecionados.has(p.sugestao)).map((p) => ({ nome: p.sugestao, idsTiny: p.idsTiny, codigos: p.codigos })),
+                        )
+                      }>
                       {salvandoProduto ? "Salvando..." : `Adicionar ${selecionados.size} ao catálogo`}
                     </button>
                   </>
@@ -1005,7 +924,14 @@ function ModalProdutos({
             <ul className="estoque-lista-produtos">
               {produtos.map((nome) => (
                 <li key={nome}>
-                  <span>{nome}</span>
+                  <span className="catalogo-item">
+                    {info[chaveDoProduto(nome)]?.fotoUrl ? (
+                      <img className="catalogo-miniatura" src={info[chaveDoProduto(nome)]?.fotoUrl} alt="" loading="lazy" />
+                    ) : (
+                      <span className="catalogo-miniatura catalogo-miniatura--vazia" aria-hidden="true" />
+                    )}
+                    {nome}
+                  </span>
                   <button type="button" className="refresh-btn" onClick={() => void removerProdutoCatalogo(nome)}>
                     Excluir
                   </button>
@@ -1021,29 +947,226 @@ function ModalProdutos({
   );
 }
 
+/**
+ * Ainda não existe regra de negócio pra "estoque baixo" — com null o aviso fica desligado. Pra
+ * ativar, troque por um número de unidades (ex.: 10): produto com 1..N un. no total ganha o selo
+ * "Estoque baixo" no card.
+ */
+const LIMITE_ESTOQUE_BAIXO = null as number | null;
+
+interface InfoProduto {
+  fotoUrl?: string;
+  fotoStatus?: "pendente" | "ok" | "sem-foto" | "nao-encontrado" | "erro";
+}
+
+/** Um produto e todas as longarinas onde ele está. */
+interface GrupoProduto {
+  chave: string;
+  nome: string;
+  noCatalogo: boolean;
+  info?: InfoProduto;
+  total: number;
+  longarinas: PosicaoResumo[];
+  porVoltagem: { voltagem: string; quantidade: number }[];
+  ultimaContagem: string | null;
+}
+
+type Ordem = "nome" | "unidades";
+
+function chaveDoProduto(nome: string): string {
+  return nome.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function normalizar(texto: string): string {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+function ordenarLongarinas(a: PosicaoResumo, b: PosicaoResumo): number {
+  return a.rua.localeCompare(b.rua, "pt-BR") || a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true });
+}
+
+function IconeBusca({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function CardResumo({ rotulo, valor, detalhe, tom }: { rotulo: string; valor: string | number; detalhe: string; tom: string }) {
+  return (
+    <div className={`resumo-card resumo-card--${tom}`}>
+      <span className="resumo-card-rotulo">{rotulo}</span>
+      <span className="resumo-card-valor tabular">{valor}</span>
+      <span className="resumo-card-detalhe">{detalhe}</span>
+    </div>
+  );
+}
+
+/** Foto do produto (Cloudinary). Sem foto, ou se o link falhar, mostra o ícone da estante. */
+function FotoProduto({ info, nome, className }: { info?: InfoProduto; nome: string; className: string }) {
+  const [falhou, setFalhou] = useState(false);
+  if (info?.fotoUrl && !falhou) {
+    return <img className={className} src={info.fotoUrl} alt={nome} loading="lazy" onError={() => setFalhou(true)} />;
+  }
+  return (
+    <div className={`${className} produto-foto--vazia`}>
+      <IconeGondola className="estoque-card-icone" />
+      <span>{info?.fotoStatus === "pendente" ? "Buscando foto…" : "Sem foto"}</span>
+    </div>
+  );
+}
+
+function ModalProduto({
+  grupo,
+  onFechar,
+  onAbrirLongarina,
+  onNovaLongarina,
+}: {
+  grupo: GrupoProduto;
+  onFechar: () => void;
+  onAbrirLongarina: (posicao: PosicaoResumo) => void;
+  onNovaLongarina: (produto: string) => void;
+}) {
+  return (
+    <div className="settings-overlay" onClick={onFechar}>
+      <div className="settings-panel settings-panel--largo" onClick={(event) => event.stopPropagation()}>
+        <div className="settings-panel-header produto-detalhe-cabecalho">
+          <button className="settings-close" onClick={onFechar} aria-label="Fechar">
+            ×
+          </button>
+          <FotoProduto info={grupo.info} nome={grupo.nome} className="produto-detalhe-foto" />
+          <div className="produto-detalhe-texto">
+            <h2 className="settings-title">{grupo.nome}</h2>
+            <p className="produto-detalhe-total tabular">{grupo.total} un.</p>
+            <p className="settings-hint">
+              {grupo.longarinas.length === 0
+                ? "Não está em nenhuma longarina."
+                : `Em ${grupo.longarinas.length} longarina(s)${grupo.porVoltagem.length > 0 ? " · " + grupo.porVoltagem.map((v) => `${v.voltagem}: ${v.quantidade}`).join(" · ") : ""}`}
+            </p>
+          </div>
+        </div>
+        <div className="settings-panel-body">
+          {grupo.longarinas.length > 0 && (
+            <div className="tabela-wrap tabela-wrap--plana">
+              <table className="tabela tabela--clicavel">
+                <thead>
+                  <tr>
+                    <th>Rua</th>
+                    <th>Longarina</th>
+                    <th>Voltagem</th>
+                    <th className="tabela-num">Qtd</th>
+                    <th>Contado por</th>
+                    <th>Atualizado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grupo.longarinas.map((l) => (
+                    <tr
+                      key={`${l.rua}::${l.codigo}`}
+                      tabIndex={0}
+                      onClick={() => onAbrirLongarina(l)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onAbrirLongarina(l);
+                        }
+                      }}
+                      aria-label={`Contar a longarina ${l.codigo}`}
+                    >
+                      <td>{l.rua}</td>
+                      <td>
+                        <strong>{l.codigo}</strong>
+                      </td>
+                      <td>{l.voltagem ?? "—"}</td>
+                      <td className="tabela-num tabular">{l.ultima.quantidade}</td>
+                      <td>{l.ultima.responsavel}</td>
+                      <td className="tabular">{formatarDataHora(l.ultima.criadoEm)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="field-value--muted">Clique numa longarina pra fazer uma nova contagem (com foto) ou corrigir produto/voltagem.</p>
+        </div>
+        <div className="settings-panel-footer">
+          <button type="button" className="btn-primario" onClick={() => onNovaLongarina(grupo.nome)}>
+            + Colocar em outra longarina
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalRuas({ ruas, onFechar, onExcluir }: { ruas: RuaResumo[]; onFechar: () => void; onExcluir: (rua: string) => void }) {
+  return (
+    <div className="settings-overlay" onClick={onFechar}>
+      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="settings-panel-header">
+          <button className="settings-close" onClick={onFechar} aria-label="Fechar">
+            ×
+          </button>
+          <h2 className="settings-title">Ruas</h2>
+          <p className="settings-hint">Uma rua aparece aqui assim que tem pelo menos uma longarina registrada. Pra criar uma rua nova, é só usar "+ Longarina" com a letra nova.</p>
+        </div>
+        <div className="settings-panel-body">
+          {ruas.length === 0 ? (
+            <p className="field-value--muted">Nenhuma rua ainda.</p>
+          ) : (
+            <ul className="estoque-lista-produtos">
+              {ruas.map((r) => (
+                <li key={r.rua}>
+                  <span>
+                    <strong>Rua {r.rua}</strong>
+                    <span className="field-value--muted">
+                      {" "}
+                      · {r.posicoes.length} longarina(s) · {r.posicoes.reduce((s, p) => s + p.ultima.quantidade, 0)} un.
+                    </span>
+                  </span>
+                  <button type="button" className="btn-perigo-texto" onClick={() => onExcluir(r.rua)}>
+                    Excluir
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Estoque() {
   const [ruas, setRuas] = useState<RuaResumo[]>([]);
-  const [ruasExtras, setRuasExtras] = useState<string[]>([]); // ruas criadas na hora, ainda sem nenhuma posição salva
-  const [ruaAtiva, setRuaAtiva] = useState<string | null>(null);
-  const [adicionandoRua, setAdicionandoRua] = useState(false);
-  const [nomeNovaRua, setNomeNovaRua] = useState("");
+  const [produtos, setProdutos] = useState<string[]>([]);
+  const [info, setInfo] = useState<Record<string, InfoProduto>>({});
   const [modal, setModal] = useState<Modal>(null);
   const [carregou, setCarregou] = useState(false);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [cardDestacado, setCardDestacado] = useState<string | null>(null);
 
-  const [produtos, setProdutos] = useState<string[]>([]);
   const [mostrarModalProdutos, setMostrarModalProdutos] = useState(false);
+  const [mostrarRuas, setMostrarRuas] = useState(false);
+  const [produtoAberto, setProdutoAberto] = useState<string | null>(null);
 
-  // Filtro/relatório: aplicar qualquer filtro leva a tela pra aba "Todas" (posições de TODAS as
-  // ruas que combinam), como sempre foi; daí dá pra clicar numa rua pra restringir.
   const [busca, setBusca] = useState("");
-  const [filtroProduto, setFiltroProduto] = useState("");
   const [filtroVoltagem, setFiltroVoltagem] = useState("");
+  const [ordem, setOrdem] = useState<Ordem>("nome");
+  const [soComEstoque, setSoComEstoque] = useState(false);
 
-  const [visao, setVisao] = useState<Visao>(lerVisao);
-  const [ordenacao, setOrdenacao] = useState<{ coluna: ColunaTabela; crescente: boolean }>({ coluna: "codigo", crescente: true });
+  // Excluir rua: confirmação digitando o nome da rua (apaga todas as longarinas dela de uma vez).
+  const [excluindoRua, setExcluindoRua] = useState<string | null>(null);
+  const [confirmacaoRua, setConfirmacaoRua] = useState("");
+  const [erroExcluirRua, setErroExcluirRua] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+
+  const mostrarToast = useCallback((texto: string) => {
+    setToast(texto);
+    setTimeout(() => setToast(null), TOAST_MS);
+  }, []);
 
   const carregar = useCallback(async () => {
     try {
@@ -1052,7 +1175,6 @@ export function Estoque() {
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui carregar o estoque.");
       setRuas(json.ruas ?? []);
       setErroCarregamento(null);
-      setRuaAtiva((atual) => atual ?? json.ruas?.[0]?.rua ?? null);
     } catch (error) {
       setErroCarregamento(error instanceof Error ? error.message : "Não consegui carregar o estoque.");
     } finally {
@@ -1064,137 +1186,140 @@ export function Estoque() {
     try {
       const resposta = await fetch(`${API_URL}/api/estoque/produtos`, { cache: "no-store" });
       const json = await resposta.json();
-      if (resposta.ok) setProdutos(json.produtos ?? []);
+      if (resposta.ok) {
+        setProdutos(json.produtos ?? []);
+        setInfo(json.info ?? {});
+      }
     } catch {
-      // Catálogo é só pra tela de configuração/criação de posição — uma falha aqui não trava o resto.
+      // Catálogo/fotos não travam a tela — os cards aparecem a partir das longarinas mesmo assim.
     }
   }, []);
 
   useEffect(() => {
-    const kickoff = setTimeout(() => void carregar(), 0);
-    const id = setInterval(() => void carregar(), POLL_MS);
+    const kickoff = setTimeout(() => {
+      void carregar();
+      void carregarProdutos();
+    }, 0);
+    const id = setInterval(() => {
+      void carregar();
+      void carregarProdutos(); // as fotos chegam aos poucos, em segundo plano
+    }, POLL_MS);
     return () => {
       clearTimeout(kickoff);
       clearInterval(id);
     };
-  }, [carregar]);
+  }, [carregar, carregarProdutos]);
 
-  useEffect(() => {
-    const kickoff = setTimeout(() => void carregarProdutos(), 0);
-    return () => clearTimeout(kickoff);
-  }, [carregarProdutos]);
+  const todasAsLongarinas = useMemo(() => ruas.flatMap((r) => r.posicoes), [ruas]);
+  const longarinasVazias = todasAsLongarinas.filter((p) => !p.produto).sort(ordenarLongarinas);
 
-  const todasAsRuas = [...ruas.map((r) => r.rua), ...ruasExtras.filter((rua) => !ruas.some((r) => r.rua === rua))];
-  const todasAsPosicoes = ruas.flatMap((r) => r.posicoes);
-  const posicoesDaRuaAtiva = ruas.find((r) => r.rua === ruaAtiva)?.posicoes ?? [];
-
-  const termoBusca = normalizar(busca.trim());
-  const filtroAtivo = termoBusca !== "" || filtroProduto !== "" || filtroVoltagem !== "";
-  const combinaComFiltro = (p: PosicaoResumo) =>
-    (!filtroProduto || p.produto === filtroProduto) &&
-    (!filtroVoltagem || p.voltagem === filtroVoltagem) &&
-    (!termoBusca ||
-      [p.codigo, `${p.rua}${p.codigo}`, p.produto ?? "", p.voltagem ?? "", p.ultima.responsavel].some((campo) => normalizar(campo).includes(termoBusca)));
-  const posicoesFiltradas = todasAsPosicoes.filter(combinaComFiltro);
-
-  const emTodas = ruaAtiva === TODAS;
-  const posicoesExibidas = (emTodas ? posicoesFiltradas : posicoesDaRuaAtiva.filter(combinaComFiltro))
-    .slice()
-    .sort((a, b) => {
-      if (visao === "tabela") {
-        const r = compararPosicoes(a, b, ordenacao.coluna);
-        return ordenacao.crescente ? r : -r;
+  const grupos = useMemo<GrupoProduto[]>(() => {
+    const mapa = new Map<string, GrupoProduto>();
+    const garantir = (nome: string, noCatalogo: boolean) => {
+      const chave = chaveDoProduto(nome);
+      const existente = mapa.get(chave);
+      if (existente) {
+        if (noCatalogo) existente.noCatalogo = true;
+        return existente;
       }
-      return compararPosicoes(a, b, "rua") || compararPosicoes(a, b, "codigo");
-    });
-  const totalUnidadesExibidas = posicoesExibidas.reduce((soma, p) => soma + p.ultima.quantidade, 0);
-
-  const contagemPorEstado = todasAsPosicoes.reduce<Record<EstadoPosicao, number>>(
-    (acc, p) => {
-      acc[estadoDaPosicao(p)] += 1;
-      return acc;
-    },
-    { vazia: 0, baixo: 0, ocupada: 0 },
-  );
-  const totalUnidades = todasAsPosicoes.reduce((soma, p) => soma + p.ultima.quantidade, 0);
-
-  /** Sair de "sem filtro" pra "com filtro" leva pra aba "Todas" — o filtro é um relatório do galpão
-   * inteiro. Depois disso, quem clicar numa rua continua nela enquanto refina o filtro. */
-  const aoFiltrar = (aplicar: () => void, novoValor: string) => {
-    aplicar();
-    if (novoValor && !filtroAtivo) setRuaAtiva(TODAS);
-  };
-
-  const limparFiltros = useCallback(() => {
-    setBusca("");
-    setFiltroProduto("");
-    setFiltroVoltagem("");
-  }, []);
-
-  const trocarVisao = useCallback((nova: Visao) => {
-    setVisao(nova);
-    try {
-      localStorage.setItem(VISAO_STORAGE_KEY, nova);
-    } catch {
-      // localStorage bloqueado — só não lembra a preferência.
+      const novo: GrupoProduto = { chave, nome, noCatalogo, info: info[chave], total: 0, longarinas: [], porVoltagem: [], ultimaContagem: null };
+      mapa.set(chave, novo);
+      return novo;
+    };
+    for (const nome of produtos) garantir(nome, true);
+    for (const p of todasAsLongarinas) {
+      if (!p.produto) continue;
+      const grupo = garantir(p.produto, false);
+      grupo.longarinas.push(p);
+      grupo.total += p.ultima.quantidade;
+      if (!grupo.ultimaContagem || p.ultima.criadoEm > grupo.ultimaContagem) grupo.ultimaContagem = p.ultima.criadoEm;
     }
+    for (const grupo of mapa.values()) {
+      grupo.longarinas.sort(ordenarLongarinas);
+      const porVoltagem = new Map<string, number>();
+      for (const l of grupo.longarinas) if (l.voltagem) porVoltagem.set(l.voltagem, (porVoltagem.get(l.voltagem) ?? 0) + l.ultima.quantidade);
+      grupo.porVoltagem = [...porVoltagem.entries()].map(([voltagem, quantidade]) => ({ voltagem, quantidade }));
+    }
+    return [...mapa.values()];
+  }, [produtos, todasAsLongarinas, info]);
+
+  const termo = normalizar(busca.trim());
+  const gruposExibidos = grupos
+    .filter((g) => !soComEstoque || g.total > 0)
+    .filter((g) => !filtroVoltagem || g.longarinas.some((l) => l.voltagem === filtroVoltagem))
+    .filter(
+      (g) =>
+        !termo ||
+        normalizar(g.nome).includes(termo) ||
+        g.longarinas.some((l) => normalizar(`${l.codigo} rua ${l.rua} ${l.rua}${l.codigo}`).includes(termo)),
+    )
+    .sort((a, b) => (ordem === "unidades" ? b.total - a.total : 0) || a.nome.localeCompare(b.nome, "pt-BR"));
+
+  const totalUnidades = todasAsLongarinas.reduce((s, p) => s + p.ultima.quantidade, 0);
+  const ocupadas = todasAsLongarinas.filter((p) => p.ultima.quantidade > 0).length;
+  const semFoto = grupos.filter((g) => g.noCatalogo && !g.info?.fotoUrl).length;
+  const buscandoFotos = grupos.some((g) => g.info?.fotoStatus === "pendente");
+  const grupoAberto = produtoAberto ? grupos.find((g) => g.chave === produtoAberto) ?? null : null;
+
+  const codigosPorRua = useMemo(() => Object.fromEntries(ruas.map((r) => [r.rua, r.posicoes.map((p) => p.codigo)])), [ruas]);
+
+  const abrirNovaLongarina = useCallback(
+    (produtoInicial?: string) => {
+      setProdutoAberto(null);
+      setModal({ modo: "nova", ruasExistentes: ruas.map((r) => r.rua), codigosPorRua, produtoInicial });
+    },
+    [ruas, codigosPorRua],
+  );
+
+  const abrirLongarina = useCallback((p: PosicaoResumo) => {
+    setProdutoAberto(null);
+    setModal({ modo: "existente", rua: p.rua, codigo: p.codigo, ultima: p.ultima, produto: p.produto, voltagem: p.voltagem });
   }, []);
 
-  const ordenarPor = useCallback((coluna: ColunaTabela) => {
-    setOrdenacao((atual) => (atual.coluna === coluna ? { coluna, crescente: !atual.crescente } : { coluna, crescente: true }));
-  }, []);
-
-  const confirmarNovaRua = useCallback(() => {
-    const nome = nomeNovaRua.trim().toUpperCase();
-    if (!nome) return;
-    setRuasExtras((atuais) => (atuais.includes(nome) ? atuais : [...atuais, nome]));
-    setRuaAtiva(nome);
-    setNomeNovaRua("");
-    setAdicionandoRua(false);
-  }, [nomeNovaRua]);
-
-  const aoSalvar = useCallback((rua: string, codigo: string) => {
-    setModal(null);
-    void carregar();
-    setToast(`Posição ${codigo} salva`);
-    setCardDestacado(`${rua}::${codigo}`);
-    setTimeout(() => setToast(null), TOAST_MS);
-    setTimeout(() => setCardDestacado(null), TOAST_MS);
-  }, [carregar]);
-
-  const aoExcluirPosicao = useCallback(
+  const aoSalvar = useCallback(
     (_rua: string, codigo: string) => {
       setModal(null);
       void carregar();
-      setToast(`Posição ${codigo} excluída`);
-      setTimeout(() => setToast(null), TOAST_MS);
+      mostrarToast(`Longarina ${codigo} salva`);
     },
-    [carregar],
+    [carregar, mostrarToast],
   );
 
-  // Excluir rua: confirmação digitando o nome da rua (apaga todas as posições dela de uma vez).
-  const [excluindoRua, setExcluindoRua] = useState<string | null>(null);
-  const [confirmacaoRua, setConfirmacaoRua] = useState("");
-  const [erroExcluirRua, setErroExcluirRua] = useState<string | null>(null);
-  const [excluindo, setExcluindo] = useState(false);
+  const aoSalvarMetadados = useCallback(() => {
+    setModal(null);
+    void carregar();
+  }, [carregar]);
+
+  const aoExcluirLongarina = useCallback(
+    (_rua: string, codigo: string) => {
+      setModal(null);
+      void carregar();
+      mostrarToast(`Longarina ${codigo} excluída`);
+    },
+    [carregar, mostrarToast],
+  );
+
+  const buscarFotos = useCallback(async () => {
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos/fotos/buscar`, { method: "POST" });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "falhou");
+      mostrarToast(json.pendentes > 0 ? `Buscando ${json.pendentes} foto(s) no Tiny — aparecem aos poucos` : "Todos os produtos já têm foto");
+      void carregarProdutos();
+    } catch {
+      mostrarToast("Não consegui pedir as fotos agora");
+    }
+  }, [carregarProdutos, mostrarToast]);
 
   const confirmarExclusaoRua = useCallback(async () => {
     if (!excluindoRua) return;
     setExcluindo(true);
     setErroExcluirRua(null);
     try {
-      const temPosicoes = ruas.some((r) => r.rua === excluindoRua && r.posicoes.length > 0);
-      let posicoes = 0;
-      if (temPosicoes) {
-        const resposta = await fetch(`${API_URL}/api/estoque/rua/${encodeURIComponent(excluindoRua)}`, { method: "DELETE" });
-        const json = await resposta.json();
-        if (!resposta.ok) throw new Error(json.error ?? "Não consegui excluir a rua.");
-        posicoes = json.posicoesExcluidas ?? 0;
-      }
-      setRuasExtras((atuais) => atuais.filter((r) => r !== excluindoRua));
-      setRuaAtiva(null); // carregar() abaixo volta pra primeira rua que sobrou
-      setToast(`Rua ${excluindoRua} excluída${posicoes ? ` (${posicoes} posição(ões))` : ""}`);
-      setTimeout(() => setToast(null), TOAST_MS);
+      const resposta = await fetch(`${API_URL}/api/estoque/rua/${encodeURIComponent(excluindoRua)}`, { method: "DELETE" });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui excluir a rua.");
+      mostrarToast(`Rua ${excluindoRua} excluída (${json.posicoesExcluidas ?? 0} longarina(s))`);
       setExcluindoRua(null);
       setConfirmacaoRua("");
       void carregar();
@@ -1203,62 +1328,31 @@ export function Estoque() {
     } finally {
       setExcluindo(false);
     }
-  }, [carregar, excluindoRua, ruas]);
+  }, [carregar, excluindoRua, mostrarToast]);
 
-  const aoSalvarMetadados = useCallback(() => {
-    setModal(null);
-    void carregar();
-  }, [carregar]);
-
-  const abrirPosicao = (posicao: PosicaoResumo) =>
-    setModal({ modo: "existente", rua: posicao.rua, codigo: posicao.codigo, ultima: posicao.ultima, produto: posicao.produto, voltagem: posicao.voltagem });
-
-  const ruaParaNovaPosicao = ruaAtiva && !emTodas ? ruaAtiva : null;
-  const abrirNovaPosicao = () => {
-    if (!ruaParaNovaPosicao) return;
-    setModal({ modo: "nova", rua: ruaParaNovaPosicao, codigosExistentes: posicoesDaRuaAtiva.map((p) => p.codigo) });
-  };
-
-  const contadorDaRua = (rua: string) => {
-    const posicoes = ruas.find((r) => r.rua === rua)?.posicoes ?? [];
-    return filtroAtivo ? posicoes.filter(combinaComFiltro).length : posicoes.length;
-  };
-
-  const semRuas = carregou && todasAsRuas.length === 0;
+  const filtroAtivo = termo !== "" || filtroVoltagem !== "" || soComEstoque;
 
   return (
     <div className="page pagina-formulario">
-      <PageHeader titulo="Estoque" subtitulo="Contagem por rua e posição do galpão">
+      <PageHeader titulo="Estoque" subtitulo="Onde está cada produto no galpão — rua e longarina">
         <button type="button" className="refresh-btn" onClick={() => setMostrarModalProdutos(true)}>
           + Produto
         </button>
-        <button type="button" className="refresh-btn" onClick={() => setAdicionandoRua(true)}>
-          + Nova rua
+        <button type="button" className="refresh-btn" onClick={() => setMostrarRuas(true)}>
+          Ruas
         </button>
-        {ruaParaNovaPosicao && (
-          <button type="button" className="btn-primario" onClick={abrirNovaPosicao}>
-            + Nova posição
-          </button>
-        )}
+        <button type="button" className="btn-primario" onClick={() => abrirNovaLongarina()}>
+          + Longarina
+        </button>
       </PageHeader>
 
       {erroCarregamento && <p className="error-banner">{erroCarregamento}</p>}
 
       <section className="resumo-grid" aria-label="Resumo do estoque">
-        <CardResumo rotulo="Produtos" valor={produtos.length} detalhe="no catálogo" tom="marca" />
-        <CardResumo
-          rotulo="Posições ocupadas"
-          valor={contagemPorEstado.ocupada + contagemPorEstado.baixo}
-          detalhe={`${totalUnidades} un. em ${todasAsRuas.length} rua${todasAsRuas.length === 1 ? "" : "s"}`}
-          tom="ocupada"
-        />
-        <CardResumo rotulo="Posições livres" valor={contagemPorEstado.vazia} detalhe="contadas com 0 un." tom="vazia" />
-        <CardResumo
-          rotulo="Estoque baixo"
-          valor={LIMITE_ESTOQUE_BAIXO === null ? "—" : contagemPorEstado.baixo}
-          detalhe={LIMITE_ESTOQUE_BAIXO === null ? "limite ainda não definido" : `até ${LIMITE_ESTOQUE_BAIXO} un. por posição`}
-          tom="baixo"
-        />
+        <CardResumo rotulo="Produtos" valor={grupos.length} detalhe={`${grupos.filter((g) => g.total > 0).length} com estoque`} tom="marca" />
+        <CardResumo rotulo="Unidades no galpão" valor={totalUnidades} detalhe="soma da última contagem de cada longarina" tom="ocupada" />
+        <CardResumo rotulo="Longarinas ocupadas" valor={ocupadas} detalhe={`de ${todasAsLongarinas.length} registradas em ${ruas.length} rua(s)`} tom="vazia" />
+        <CardResumo rotulo="Longarinas vazias" valor={longarinasVazias.length} detalhe="sem produto" tom="baixo" />
       </section>
 
       <div className="filtro-barra" role="search">
@@ -1267,31 +1361,13 @@ export function Estoque() {
           <input
             className="field-input"
             type="search"
-            aria-label="Buscar posição"
+            aria-label="Buscar produto ou longarina"
             value={busca}
-            onChange={(event) => aoFiltrar(() => setBusca(event.target.value), event.target.value.trim())}
-            placeholder="Buscar por posição, produto ou responsável"
+            onChange={(event) => setBusca(event.target.value)}
+            placeholder="Buscar produto, rua ou longarina (ex.: F3)"
           />
         </label>
-        <select
-          className="field-input"
-          aria-label="Filtrar por produto"
-          value={filtroProduto}
-          onChange={(event) => aoFiltrar(() => setFiltroProduto(event.target.value), event.target.value)}
-        >
-          <option value="">Todos os produtos</option>
-          {produtos.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <select
-          className="field-input"
-          aria-label="Filtrar por voltagem"
-          value={filtroVoltagem}
-          onChange={(event) => aoFiltrar(() => setFiltroVoltagem(event.target.value), event.target.value)}
-        >
+        <select className="field-input" aria-label="Filtrar por voltagem" value={filtroVoltagem} onChange={(event) => setFiltroVoltagem(event.target.value)}>
           <option value="">Todas as voltagens</option>
           {VOLTAGENS.map((item) => (
             <option key={item} value={item}>
@@ -1299,100 +1375,117 @@ export function Estoque() {
             </option>
           ))}
         </select>
-        {filtroAtivo && (
-          <button type="button" className="refresh-btn" onClick={limparFiltros}>
-            Limpar filtros
+        <select className="field-input" aria-label="Ordenar" value={ordem} onChange={(event) => setOrdem(event.target.value as Ordem)}>
+          <option value="nome">Ordem: nome</option>
+          <option value="unidades">Ordem: mais unidades</option>
+        </select>
+        <label className="filtro-check">
+          <input type="checkbox" checked={soComEstoque} onChange={(event) => setSoComEstoque(event.target.checked)} />
+          Só com estoque
+        </label>
+        {semFoto > 0 && (
+          <button type="button" className="refresh-btn filtro-acao" onClick={() => void buscarFotos()} disabled={buscandoFotos}>
+            {buscandoFotos ? "Buscando fotos…" : `Buscar fotos no Tiny (${semFoto})`}
           </button>
         )}
-        <div className="alternar-visao" role="group" aria-label="Modo de exibição">
-          <button
-            type="button"
-            className={`alternar-visao-btn${visao === "grade" ? " alternar-visao-btn--ativo" : ""}`}
-            aria-pressed={visao === "grade"}
-            onClick={() => trocarVisao("grade")}
-            title="Visão em grade"
-          >
-            <IconeGrade className="btn-icone" />
-            <span>Grade</span>
-          </button>
-          <button
-            type="button"
-            className={`alternar-visao-btn${visao === "tabela" ? " alternar-visao-btn--ativo" : ""}`}
-            aria-pressed={visao === "tabela"}
-            onClick={() => trocarVisao("tabela")}
-            title="Visão em tabela"
-          >
-            <IconeTabela className="btn-icone" />
-            <span>Tabela</span>
-          </button>
-        </div>
       </div>
 
-      {(todasAsRuas.length > 0 || adicionandoRua) && (
-        <div className="ruas-barra">
-          <div className="ruas-abas" role="tablist" aria-label="Ruas">
-            {todasAsRuas.length > 1 || filtroAtivo || emTodas ? (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={emTodas}
-                className={`ruas-aba${emTodas ? " ruas-aba--ativa" : ""}`}
-                onClick={() => setRuaAtiva(TODAS)}
-              >
-                Todas
-                <span className="ruas-aba-contador tabular">{filtroAtivo ? posicoesFiltradas.length : todasAsPosicoes.length}</span>
-              </button>
-            ) : null}
-            {todasAsRuas.map((rua) => (
-              <button
-                key={rua}
-                type="button"
-                role="tab"
-                aria-selected={rua === ruaAtiva}
-                className={`ruas-aba${rua === ruaAtiva ? " ruas-aba--ativa" : ""}`}
-                onClick={() => setRuaAtiva(rua)}
-              >
-                Rua {rua}
-                <span className="ruas-aba-contador tabular">{contadorDaRua(rua)}</span>
-              </button>
-            ))}
-          </div>
-          {adicionandoRua && (
-            <span className="estoque-nova-rua">
-              <input
-                className="field-input"
-                autoFocus
-                aria-label="Nova rua"
-                value={nomeNovaRua}
-                onChange={(event) => setNomeNovaRua(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") confirmarNovaRua();
-                  if (event.key === "Escape") setAdicionandoRua(false);
-                }}
-                placeholder="Nova rua (ex.: D)"
-              />
-              <button type="button" className="btn-primario" onClick={confirmarNovaRua} disabled={!nomeNovaRua.trim()}>
-                Criar
-              </button>
-              <button type="button" className="refresh-btn" onClick={() => setAdicionandoRua(false)}>
-                Cancelar
-              </button>
-            </span>
-          )}
-          {ruaAtiva && !emTodas && !adicionandoRua && (
+      {!carregou ? (
+        <p className="nota-info">Carregando estoque…</p>
+      ) : grupos.length === 0 ? (
+        <div className="estado-vazio">
+          <IconeGondola className="estado-vazio-icone" />
+          <p className="estado-vazio-titulo">Nenhum produto cadastrado ainda.</p>
+          <p className="field-value--muted">Comece trazendo os produtos do Tiny (já com foto) — depois é só dizer em que longarina cada um está.</p>
+          <button type="button" className="btn-primario" onClick={() => setMostrarModalProdutos(true)}>
+            + Adicionar produtos
+          </button>
+        </div>
+      ) : gruposExibidos.length === 0 ? (
+        <div className="estado-vazio estado-vazio--compacto">
+          <p className="estado-vazio-titulo">Nenhum produto com esses filtros.</p>
+          {filtroAtivo && (
             <button
               type="button"
-              className="btn-perigo-texto ruas-excluir"
+              className="refresh-btn"
               onClick={() => {
-                setExcluindoRua(ruaAtiva);
-                setConfirmacaoRua("");
-                setErroExcluirRua(null);
+                setBusca("");
+                setFiltroVoltagem("");
+                setSoComEstoque(false);
               }}
             >
-              Excluir Rua {ruaAtiva}
+              Limpar filtros
             </button>
           )}
         </div>
+      ) : (
+        <div className="produtos-grid">
+          {gruposExibidos.map((g) => {
+            const baixo = LIMITE_ESTOQUE_BAIXO !== null && g.total > 0 && g.total <= LIMITE_ESTOQUE_BAIXO;
+            return (
+              <button key={g.chave} type="button" className={`produto-card${g.total === 0 ? " produto-card--sem-estoque" : ""}`} onClick={() => setProdutoAberto(g.chave)}>
+                <FotoProduto info={g.info} nome={g.nome} className="produto-card-foto" />
+                <span className="produto-card-corpo">
+                  <span className="produto-card-nome">{g.nome}</span>
+                  <span className="produto-card-linha">
+                    <span className="produto-card-total tabular">{g.total} un.</span>
+                    {g.total === 0 ? (
+                      <span className="estado-chip estado-chip--vazia">Sem estoque</span>
+                    ) : baixo ? (
+                      <span className="estado-chip estado-chip--baixo">Estoque baixo</span>
+                    ) : null}
+                  </span>
+                  {g.porVoltagem.length > 0 && (
+                    <span className="produto-card-meta">{g.porVoltagem.map((v) => `${v.voltagem}: ${v.quantidade}`).join(" · ")}</span>
+                  )}
+                  {g.longarinas.length === 0 ? (
+                    <span className="produto-card-meta">Não está em nenhuma longarina</span>
+                  ) : (
+                    <span className="produto-card-locais" aria-label="Onde está">
+                      {g.longarinas.slice(0, 4).map((l) => (
+                        <span key={`${l.rua}::${l.codigo}`} className="local-chip" title={`Rua ${l.rua} · longarina ${l.codigo} · ${l.ultima.quantidade} un.`}>
+                          {l.codigo}
+                          <span className="local-chip-qtd tabular">{l.ultima.quantidade}</span>
+                        </span>
+                      ))}
+                      {g.longarinas.length > 4 && <span className="local-chip local-chip--mais">+{g.longarinas.length - 4}</span>}
+                    </span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {longarinasVazias.length > 0 && (
+        <section className="painel-card">
+          <h2 className="painel-card-titulo">Longarinas vazias ({longarinasVazias.length})</h2>
+          <div className="produto-card-locais">
+            {longarinasVazias.map((l) => (
+              <button key={`${l.rua}::${l.codigo}`} type="button" className="local-chip local-chip--botao" onClick={() => abrirLongarina(l)} title={`Rua ${l.rua} · contar / colocar produto`}>
+                {l.codigo}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {grupoAberto && (
+        <ModalProduto grupo={grupoAberto} onFechar={() => setProdutoAberto(null)} onAbrirLongarina={abrirLongarina} onNovaLongarina={abrirNovaLongarina} />
+      )}
+
+      {mostrarRuas && (
+        <ModalRuas
+          ruas={ruas}
+          onFechar={() => setMostrarRuas(false)}
+          onExcluir={(rua) => {
+            setMostrarRuas(false);
+            setExcluindoRua(rua);
+            setConfirmacaoRua("");
+            setErroExcluirRua(null);
+          }}
+        />
       )}
 
       {excluindoRua && (
@@ -1405,17 +1498,10 @@ export function Estoque() {
               <h2 className="settings-title">Excluir Rua {excluindoRua}?</h2>
             </div>
             <div className="settings-panel-body">
-              {(() => {
-                const n = ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0;
-                return n > 0 ? (
-                  <p className="field-value">
-                    As <strong>{n} posição(ões)</strong> dessa rua somem da tela, com o histórico de contagens. Nada é apagado de vez: fica guardado num
-                    arquivo de excluídos e dá pra recuperar se precisar.
-                  </p>
-                ) : (
-                  <p className="field-value">Essa rua ainda não tem nenhuma posição — só some da lista.</p>
-                );
-              })()}
+              <p className="field-value">
+                As <strong>{ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0} longarina(s)</strong> dessa rua somem da tela, com o histórico de
+                contagens. Nada é apagado de vez: fica guardado num arquivo de excluídos e dá pra recuperar se precisar.
+              </p>
               <label className="field">
                 <span className="field-label">
                   Pra confirmar, digite <strong>{excluindoRua}</strong>
@@ -1438,169 +1524,17 @@ export function Estoque() {
         </div>
       )}
 
-      {!carregou && <p className="nota-info">Carregando estoque…</p>}
-
-      {semRuas && !adicionandoRua && (
-        <div className="estado-vazio">
-          <IconeGondola className="estado-vazio-icone" />
-          <p className="estado-vazio-titulo">Nenhuma rua cadastrada ainda.</p>
-          <p className="field-value--muted">Crie a primeira rua pra começar a registrar as posições do galpão — rua e posição são criadas na hora, direto daqui.</p>
-          <button type="button" className="btn-primario" onClick={() => setAdicionandoRua(true)}>
-            + Nova rua
-          </button>
-        </div>
+      {mostrarModalProdutos && (
+        <ModalProdutos
+          produtos={produtos}
+          info={info}
+          onFechar={() => setMostrarModalProdutos(false)}
+          onAlterado={(lista) => {
+            setProdutos(lista);
+            void carregarProdutos();
+          }}
+        />
       )}
-
-      {ruaAtiva && (
-        <>
-          <div className="estoque-legenda">
-            <span className="nota-info">
-              {posicoesExibidas.length} posiç{posicoesExibidas.length === 1 ? "ão" : "ões"} · {totalUnidadesExibidas} un.
-              {emTodas ? " · todas as ruas" : ` · Rua ${ruaAtiva}`}
-            </span>
-            <span className="estoque-legenda-itens" aria-label="Legenda de cores">
-              <span className="estoque-legenda-item estoque-legenda-item--ocupada">Ocupada</span>
-              <span className="estoque-legenda-item estoque-legenda-item--vazia">Vazia</span>
-              {LIMITE_ESTOQUE_BAIXO !== null && <span className="estoque-legenda-item estoque-legenda-item--baixo">Estoque baixo</span>}
-            </span>
-          </div>
-
-          {posicoesExibidas.length === 0 && (filtroAtivo || visao === "tabela" || emTodas) ? (
-            <div className="estado-vazio">
-              {filtroAtivo ? (
-                <>
-                  <p className="estado-vazio-titulo">Nenhuma posição encontrada com esses filtros.</p>
-                  <button type="button" className="refresh-btn" onClick={limparFiltros}>
-                    Limpar filtros
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="estado-vazio-titulo">Nenhuma posição cadastrada {emTodas ? "ainda" : `na Rua ${ruaAtiva}`}.</p>
-                  {ruaParaNovaPosicao && (
-                    <button type="button" className="btn-primario" onClick={abrirNovaPosicao}>
-                      + Nova posição
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          ) : visao === "grade" ? (
-            <div className="estoque-grid">
-              {posicoesExibidas.map((posicao) => {
-                const url = posicao.ultima.fotoUrl;
-                const destacado = cardDestacado === `${posicao.rua}::${posicao.codigo}`;
-                const estado = estadoDaPosicao(posicao);
-                return (
-                  <button
-                    key={`${posicao.rua}::${posicao.codigo}`}
-                    className={`estoque-card estoque-card--${estado}${destacado ? " estoque-card--destacado" : ""}`}
-                    onClick={() => abrirPosicao(posicao)}
-                  >
-                    {url ? (
-                      <img
-                        className="estoque-card-foto"
-                        src={url}
-                        alt={`Posição ${posicao.codigo}`}
-                        onError={(event) => {
-                          event.currentTarget.style.display = "none";
-                          event.currentTarget.nextElementSibling?.classList.remove("estoque-card-foto--oculta");
-                        }}
-                      />
-                    ) : null}
-                    <div className={`estoque-card-foto estoque-card-foto--vazia${url ? " estoque-card-foto--oculta" : ""}`}>
-                      <IconeGondola className="estoque-card-icone" />
-                      <span>{url ? "Foto indisponível" : "Sem foto"}</span>
-                    </div>
-                    <span className="estoque-card-linha">
-                      <span className="estoque-card-codigo">{emTodas ? `${posicao.rua} · ${posicao.codigo}` : posicao.codigo}</span>
-                      <span className={`estado-chip estado-chip--${estado}`}>{ESTADO_LABEL[estado]}</span>
-                    </span>
-                    {posicao.produto ? (
-                      <span className="estoque-card-produto">
-                        {posicao.produto} · {posicao.voltagem}
-                      </span>
-                    ) : (
-                      <span className="estoque-card-meta">Sem produto</span>
-                    )}
-                    <span className="estoque-card-qtd tabular">{posicao.ultima.quantidade} un.</span>
-                    <span className="estoque-card-meta">
-                      {posicao.ultima.responsavel} · {formatarDataHora(posicao.ultima.criadoEm)}
-                    </span>
-                  </button>
-                );
-              })}
-              {ruaParaNovaPosicao && !filtroAtivo && (
-                <button className="estoque-card estoque-card--nova" onClick={abrirNovaPosicao}>
-                  + Nova posição
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="tabela-wrap">
-              <table className="tabela tabela--clicavel">
-                <thead>
-                  <tr>
-                    {COLUNAS_TABELA.map(({ coluna, label, numerica }) => {
-                      const ativa = ordenacao.coluna === coluna;
-                      return (
-                        <th
-                          key={coluna}
-                          className={numerica ? "tabela-num" : undefined}
-                          aria-sort={ativa ? (ordenacao.crescente ? "ascending" : "descending") : "none"}
-                        >
-                          <button type="button" className={`tabela-ordenar${ativa ? " tabela-ordenar--ativa" : ""}`} onClick={() => ordenarPor(coluna)}>
-                            {label}
-                            <span className="tabela-ordenar-seta" aria-hidden="true">
-                              {ativa ? (ordenacao.crescente ? "▲" : "▼") : "↕"}
-                            </span>
-                          </button>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {posicoesExibidas.map((posicao) => {
-                    const estado = estadoDaPosicao(posicao);
-                    const destacado = cardDestacado === `${posicao.rua}::${posicao.codigo}`;
-                    return (
-                      <tr
-                        key={`${posicao.rua}::${posicao.codigo}`}
-                        className={destacado ? "tabela-linha--editando" : undefined}
-                        tabIndex={0}
-                        onClick={() => abrirPosicao(posicao)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            abrirPosicao(posicao);
-                          }
-                        }}
-                        aria-label={`Abrir posição ${posicao.rua} ${posicao.codigo}`}
-                      >
-                        <td>{posicao.rua}</td>
-                        <td>
-                          <strong>{posicao.codigo}</strong>
-                        </td>
-                        <td>{posicao.produto ?? <span className="field-value--muted">—</span>}</td>
-                        <td>{posicao.voltagem ?? <span className="field-value--muted">—</span>}</td>
-                        <td className="tabela-num tabular">{posicao.ultima.quantidade}</td>
-                        <td>
-                          <span className={`estado-chip estado-chip--${estado}`}>{ESTADO_LABEL[estado]}</span>
-                        </td>
-                        <td>{posicao.ultima.responsavel}</td>
-                        <td className="tabular">{formatarDataHora(posicao.ultima.criadoEm)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-
-      {mostrarModalProdutos && <ModalProdutos produtos={produtos} onFechar={() => setMostrarModalProdutos(false)} onAlterado={setProdutos} />}
 
       {modal && (
         <FormularioContagem
@@ -1609,7 +1543,7 @@ export function Estoque() {
           onFechar={() => setModal(null)}
           onSalvo={aoSalvar}
           onMetadadosSalvos={aoSalvarMetadados}
-          onExcluida={aoExcluirPosicao}
+          onExcluida={aoExcluirLongarina}
         />
       )}
 

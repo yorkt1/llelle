@@ -37,6 +37,8 @@
   --surface-hover: rgba(255, 255, 255, 0.03);
   --surface-active: rgba(255, 255, 255, 0.05);
   --skeleton-highlight: #2a2e34;
+  /* Fundo atrás das fotos de produto (vêm com fundo branco do Tiny). */
+  --foto-fundo: #f4f5f7;
   --brand-soft: rgba(91, 141, 239, 0.14);
   --brand-soft-hover: rgba(91, 141, 239, 0.24);
   --brand-selected: rgba(91, 141, 239, 0.12);
@@ -2626,4 +2628,205 @@ th.matriz-dia {
 .lote-item--desabilitado {
   cursor: default;
   opacity: 0.6;
+}
+
+/* ---------- Estoque por produto ---------- */
+
+.produtos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 1rem;
+}
+
+.produto-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  color: var(--fg);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.produto-card:hover {
+  border-color: var(--muted);
+  transform: translateY(-1px);
+}
+
+.produto-card--sem-estoque .produto-card-foto {
+  opacity: 0.55;
+}
+
+/* Foto de produto do Tiny costuma ter fundo branco — moldura clara pra não "furar" o tema escuro. */
+.produto-card-foto {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: var(--foto-fundo);
+}
+
+.produto-foto--vazia {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.produto-card-corpo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.85rem 0.9rem 1rem;
+}
+
+.produto-card-nome {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.produto-card-linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.produto-card-total {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.produto-card-meta {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.produto-card-locais {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Etiqueta de longarina — mesmo jeitão da etiqueta colada na viga (F3, H2…). */
+.local-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--brand);
+  border-radius: 0.35rem;
+  background: var(--brand-soft);
+  color: var(--fg);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.local-chip-qtd {
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+.local-chip--mais {
+  border-color: var(--line);
+  background: none;
+  color: var(--muted);
+}
+
+.local-chip--botao {
+  cursor: pointer;
+  border-style: dashed;
+  background: none;
+}
+
+.local-chip--botao:hover {
+  background: var(--brand-soft);
+}
+
+.produto-detalhe-cabecalho {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.produto-detalhe-foto {
+  width: 6.5rem;
+  height: 6.5rem;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: var(--radius-control);
+  background: var(--foto-fundo);
+}
+
+.produto-detalhe-texto {
+  min-width: 0;
+  padding-right: 1.5rem;
+}
+
+.produto-detalhe-total {
+  margin: 0.2rem 0;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.estoque-rua-longarina {
+  display: grid;
+  grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr);
+  gap: 0.35rem 1rem;
+}
+
+.estoque-rua-longarina-erro {
+  grid-column: 1 / -1;
+}
+
+.catalogo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.catalogo-miniatura {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  border-radius: 0.35rem;
+  object-fit: contain;
+  background: var(--foto-fundo);
+}
+
+.catalogo-miniatura--vazia {
+  background: var(--bg);
+  border: 1px dashed var(--line);
+}
+
+.estoque-rua-longarina .field-input {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .produtos-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+
+  .produto-card-total {
+    font-size: 1.15rem;
+  }
 }
