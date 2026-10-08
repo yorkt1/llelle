@@ -97,7 +97,19 @@ async function writeAllArquivo(data: StoreData): Promise<void> {
   const file = storeFile();
   const tmp = `${file}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
-  await fs.rename(tmp, file);
+  // No Windows o rename falha (EPERM/EBUSY/EACCES) se o arquivo de destino estiver aberto naquele
+  // instante — um get() lendo ao mesmo tempo, antivírus, indexador. É passageiro: tenta de novo
+  // algumas vezes antes de desistir. (Só afeta o modo arquivo local; produção usa o Supabase.)
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      await fs.rename(tmp, file);
+      return;
+    } catch (error) {
+      const codigo = (error as NodeJS.ErrnoException).code;
+      if (tentativa >= 6 || !(codigo === "EPERM" || codigo === "EBUSY" || codigo === "EACCES")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 15 * tentativa));
+    }
+  }
 }
 
 // Serializa leitura+escrita: duas chamadas concorrentes de set()/update() não podem se atropelar
