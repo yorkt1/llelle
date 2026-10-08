@@ -2859,3 +2859,25 @@ th.matriz-dia {
   cursor: default;
   text-decoration: none;
 }
+
+/* Voltagem que vem do nome do produto (não é escolhida) — mesma altura de um campo. */
+.estoque-voltagem-fixa {
+  display: flex;
+  align-items: center;
+  height: var(--control-h);
+  padding: 0 0.75rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-control);
+  font-weight: 600;
+}
+
+/* Nome de produto comprido (nome completo do Tiny) não pode espremer a coluna da voltagem. */
+.estoque-produto-voltagem {
+  /* Uma coluna: o nome do produto ocupa a linha toda; a voltagem vem embaixo. */
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.estoque-produto-voltagem .field-input {
+  width: 100%;
+  min-width: 0;
+}

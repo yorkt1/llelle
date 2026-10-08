@@ -130,6 +130,19 @@ function validarVoltagem(voltagem: string): string | null {
   return (VOLTAGENS as readonly string[]).includes(voltagem) ? null : "Selecione a voltagem dessa longarina.";
 }
 
+/**
+ * Voltagem dita no próprio nome do produto ("... Azul 110V", "... Bivolt") — cada cor+voltagem é um
+ * produto (SKU) próprio, então a voltagem vem do nome. 127V conta como 110V (a lista de voltagens do
+ * estoque só tem 110V/220V/Bivolt). Usa a ÚLTIMA menção, mesmo critério de lib/produtoPlanilha.ts
+ * ("... 110v ou 220v - 220V" → 220V). null quando o nome não diz.
+ */
+function voltagemDoNome(nome: string): Voltagem | null {
+  if (/\bbivolt\b/i.test(nome)) return "Bivolt";
+  const ocorrencias = [...nome.matchAll(/\b(110|127|220)\s*v\b/gi)];
+  if (ocorrencias.length === 0) return null;
+  return ocorrencias[ocorrencias.length - 1][1] === "220" ? "220V" : "110V";
+}
+
 /** Valor da opção "Posição vazia" no select de produto — não é um produto do catálogo, nunca vai pro backend. */
 const PRODUTO_VAZIA = "__vazia__";
 
@@ -169,7 +182,7 @@ function FormularioContagem({
   // "Posição vazia", que registra 0 un. sem produto nem voltagem.
   const definirProduto = modal.modo === "nova" || !modal.produto;
   const [produto, setProduto] = useState(modal.modo === "existente" ? (modal.produto ? "" : PRODUTO_VAZIA) : (modal.produtoInicial ?? ""));
-  const [voltagem, setVoltagem] = useState("");
+  const [voltagemEscolhida, setVoltagemEscolhida] = useState("");
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [historico, setHistorico] = useState<RegistroContagem[] | null>(null);
@@ -213,6 +226,10 @@ function FormularioContagem({
     modal.modo === "nova" && !erroCodigoFormato && codigosExistentes.includes(codigo.trim()) ? "Essa longarina já existe nessa rua." : null;
   const erroCodigo = erroRua ?? erroCodigoFormato ?? erroCodigoDuplicado;
   const vazia = definirProduto && produto === PRODUTO_VAZIA;
+  // Cada cor+voltagem é um produto próprio (nome igual ao do Tiny, ex.: "... Azul 110V"): quando o nome
+  // do produto já diz a voltagem, ela vem dele e não é perguntada de novo.
+  const voltagemDoProduto = vazia ? null : voltagemDoNome(produto);
+  const voltagem = voltagemDoProduto ?? voltagemEscolhida;
   const erroProduto = definirProduto ? validarProduto(produto) : null;
   const erroVoltagem = definirProduto && !vazia ? validarVoltagem(voltagem) : null;
   const erroQuantidade =
@@ -316,7 +333,8 @@ function FormularioContagem({
 
   const salvarMetadados = useCallback(async () => {
     if (modal.modo !== "existente") return;
-    if (!produtoEdit.trim() || !voltagemEdit) {
+    const voltagemFinal = voltagemDoNome(produtoEdit) ?? voltagemEdit;
+    if (!produtoEdit.trim() || !voltagemFinal) {
       setErroMetadados("Selecione produto e voltagem.");
       return;
     }
@@ -326,12 +344,12 @@ function FormularioContagem({
       const resposta = await fetch(`${API_URL}/api/estoque/${encodeURIComponent(modal.rua)}/${encodeURIComponent(modal.codigo)}/metadados`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ produto: produtoEdit.trim(), voltagem: voltagemEdit }),
+        body: JSON.stringify({ produto: produtoEdit.trim(), voltagem: voltagemFinal }),
       });
       const json = await resposta.json();
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui salvar produto/voltagem.");
 
-      onMetadadosSalvos(modal.rua, modal.codigo, produtoEdit.trim(), voltagemEdit as Voltagem);
+      onMetadadosSalvos(modal.rua, modal.codigo, produtoEdit.trim(), voltagemFinal as Voltagem);
       setEditandoMetadados(false);
     } catch (error) {
       setErroMetadados(error instanceof Error ? error.message : "Não consegui salvar produto/voltagem.");
@@ -423,7 +441,7 @@ function FormularioContagem({
                   onChange={(event) => {
                     setProduto(event.target.value);
                     if (event.target.value === PRODUTO_VAZIA) {
-                      setVoltagem("");
+                      setVoltagemEscolhida("");
                       setQuantidade("0");
                     }
                   }}
@@ -446,6 +464,12 @@ function FormularioContagem({
                 <p className="field-value--muted estoque-vazia-nota">
                   Registra a longarina com 0 un., sem produto nem voltagem. Quando chegar mercadoria, é só recontar escolhendo o produto.
                 </p>
+              ) : voltagemDoProduto ? (
+                <div className="field">
+                  <span className="field-label">Voltagem</span>
+                  <span className="estoque-voltagem-fixa">{voltagemDoProduto}</span>
+                  <span className="field-value--muted">pelo nome do produto</span>
+                </div>
               ) : (
                 <label className="field">
                   <span className="field-label">
@@ -454,8 +478,8 @@ function FormularioContagem({
                   <select
                     ref={voltagemRef}
                     className={`field-input${mostrar("voltagem", erroVoltagem) ? " field-input--erro" : ""}`}
-                    value={voltagem}
-                    onChange={(event) => setVoltagem(event.target.value)}
+                    value={voltagemEscolhida}
+                    onChange={(event) => setVoltagemEscolhida(event.target.value)}
                     onBlur={() => tocar("voltagem")}
                   >
                     <option value="">Selecione…</option>
@@ -484,17 +508,23 @@ function FormularioContagem({
                       ))}
                     </select>
                   </label>
-                  <label className="field">
-                    <span className="field-label">Voltagem</span>
-                    <select className="field-input" value={voltagemEdit} onChange={(event) => setVoltagemEdit(event.target.value)}>
-                      <option value="">Selecione…</option>
-                      {VOLTAGENS.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {voltagemDoNome(produtoEdit) ? (
+                    <p className="field-value--muted">
+                      Voltagem: <strong>{voltagemDoNome(produtoEdit)}</strong> (pelo nome do produto)
+                    </p>
+                  ) : (
+                    <label className="field">
+                      <span className="field-label">Voltagem</span>
+                      <select className="field-input" value={voltagemEdit} onChange={(event) => setVoltagemEdit(event.target.value)}>
+                        <option value="">Selecione…</option>
+                        {VOLTAGENS.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   {erroMetadados && <p className="error-banner">{erroMetadados}</p>}
                   <div className="estoque-produto-voltagem-acoes">
                     <button type="button" className="btn-primario" onClick={() => void salvarMetadados()} disabled={salvandoMetadados}>
@@ -787,8 +817,8 @@ function ModalProdutos({
           {modo === "tiny" && (
             <>
               <p className="field-value--muted">
-                Busca no cadastro de produtos do Tiny (só ativos) e sugere o nome sem a voltagem — a voltagem é escolhida em cada posição. Variações
-                110V/220V do mesmo produto viram um item só.
+                Busca no cadastro de produtos do Tiny (só ativos). Cada cor e cada voltagem é um produto separado, com o mesmo nome do Tiny — a
+                voltagem da longarina sai do nome do produto.
               </p>
               <form
                 className="estoque-form-produto"

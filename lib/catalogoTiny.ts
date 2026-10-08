@@ -6,9 +6,9 @@ import { tinyGet } from "./tinyClient";
  * (padrão "koti"). Chamada só quando alguém clica em "Buscar no Tiny" (não roda em loop), e
  * limitada a MAX_PAGINAS pra não pesar no limite de taxa.
  *
- * No Estoque a voltagem é um campo separado da posição, então o nome sugerido pro catálogo tira
- * a voltagem do nome do Tiny ("Chaleira Koti Modern Preta - 110V" → "Chaleira Koti Modern Preta")
- * e junta as variações iguais num item só.
+ * Cada cor e cada voltagem é um produto diferente (um SKU no Tiny = um card no Estoque), então o
+ * nome do catálogo é o nome do Tiny como está — a voltagem do produto é lida do próprio nome (ver
+ * voltagemDoNome em src/Estoque.tsx).
  */
 
 const MAX_PAGINAS = 10;
@@ -25,7 +25,7 @@ interface ProdutosPesquisaResponse {
 }
 
 export interface ProdutoTiny {
-  /** Nome sugerido pro catálogo (sem voltagem). */
+  /** Nome pro catálogo — o nome do produto no Tiny (espaços normalizados). */
   sugestao: string;
   /** Nomes originais no Tiny que viraram essa sugestão. */
   nomesTiny: string[];
@@ -68,7 +68,7 @@ interface ProdutoBruto {
 }
 
 /**
- * Agrupa os produtos do Tiny pelo nome sugerido. Produto PAI de variações (tipoVariacao "P") fica de
+ * Um item por produto do Tiny (nomes iguais se juntam). Produto PAI de variações (tipoVariacao "P") fica de
  * fora quando as variações dele também vieram — o nome do pai não tem a cor, e viraria um card
  * genérico ("Chaleira Elegance") além dos cards por cor.
  */
@@ -82,7 +82,7 @@ export function agruparProdutosTiny(brutos: ProdutoBruto[]): ProdutoTiny[] {
 
   const porSugestao = new Map<string, ProdutoTiny>();
   for (const produto of visiveis) {
-    const sugestao = nomeSemVoltagem(produto.nome);
+    const sugestao = produto.nome.trim().replace(/\s+/g, " ");
     if (!sugestao) continue;
     const chave = sugestao.toLowerCase();
     const atual = porSugestao.get(chave) ?? { sugestao, nomesTiny: [], codigos: [], idsTiny: [] };

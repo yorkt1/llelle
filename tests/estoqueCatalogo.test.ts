@@ -81,8 +81,8 @@ describe("nomeSemVoltagem (sugestão de nome do Tiny pro catálogo)", () => {
   });
 });
 
-describe("agruparProdutosTiny (cores viram cards separados)", () => {
-  it("Elegance azul e vermelha: um item por cor, voltagens juntas; o produto pai sem cor fica de fora", () => {
+describe("agruparProdutosTiny (cada cor e cada voltagem é um produto)", () => {
+  it("Elegance: um item por SKU (cor + voltagem), com o nome do Tiny; o produto pai sem cor fica de fora", () => {
     const grupos = agruparProdutosTiny([
       { id: "1", nome: "Chaleira Koti Elegance", tipoVariacao: "P" },
       { id: "2", nome: "Chaleira Koti Elegance - Azul - 110V", codigo: "EL-AZ-110", tipoVariacao: "V" },
@@ -90,8 +90,13 @@ describe("agruparProdutosTiny (cores viram cards separados)", () => {
       { id: "4", nome: "Chaleira Koti Elegance - Vermelha - 110V", codigo: "EL-VM-110", tipoVariacao: "V" },
       { id: "5", nome: "Air Fryer Koti 4L", tipoVariacao: "N" },
     ]);
-    expect(grupos.map((g) => g.sugestao)).toEqual(["Air Fryer Koti 4L", "Chaleira Koti Elegance Azul", "Chaleira Koti Elegance Vermelha"]);
-    expect(grupos[1]).toMatchObject({ idsTiny: ["2", "3"], codigos: ["EL-AZ-110", "EL-AZ-220"] });
+    expect(grupos.map((g) => g.sugestao)).toEqual([
+      "Air Fryer Koti 4L",
+      "Chaleira Koti Elegance - Azul - 110V",
+      "Chaleira Koti Elegance - Azul - 220V",
+      "Chaleira Koti Elegance - Vermelha - 110V",
+    ]);
+    expect(grupos[1]).toMatchObject({ idsTiny: ["2"], codigos: ["EL-AZ-110"] });
   });
 
   it("produto pai sem as variações na lista continua aparecendo", () => {

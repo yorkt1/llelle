@@ -141,9 +141,12 @@ async function idPorNome(nome: string): Promise<string | null> {
   const { retorno } = await tinyGet<PesquisaResponse>("produtos.pesquisa.php", { pesquisa: nome, situacao: "A" });
   if (!checar(retorno)) return null;
   const produtos = (retorno.produtos ?? []).map((p) => p.produto).filter((p) => p.id);
+  // Nome exato primeiro (cada cor+voltagem é um produto); depois sem a voltagem (produto cadastrado à
+  // mão sem a voltagem no nome); por último o primeiro resultado.
   const alvo = chaveProduto(nome);
-  const exato = produtos.find((p) => chaveProduto(nomeSemVoltagem(p.nome ?? "")) === alvo);
-  const escolhido = exato ?? produtos[0];
+  const exato = produtos.find((p) => chaveProduto(p.nome ?? "") === alvo);
+  const semVoltagem = produtos.find((p) => chaveProduto(nomeSemVoltagem(p.nome ?? "")) === chaveProduto(nomeSemVoltagem(nome)));
+  const escolhido = exato ?? semVoltagem ?? produtos[0];
   return escolhido ? String(escolhido.id) : null;
 }
 
