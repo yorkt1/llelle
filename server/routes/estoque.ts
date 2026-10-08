@@ -11,11 +11,13 @@ import {
   adicionarProdutos,
   removerPosicao,
   removerRua,
+  dividirProdutosPorVoltagem,
 } from "../../lib/estoque";
 import { StoreConfigError } from "../../lib/store";
 import { OlistConfigError } from "../../lib/olist";
 import { buscarProdutosTiny } from "../../lib/catalogoTiny";
 import {
+  copiarFotoParaProdutos,
   definirFotoManual,
   listarInfoProdutos,
   refazerFotoDoTiny,
@@ -145,6 +147,23 @@ estoqueRouter.post("/produtos/fotos/tiny", async (req, res) => {
     res.status(202).json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado." });
+  }
+});
+
+// "Separar por voltagem": produto sem a voltagem no nome vira um produto por voltagem (ver
+// dividirProdutosPorVoltagem). `nomes` vazio = todos os produtos nessa situação.
+estoqueRouter.post("/produtos/dividir-voltagem", async (req, res) => {
+  const nomes: string[] = Array.isArray(req.body?.nomes) ? req.body.nomes.filter((n: unknown): n is string => typeof n === "string") : [];
+  try {
+    const resultado = await dividirProdutosPorVoltagem(nomes);
+    for (const d of resultado.divisoes) await copiarFotoParaProdutos(d.original, d.novos);
+    res.status(200).json(resultado);
+  } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao separar por voltagem." });
   }
 });
 estoqueRouter.get("/produtos/tiny", async (req, res) => {

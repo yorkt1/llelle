@@ -66,6 +66,55 @@ describe("catálogo e exclusão no estoque", () => {
   });
 });
 
+describe("separar produto por voltagem (cadastro antigo, voltagem só na gaveta)", () => {
+  let dataDir: string;
+
+  beforeEach(async () => {
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "estoque-div-"));
+    process.env.DATA_DIR = dataDir;
+    process.env.CLOUDINARY_CLOUD_NAME = "t";
+    process.env.CLOUDINARY_API_KEY = "t";
+    process.env.CLOUDINARY_API_SECRET = "t";
+  });
+
+  afterEach(async () => {
+    for (const v of ["DATA_DIR", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"]) delete process.env[v];
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  it("caso real da Rua H: 110V, 220V e Bivolt viram 3 produtos; contagens e gavetas não mudam", async () => {
+    const { registrarContagem, adicionarProduto, dividirProdutosPorVoltagem, listarEstoque, listarProdutos } = await fresh();
+    const NOME = "Chaleira Koti Elegance Azul";
+    await adicionarProduto(NOME);
+    await adicionarProduto("Air Fryer Koti 4L 110V");
+    const linhas: [string, number, string][] = [
+      ["H1", 60, "110V"], ["H2", 72, "110V"], ["H7", 72, "220V"], ["H8", 60, "110V"], ["H9", 60, "110V"],
+      ["H10", 72, "220V"], ["H11", 0, "Bivolt"], ["H15", 72, "220V"], ["H16", 60, "110V"],
+    ];
+    for (const [codigo, quantidade, voltagem] of linhas) {
+      await registrarContagem({ rua: "H", codigo, quantidade, responsavel: "Gui", fotoDataUri: FOTO_1X1, produto: NOME, voltagem });
+    }
+    // Uma gaveta de produto que já tem voltagem no nome não é tocada.
+    await registrarContagem({ rua: "H", codigo: "H20", quantidade: 5, responsavel: "Gui", fotoDataUri: FOTO_1X1, produto: "Air Fryer Koti 4L 110V", voltagem: "110V" });
+
+    const r = await dividirProdutosPorVoltagem([NOME]);
+    expect(r.gavetasAtualizadas).toBe(9);
+    expect(r.divisoes).toEqual([{ original: NOME, novos: [`${NOME} 110V`, `${NOME} 220V`, `${NOME} Bivolt`], gavetas: 9 }]);
+    expect(r.removidosDoCatalogo).toEqual([NOME]);
+
+    const posicoes = (await listarEstoque())[0].posicoes;
+    const porCodigo = Object.fromEntries(posicoes.map((p) => [p.codigo, p]));
+    expect(porCodigo.H1).toMatchObject({ produto: `${NOME} 110V`, voltagem: "110V", ultima: { quantidade: 60, responsavel: "Gui" } });
+    expect(porCodigo.H7.produto).toBe(`${NOME} 220V`);
+    expect(porCodigo.H11.produto).toBe(`${NOME} Bivolt`);
+    expect(porCodigo.H20.produto).toBe("Air Fryer Koti 4L 110V");
+    expect(await listarProdutos()).toEqual(["Air Fryer Koti 4L 110V", `${NOME} 110V`, `${NOME} 220V`, `${NOME} Bivolt`]);
+
+    // Rodar de novo não faz nada (já está separado).
+    expect((await dividirProdutosPorVoltagem()).gavetasAtualizadas).toBe(0);
+  });
+});
+
 describe("nomeSemVoltagem (sugestão de nome do Tiny pro catálogo)", () => {
   it.each([
     ["Chaleira Elétrica Koti Modern Preta 1,7L - 110V", "Chaleira Elétrica Koti Modern Preta 1,7L"],

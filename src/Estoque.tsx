@@ -37,7 +37,7 @@ interface RuaResumo {
 
 type Modal =
   | { modo: "existente"; rua: string; codigo: string; ultima: RegistroContagem; produto: string | null; voltagem: Voltagem | null }
-  // Longarina nova: a rua é escolhida no próprio formulário (a tela é por produto, não por rua).
+  // Gaveta nova: a rua é escolhida no próprio formulário (a tela é por produto, não por rua).
   | { modo: "nova"; ruasExistentes: string[]; codigosPorRua: Record<string, string[]>; produtoInicial?: string }
   | null;
 
@@ -102,7 +102,7 @@ const PADRAO_CODIGO = /^[A-Z]+\d+$/;
 
 function validarCodigo(codigo: string): string | null {
   const limpo = codigo.trim();
-  if (!limpo) return "Informe o código da longarina.";
+  if (!limpo) return "Informe o código da gaveta.";
   if (!PADRAO_CODIGO.test(limpo)) return "Use a letra da rua + número (ex.: H2).";
   return null;
 }
@@ -123,11 +123,11 @@ function validarFoto(fotoPreview: string | null): string | null {
 }
 
 function validarProduto(produto: string): string | null {
-  return produto.trim() ? null : "Selecione o produto dessa longarina.";
+  return produto.trim() ? null : "Selecione o produto dessa gaveta.";
 }
 
 function validarVoltagem(voltagem: string): string | null {
-  return (VOLTAGENS as readonly string[]).includes(voltagem) ? null : "Selecione a voltagem dessa longarina.";
+  return (VOLTAGENS as readonly string[]).includes(voltagem) ? null : "Selecione a voltagem dessa gaveta.";
 }
 
 /**
@@ -171,7 +171,7 @@ function FormularioContagem({
   onMetadadosSalvos: (rua: string, codigo: string, produto: string, voltagem: Voltagem) => void;
   onExcluida: (rua: string, codigo: string) => void;
 }) {
-  // Rua: fixa numa longarina existente; numa nova, escolhida aqui (uma das existentes ou uma letra nova).
+  // Rua: fixa numa gaveta existente; numa nova, escolhida aqui (uma das existentes ou uma letra nova).
   const [ruaNova, setRuaNova] = useState(() => (modal.modo === "nova" && modal.ruasExistentes.length === 1 ? modal.ruasExistentes[0] : ""));
   const ruaAtual = modal.modo === "existente" ? modal.rua : ruaNova.trim().toUpperCase();
   const codigosExistentes = modal.modo === "nova" ? modal.codigosPorRua[ruaAtual] ?? [] : [];
@@ -223,7 +223,7 @@ function FormularioContagem({
   const erroRua = modal.modo === "nova" ? (!ruaAtual ? "Informe a rua (letra)." : !/^[A-Z]+$/.test(ruaAtual) ? "Rua é só a letra (ex.: F)." : null) : null;
   const erroCodigoFormato = modal.modo === "nova" ? validarCodigo(codigo) : null;
   const erroCodigoDuplicado =
-    modal.modo === "nova" && !erroCodigoFormato && codigosExistentes.includes(codigo.trim()) ? "Essa longarina já existe nessa rua." : null;
+    modal.modo === "nova" && !erroCodigoFormato && codigosExistentes.includes(codigo.trim()) ? "Essa gaveta já existe nessa rua." : null;
   const erroCodigo = erroRua ?? erroCodigoFormato ?? erroCodigoDuplicado;
   const vazia = definirProduto && produto === PRODUTO_VAZIA;
   // Cada cor+voltagem é um produto próprio (nome igual ao do Tiny, ex.: "... Azul 110V"): quando o nome
@@ -234,7 +234,7 @@ function FormularioContagem({
   const erroVoltagem = definirProduto && !vazia ? validarVoltagem(voltagem) : null;
   const erroQuantidade =
     validarQuantidade(quantidade) ??
-    (vazia && Number(quantidade) > 0 ? "Longarina vazia fica com 0 un. — pra contar unidades, escolha o produto." : null);
+    (vazia && Number(quantidade) > 0 ? "Gaveta vazia fica com 0 un. — pra contar unidades, escolha o produto." : null);
   const erroResponsavel = validarResponsavel(responsavel);
   const erroFoto = validarFoto(fotoPreview);
   const formularioInvalido = Boolean(erroCodigo || erroProduto || erroVoltagem || erroQuantidade || erroResponsavel || erroFoto);
@@ -320,14 +320,14 @@ function FormularioContagem({
 
   const excluirPosicao = useCallback(async () => {
     if (modal.modo !== "existente") return;
-    if (!window.confirm(`Excluir a longarina ${modal.codigo} da Rua ${modal.rua}? Ela some da tela (o histórico fica guardado no arquivo de excluídos).`)) return;
+    if (!window.confirm(`Excluir a gaveta ${modal.codigo} da Rua ${modal.rua}? Ela some da tela (o histórico fica guardado no arquivo de excluídos).`)) return;
     setErro(null);
     try {
       const resposta = await fetch(`${API_URL}/api/estoque/posicao/${encodeURIComponent(modal.rua)}/${encodeURIComponent(modal.codigo)}`, { method: "DELETE" });
-      if (!resposta.ok) throw new Error((await resposta.json().catch(() => ({}))).error ?? "Não consegui excluir a longarina.");
+      if (!resposta.ok) throw new Error((await resposta.json().catch(() => ({}))).error ?? "Não consegui excluir a gaveta.");
       onExcluida(modal.rua, modal.codigo);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui excluir a longarina.");
+      setErro(error instanceof Error ? error.message : "Não consegui excluir a gaveta.");
     }
   }, [modal, onExcluida]);
 
@@ -381,13 +381,13 @@ function FormularioContagem({
           </button>
           <h2 className="settings-title">
             Rua {ruaAtual || "?"}
-            {modal.modo === "existente" ? ` · ${modal.codigo}` : " · nova longarina"}
+            {modal.modo === "existente" ? ` · ${modal.codigo}` : " · nova gaveta"}
           </h2>
         </div>
 
         <div className="settings-panel-body">
           {modal.modo === "nova" && (
-            <div className="estoque-rua-longarina">
+            <div className="estoque-rua-gaveta">
               <label className="field">
                 <span className="field-label">
                   Rua <span className="field-obrigatorio">*</span>
@@ -399,7 +399,7 @@ function FormularioContagem({
                   onChange={(event) => {
                     const rua = event.target.value.toUpperCase().replace(/[^A-Z]/g, "");
                     setRuaNova(rua);
-                    // Enquanto a pessoa não mexeu no código, ele acompanha a rua (F → próxima longarina livre da F).
+                    // Enquanto a pessoa não mexeu no código, ele acompanha a rua (F → próxima gaveta livre da F).
                     if (!tocados.has("codigo") && rua) setCodigo(proximoCodigoSugerido(rua, modal.codigosPorRua[rua] ?? []));
                   }}
                   placeholder="Ex.: F"
@@ -413,7 +413,7 @@ function FormularioContagem({
               </label>
               <label className="field">
                 <span className="field-label">
-                  Longarina (etiqueta na viga) <span className="field-obrigatorio">*</span>
+                  Gaveta (etiqueta, ex.: F3) <span className="field-obrigatorio">*</span>
                 </span>
                 <input
                   ref={codigoRef}
@@ -424,7 +424,7 @@ function FormularioContagem({
                   placeholder="Ex.: F3"
                 />
               </label>
-              {mostrar("codigo", erroCodigo) && <span className="field-erro estoque-rua-longarina-erro">{mostrar("codigo", erroCodigo)}</span>}
+              {mostrar("codigo", erroCodigo) && <span className="field-erro estoque-rua-gaveta-erro">{mostrar("codigo", erroCodigo)}</span>}
             </div>
           )}
 
@@ -448,7 +448,7 @@ function FormularioContagem({
                   onBlur={() => tocar("produto")}
                 >
                   <option value="">Selecione…</option>
-                  <option value={PRODUTO_VAZIA}>Longarina vazia (sem produto)</option>
+                  <option value={PRODUTO_VAZIA}>Gaveta vazia (sem produto)</option>
                   {produtos.map((item) => (
                     <option key={item} value={item}>
                       {item}
@@ -462,7 +462,7 @@ function FormularioContagem({
               </label>
               {vazia ? (
                 <p className="field-value--muted estoque-vazia-nota">
-                  Registra a longarina com 0 un., sem produto nem voltagem. Quando chegar mercadoria, é só recontar escolhendo o produto.
+                  Registra a gaveta com 0 un., sem produto nem voltagem. Quando chegar mercadoria, é só recontar escolhendo o produto.
                 </p>
               ) : voltagemDoProduto ? (
                 <div className="field">
@@ -550,7 +550,7 @@ function FormularioContagem({
             <span className="field-label">
               Foto desta contagem <span className="field-obrigatorio">*</span>
             </span>
-            <span className="estoque-codigo-destaque">Longarina {codigoEmDestaque}</span>
+            <span className="estoque-codigo-destaque">Gaveta {codigoEmDestaque}</span>
             {fotoPreview ? (
               <img className="estoque-foto-preview" src={fotoPreview} alt="Foto tirada agora" />
             ) : fotoAnteriorUrl ? (
@@ -652,7 +652,7 @@ function FormularioContagem({
           </button>
           {modal.modo === "existente" && (
             <button type="button" className="btn-perigo-texto" onClick={() => void excluirPosicao()} disabled={salvando}>
-              Excluir longarina {modal.codigo}
+              Excluir gaveta {modal.codigo}
             </button>
           )}
         </div>
@@ -818,7 +818,7 @@ function ModalProdutos({
             <>
               <p className="field-value--muted">
                 Busca no cadastro de produtos do Tiny (só ativos). Cada cor e cada voltagem é um produto separado, com o mesmo nome do Tiny — a
-                voltagem da longarina sai do nome do produto.
+                voltagem da gaveta sai do nome do produto.
               </p>
               <form
                 className="estoque-form-produto"
@@ -990,14 +990,14 @@ interface InfoProduto {
   fotoOrigem?: "tiny" | "manual";
 }
 
-/** Um produto e todas as longarinas onde ele está. */
+/** Um produto e todas as gavetas onde ele está. */
 interface GrupoProduto {
   chave: string;
   nome: string;
   noCatalogo: boolean;
   info?: InfoProduto;
   total: number;
-  longarinas: PosicaoResumo[];
+  gavetas: PosicaoResumo[];
   porVoltagem: { voltagem: string; quantidade: number }[];
   ultimaContagem: string | null;
 }
@@ -1012,7 +1012,7 @@ function normalizar(texto: string): string {
   return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
-function ordenarLongarinas(a: PosicaoResumo, b: PosicaoResumo): number {
+function ordenarGavetas(a: PosicaoResumo, b: PosicaoResumo): number {
   return a.rua.localeCompare(b.rua, "pt-BR") || a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true });
 }
 
@@ -1052,15 +1052,17 @@ function FotoProduto({ info, nome, className }: { info?: InfoProduto; nome: stri
 function ModalProduto({
   grupo,
   onFechar,
-  onAbrirLongarina,
-  onNovaLongarina,
+  onAbrirGaveta,
+  onNovaGaveta,
   onFotoAlterada,
+  onSepararVoltagem,
 }: {
   grupo: GrupoProduto;
   onFechar: () => void;
-  onAbrirLongarina: (posicao: PosicaoResumo) => void;
-  onNovaLongarina: (produto: string) => void;
+  onAbrirGaveta: (posicao: PosicaoResumo) => void;
+  onNovaGaveta: (produto: string) => void;
   onFotoAlterada: () => void;
+  onSepararVoltagem: (grupo: GrupoProduto) => void;
 }) {
   const inputFotoRef = useRef<HTMLInputElement>(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
@@ -1146,23 +1148,31 @@ function ModalProduto({
             <h2 className="settings-title">{grupo.nome}</h2>
             <p className="produto-detalhe-total tabular">{grupo.total} un.</p>
             <p className="settings-hint">
-              {grupo.longarinas.length === 0
-                ? "Não está em nenhuma longarina."
-                : `Em ${grupo.longarinas.length} longarina(s)${grupo.porVoltagem.length > 0 ? " · " + grupo.porVoltagem.map((v) => `${v.voltagem}: ${v.quantidade}`).join(" · ") : ""}`}
+              {grupo.gavetas.length === 0
+                ? "Não está em nenhuma gaveta."
+                : `Em ${grupo.gavetas.length} gaveta(s)${grupo.porVoltagem.length > 0 ? " · " + grupo.porVoltagem.map((v) => `${v.voltagem}: ${v.quantidade}`).join(" · ") : ""}`}
             </p>
             <p className="settings-hint">Foto: {origemFoto}</p>
+            {podeSepararPorVoltagem(grupo) && (
+              <p className="aviso-separar">
+                Esse produto está sem a voltagem no nome.{" "}
+                <button type="button" className="link-acao" onClick={() => onSepararVoltagem(grupo)}>
+                  Separar por voltagem
+                </button>
+              </p>
+            )}
             {avisoFoto && <p className="aviso-sucesso">{avisoFoto}</p>}
             {erroFoto && <p className="error-banner">{erroFoto}</p>}
           </div>
         </div>
         <div className="settings-panel-body">
-          {grupo.longarinas.length > 0 && (
+          {grupo.gavetas.length > 0 && (
             <div className="tabela-wrap tabela-wrap--plana">
               <table className="tabela tabela--clicavel">
                 <thead>
                   <tr>
                     <th>Rua</th>
-                    <th>Longarina</th>
+                    <th>Gaveta</th>
                     <th>Voltagem</th>
                     <th className="tabela-num">Qtd</th>
                     <th>Contado por</th>
@@ -1170,18 +1180,18 @@ function ModalProduto({
                   </tr>
                 </thead>
                 <tbody>
-                  {grupo.longarinas.map((l) => (
+                  {grupo.gavetas.map((l) => (
                     <tr
                       key={`${l.rua}::${l.codigo}`}
                       tabIndex={0}
-                      onClick={() => onAbrirLongarina(l)}
+                      onClick={() => onAbrirGaveta(l)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          onAbrirLongarina(l);
+                          onAbrirGaveta(l);
                         }
                       }}
-                      aria-label={`Contar a longarina ${l.codigo}`}
+                      aria-label={`Contar a gaveta ${l.codigo}`}
                     >
                       <td>{l.rua}</td>
                       <td>
@@ -1197,11 +1207,110 @@ function ModalProduto({
               </table>
             </div>
           )}
-          <p className="field-value--muted">Clique numa longarina pra fazer uma nova contagem (com foto) ou corrigir produto/voltagem.</p>
+          <p className="field-value--muted">Clique numa gaveta pra fazer uma nova contagem (com foto) ou corrigir produto/voltagem.</p>
         </div>
         <div className="settings-panel-footer">
-          <button type="button" className="btn-primario" onClick={() => onNovaLongarina(grupo.nome)}>
-            + Colocar em outra longarina
+          <button type="button" className="btn-primario" onClick={() => onNovaGaveta(grupo.nome)}>
+            + Colocar em outra gaveta
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Produto cadastrado sem a voltagem no nome, mas com gavetas que já têm voltagem — dá pra separar. */
+function podeSepararPorVoltagem(g: GrupoProduto): boolean {
+  return voltagemDoNome(g.nome) === null && g.gavetas.some((l) => l.voltagem);
+}
+
+/** Prévia + confirmação do "Separar por voltagem" (um produto, ou todos nessa situação). */
+function ModalSepararVoltagem({
+  grupos,
+  todos,
+  onFechar,
+  onConcluido,
+}: {
+  grupos: GrupoProduto[];
+  todos: boolean;
+  onFechar: () => void;
+  onConcluido: (mensagem: string) => void;
+}) {
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const confirmar = useCallback(async () => {
+    setEnviando(true);
+    setErro(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos/dividir-voltagem`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nomes: todos ? [] : grupos.map((g) => g.nome) }),
+      });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui separar.");
+      const novos = (json.divisoes ?? []).reduce((s: number, d: { novos: string[] }) => s + d.novos.length, 0);
+      onConcluido(`${novos} produto(s) criado(s), ${json.gavetasAtualizadas} gaveta(s) atualizada(s)`);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não consegui separar.");
+    } finally {
+      setEnviando(false);
+    }
+  }, [grupos, todos, onConcluido]);
+
+  return (
+    <div className="settings-overlay" onClick={onFechar}>
+      <div className="settings-panel settings-panel--largo" onClick={(event) => event.stopPropagation()}>
+        <div className="settings-panel-header">
+          <button className="settings-close" onClick={onFechar} aria-label="Fechar">
+            ×
+          </button>
+          <h2 className="settings-title">Separar por voltagem</h2>
+          <p className="settings-hint">
+            Cada voltagem vira um produto próprio, e cada gaveta passa pro produto da voltagem dela. Contagens, fotos e histórico das gavetas não
+            mudam. A foto do produto é copiada pros novos (dá pra trocar depois).
+          </p>
+        </div>
+        <div className="settings-panel-body">
+          {grupos.map((g) => {
+            const porVoltagem = new Map<string, PosicaoResumo[]>();
+            for (const l of g.gavetas) if (l.voltagem) porVoltagem.set(l.voltagem, [...(porVoltagem.get(l.voltagem) ?? []), l]);
+            const semVoltagem = g.gavetas.filter((l) => !l.voltagem);
+            return (
+              <div key={g.chave} className="separar-produto">
+                <p className="separar-original">{g.nome}</p>
+                <ul className="separar-lista">
+                  {[...porVoltagem.entries()].map(([voltagem, ls]) => (
+                    <li key={voltagem}>
+                      <span className="separar-seta" aria-hidden="true">
+                        →
+                      </span>
+                      <strong>
+                        {g.nome} {voltagem}
+                      </strong>
+                      <span className="produto-card-locais">
+                        {ls.map((l) => (
+                          <span key={`${l.rua}::${l.codigo}`} className="local-chip">
+                            {l.codigo}
+                            <span className="local-chip-qtd tabular">{l.ultima.quantidade}</span>
+                          </span>
+                        ))}
+                      </span>
+                    </li>
+                  ))}
+                  {semVoltagem.length > 0 && (
+                    <li className="field-value--muted">Sem voltagem, ficam em "{g.nome}": {semVoltagem.map((l) => l.codigo).join(", ")}</li>
+                  )}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+        <div className="settings-panel-footer">
+          {erro && <p className="error-banner">{erro}</p>}
+          <button type="button" className="btn-primario" onClick={() => void confirmar()} disabled={enviando}>
+            {enviando ? "Separando..." : grupos.length > 1 ? `Separar ${grupos.length} produtos` : "Separar"}
           </button>
         </div>
       </div>
@@ -1218,7 +1327,7 @@ function ModalRuas({ ruas, onFechar, onExcluir }: { ruas: RuaResumo[]; onFechar:
             ×
           </button>
           <h2 className="settings-title">Ruas</h2>
-          <p className="settings-hint">Uma rua aparece aqui assim que tem pelo menos uma longarina registrada. Pra criar uma rua nova, é só usar "+ Longarina" com a letra nova.</p>
+          <p className="settings-hint">Uma rua aparece aqui assim que tem pelo menos uma gaveta registrada. Pra criar uma rua nova, é só usar "+ Gaveta" com a letra nova.</p>
         </div>
         <div className="settings-panel-body">
           {ruas.length === 0 ? (
@@ -1231,7 +1340,7 @@ function ModalRuas({ ruas, onFechar, onExcluir }: { ruas: RuaResumo[]; onFechar:
                     <strong>Rua {r.rua}</strong>
                     <span className="field-value--muted">
                       {" "}
-                      · {r.posicoes.length} longarina(s) · {r.posicoes.reduce((s, p) => s + p.ultima.quantidade, 0)} un.
+                      · {r.posicoes.length} gaveta(s) · {r.posicoes.reduce((s, p) => s + p.ultima.quantidade, 0)} un.
                     </span>
                   </span>
                   <button type="button" className="btn-perigo-texto" onClick={() => onExcluir(r.rua)}>
@@ -1264,8 +1373,10 @@ export function Estoque() {
   const [filtroVoltagem, setFiltroVoltagem] = useState("");
   const [ordem, setOrdem] = useState<Ordem>("nome");
   const [soComEstoque, setSoComEstoque] = useState(false);
+  // "Separar por voltagem" aberto: um produto (do detalhe) ou todos os que estão nessa situação.
+  const [separando, setSeparando] = useState<{ grupos: GrupoProduto[]; todos: boolean } | null>(null);
 
-  // Excluir rua: confirmação digitando o nome da rua (apaga todas as longarinas dela de uma vez).
+  // Excluir rua: confirmação digitando o nome da rua (apaga todas as gavetas dela de uma vez).
   const [excluindoRua, setExcluindoRua] = useState<string | null>(null);
   const [confirmacaoRua, setConfirmacaoRua] = useState("");
   const [erroExcluirRua, setErroExcluirRua] = useState<string | null>(null);
@@ -1299,7 +1410,7 @@ export function Estoque() {
         setInfo(json.info ?? {});
       }
     } catch {
-      // Catálogo/fotos não travam a tela — os cards aparecem a partir das longarinas mesmo assim.
+      // Catálogo/fotos não travam a tela — os cards aparecem a partir das gavetas mesmo assim.
     }
   }, []);
 
@@ -1318,8 +1429,8 @@ export function Estoque() {
     };
   }, [carregar, carregarProdutos]);
 
-  const todasAsLongarinas = useMemo(() => ruas.flatMap((r) => r.posicoes), [ruas]);
-  const longarinasVazias = todasAsLongarinas.filter((p) => !p.produto).sort(ordenarLongarinas);
+  const todasAsGavetas = useMemo(() => ruas.flatMap((r) => r.posicoes), [ruas]);
+  const gavetasVazias = todasAsGavetas.filter((p) => !p.produto).sort(ordenarGavetas);
 
   const grupos = useMemo<GrupoProduto[]>(() => {
     const mapa = new Map<string, GrupoProduto>();
@@ -1330,48 +1441,49 @@ export function Estoque() {
         if (noCatalogo) existente.noCatalogo = true;
         return existente;
       }
-      const novo: GrupoProduto = { chave, nome, noCatalogo, info: info[chave], total: 0, longarinas: [], porVoltagem: [], ultimaContagem: null };
+      const novo: GrupoProduto = { chave, nome, noCatalogo, info: info[chave], total: 0, gavetas: [], porVoltagem: [], ultimaContagem: null };
       mapa.set(chave, novo);
       return novo;
     };
     for (const nome of produtos) garantir(nome, true);
-    for (const p of todasAsLongarinas) {
+    for (const p of todasAsGavetas) {
       if (!p.produto) continue;
       const grupo = garantir(p.produto, false);
-      grupo.longarinas.push(p);
+      grupo.gavetas.push(p);
       grupo.total += p.ultima.quantidade;
       if (!grupo.ultimaContagem || p.ultima.criadoEm > grupo.ultimaContagem) grupo.ultimaContagem = p.ultima.criadoEm;
     }
     for (const grupo of mapa.values()) {
-      grupo.longarinas.sort(ordenarLongarinas);
+      grupo.gavetas.sort(ordenarGavetas);
       const porVoltagem = new Map<string, number>();
-      for (const l of grupo.longarinas) if (l.voltagem) porVoltagem.set(l.voltagem, (porVoltagem.get(l.voltagem) ?? 0) + l.ultima.quantidade);
+      for (const l of grupo.gavetas) if (l.voltagem) porVoltagem.set(l.voltagem, (porVoltagem.get(l.voltagem) ?? 0) + l.ultima.quantidade);
       grupo.porVoltagem = [...porVoltagem.entries()].map(([voltagem, quantidade]) => ({ voltagem, quantidade }));
     }
     return [...mapa.values()];
-  }, [produtos, todasAsLongarinas, info]);
+  }, [produtos, todasAsGavetas, info]);
 
   const termo = normalizar(busca.trim());
   const gruposExibidos = grupos
     .filter((g) => !soComEstoque || g.total > 0)
-    .filter((g) => !filtroVoltagem || g.longarinas.some((l) => l.voltagem === filtroVoltagem))
+    .filter((g) => !filtroVoltagem || g.gavetas.some((l) => l.voltagem === filtroVoltagem))
     .filter(
       (g) =>
         !termo ||
         normalizar(g.nome).includes(termo) ||
-        g.longarinas.some((l) => normalizar(`${l.codigo} rua ${l.rua} ${l.rua}${l.codigo}`).includes(termo)),
+        g.gavetas.some((l) => normalizar(`${l.codigo} rua ${l.rua} ${l.rua}${l.codigo}`).includes(termo)),
     )
     .sort((a, b) => (ordem === "unidades" ? b.total - a.total : 0) || a.nome.localeCompare(b.nome, "pt-BR"));
 
-  const totalUnidades = todasAsLongarinas.reduce((s, p) => s + p.ultima.quantidade, 0);
-  const ocupadas = todasAsLongarinas.filter((p) => p.ultima.quantidade > 0).length;
+  const totalUnidades = todasAsGavetas.reduce((s, p) => s + p.ultima.quantidade, 0);
+  const ocupadas = todasAsGavetas.filter((p) => p.ultima.quantidade > 0).length;
   const semFoto = grupos.filter((g) => g.noCatalogo && !g.info?.fotoUrl).length;
   const buscandoFotos = grupos.some((g) => g.info?.fotoStatus === "pendente");
   const grupoAberto = produtoAberto ? grupos.find((g) => g.chave === produtoAberto) ?? null : null;
+  const paraSeparar = grupos.filter(podeSepararPorVoltagem);
 
   const codigosPorRua = useMemo(() => Object.fromEntries(ruas.map((r) => [r.rua, r.posicoes.map((p) => p.codigo)])), [ruas]);
 
-  const abrirNovaLongarina = useCallback(
+  const abrirNovaGaveta = useCallback(
     (produtoInicial?: string) => {
       setProdutoAberto(null);
       setModal({ modo: "nova", ruasExistentes: ruas.map((r) => r.rua), codigosPorRua, produtoInicial });
@@ -1379,7 +1491,7 @@ export function Estoque() {
     [ruas, codigosPorRua],
   );
 
-  const abrirLongarina = useCallback((p: PosicaoResumo) => {
+  const abrirGaveta = useCallback((p: PosicaoResumo) => {
     setProdutoAberto(null);
     setModal({ modo: "existente", rua: p.rua, codigo: p.codigo, ultima: p.ultima, produto: p.produto, voltagem: p.voltagem });
   }, []);
@@ -1388,7 +1500,7 @@ export function Estoque() {
     (_rua: string, codigo: string) => {
       setModal(null);
       void carregar();
-      mostrarToast(`Longarina ${codigo} salva`);
+      mostrarToast(`Gaveta ${codigo} salva`);
     },
     [carregar, mostrarToast],
   );
@@ -1398,11 +1510,11 @@ export function Estoque() {
     void carregar();
   }, [carregar]);
 
-  const aoExcluirLongarina = useCallback(
+  const aoExcluirGaveta = useCallback(
     (_rua: string, codigo: string) => {
       setModal(null);
       void carregar();
-      mostrarToast(`Longarina ${codigo} excluída`);
+      mostrarToast(`Gaveta ${codigo} excluída`);
     },
     [carregar, mostrarToast],
   );
@@ -1427,7 +1539,7 @@ export function Estoque() {
       const resposta = await fetch(`${API_URL}/api/estoque/rua/${encodeURIComponent(excluindoRua)}`, { method: "DELETE" });
       const json = await resposta.json();
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui excluir a rua.");
-      mostrarToast(`Rua ${excluindoRua} excluída (${json.posicoesExcluidas ?? 0} longarina(s))`);
+      mostrarToast(`Rua ${excluindoRua} excluída (${json.posicoesExcluidas ?? 0} gaveta(s))`);
       setExcluindoRua(null);
       setConfirmacaoRua("");
       void carregar();
@@ -1442,15 +1554,15 @@ export function Estoque() {
 
   return (
     <div className="page pagina-formulario">
-      <PageHeader titulo="Estoque" subtitulo="Onde está cada produto no galpão — rua e longarina">
+      <PageHeader titulo="Estoque" subtitulo="Onde está cada produto no galpão — rua e gaveta">
         <button type="button" className="refresh-btn" onClick={() => setMostrarModalProdutos(true)}>
           + Produto
         </button>
         <button type="button" className="refresh-btn" onClick={() => setMostrarRuas(true)}>
           Ruas
         </button>
-        <button type="button" className="btn-primario" onClick={() => abrirNovaLongarina()}>
-          + Longarina
+        <button type="button" className="btn-primario" onClick={() => abrirNovaGaveta()}>
+          + Gaveta
         </button>
       </PageHeader>
 
@@ -1458,9 +1570,9 @@ export function Estoque() {
 
       <section className="resumo-grid" aria-label="Resumo do estoque">
         <CardResumo rotulo="Produtos" valor={grupos.length} detalhe={`${grupos.filter((g) => g.total > 0).length} com estoque`} tom="marca" />
-        <CardResumo rotulo="Unidades no galpão" valor={totalUnidades} detalhe="soma da última contagem de cada longarina" tom="ocupada" />
-        <CardResumo rotulo="Longarinas ocupadas" valor={ocupadas} detalhe={`de ${todasAsLongarinas.length} registradas em ${ruas.length} rua(s)`} tom="vazia" />
-        <CardResumo rotulo="Longarinas vazias" valor={longarinasVazias.length} detalhe="sem produto" tom="baixo" />
+        <CardResumo rotulo="Unidades no galpão" valor={totalUnidades} detalhe="soma da última contagem de cada gaveta" tom="ocupada" />
+        <CardResumo rotulo="Gavetas ocupadas" valor={ocupadas} detalhe={`de ${todasAsGavetas.length} registradas em ${ruas.length} rua(s)`} tom="vazia" />
+        <CardResumo rotulo="Gavetas vazias" valor={gavetasVazias.length} detalhe="sem produto" tom="baixo" />
       </section>
 
       <div className="filtro-barra" role="search">
@@ -1469,10 +1581,10 @@ export function Estoque() {
           <input
             className="field-input"
             type="search"
-            aria-label="Buscar produto ou longarina"
+            aria-label="Buscar produto ou gaveta"
             value={busca}
             onChange={(event) => setBusca(event.target.value)}
-            placeholder="Buscar produto, rua ou longarina (ex.: F3)"
+            placeholder="Buscar produto, rua ou gaveta (ex.: F3)"
           />
         </label>
         <select className="field-input" aria-label="Filtrar por voltagem" value={filtroVoltagem} onChange={(event) => setFiltroVoltagem(event.target.value)}>
@@ -1498,13 +1610,25 @@ export function Estoque() {
         )}
       </div>
 
+      {paraSeparar.length > 0 && (
+        <div className="aviso-faixa" role="status">
+          <span>
+            <strong>{paraSeparar.length} produto(s)</strong> cadastrado(s) sem a voltagem no nome, com gavetas de voltagens diferentes. Agora cada
+            voltagem é um produto próprio.
+          </span>
+          <button type="button" className="btn-primario" onClick={() => setSeparando({ grupos: paraSeparar, todos: true })}>
+            Separar por voltagem
+          </button>
+        </div>
+      )}
+
       {!carregou ? (
         <p className="nota-info">Carregando estoque…</p>
       ) : grupos.length === 0 ? (
         <div className="estado-vazio">
           <IconeGondola className="estado-vazio-icone" />
           <p className="estado-vazio-titulo">Nenhum produto cadastrado ainda.</p>
-          <p className="field-value--muted">Comece trazendo os produtos do Tiny (já com foto) — depois é só dizer em que longarina cada um está.</p>
+          <p className="field-value--muted">Comece trazendo os produtos do Tiny (já com foto) — depois é só dizer em que gaveta cada um está.</p>
           <button type="button" className="btn-primario" onClick={() => setMostrarModalProdutos(true)}>
             + Adicionar produtos
           </button>
@@ -1546,17 +1670,17 @@ export function Estoque() {
                   {g.porVoltagem.length > 0 && (
                     <span className="produto-card-meta">{g.porVoltagem.map((v) => `${v.voltagem}: ${v.quantidade}`).join(" · ")}</span>
                   )}
-                  {g.longarinas.length === 0 ? (
-                    <span className="produto-card-meta">Não está em nenhuma longarina</span>
+                  {g.gavetas.length === 0 ? (
+                    <span className="produto-card-meta">Não está em nenhuma gaveta</span>
                   ) : (
                     <span className="produto-card-locais" aria-label="Onde está">
-                      {g.longarinas.slice(0, 4).map((l) => (
-                        <span key={`${l.rua}::${l.codigo}`} className="local-chip" title={`Rua ${l.rua} · longarina ${l.codigo} · ${l.ultima.quantidade} un.`}>
+                      {g.gavetas.slice(0, 4).map((l) => (
+                        <span key={`${l.rua}::${l.codigo}`} className="local-chip" title={`Rua ${l.rua} · gaveta ${l.codigo} · ${l.ultima.quantidade} un.`}>
                           {l.codigo}
                           <span className="local-chip-qtd tabular">{l.ultima.quantidade}</span>
                         </span>
                       ))}
-                      {g.longarinas.length > 4 && <span className="local-chip local-chip--mais">+{g.longarinas.length - 4}</span>}
+                      {g.gavetas.length > 4 && <span className="local-chip local-chip--mais">+{g.gavetas.length - 4}</span>}
                     </span>
                   )}
                 </span>
@@ -1566,12 +1690,12 @@ export function Estoque() {
         </div>
       )}
 
-      {longarinasVazias.length > 0 && (
+      {gavetasVazias.length > 0 && (
         <section className="painel-card">
-          <h2 className="painel-card-titulo">Longarinas vazias ({longarinasVazias.length})</h2>
+          <h2 className="painel-card-titulo">Gavetas vazias ({gavetasVazias.length})</h2>
           <div className="produto-card-locais">
-            {longarinasVazias.map((l) => (
-              <button key={`${l.rua}::${l.codigo}`} type="button" className="local-chip local-chip--botao" onClick={() => abrirLongarina(l)} title={`Rua ${l.rua} · contar / colocar produto`}>
+            {gavetasVazias.map((l) => (
+              <button key={`${l.rua}::${l.codigo}`} type="button" className="local-chip local-chip--botao" onClick={() => abrirGaveta(l)} title={`Rua ${l.rua} · contar / colocar produto`}>
                 {l.codigo}
               </button>
             ))}
@@ -1583,9 +1707,25 @@ export function Estoque() {
         <ModalProduto
           grupo={grupoAberto}
           onFechar={() => setProdutoAberto(null)}
-          onAbrirLongarina={abrirLongarina}
-          onNovaLongarina={abrirNovaLongarina}
+          onAbrirGaveta={abrirGaveta}
+          onNovaGaveta={abrirNovaGaveta}
           onFotoAlterada={() => void carregarProdutos()}
+          onSepararVoltagem={(grupo) => setSeparando({ grupos: [grupo], todos: false })}
+        />
+      )}
+
+      {separando && (
+        <ModalSepararVoltagem
+          grupos={separando.grupos}
+          todos={separando.todos}
+          onFechar={() => setSeparando(null)}
+          onConcluido={(mensagem) => {
+            setSeparando(null);
+            setProdutoAberto(null);
+            mostrarToast(mensagem);
+            void carregar();
+            void carregarProdutos();
+          }}
         />
       )}
 
@@ -1613,7 +1753,7 @@ export function Estoque() {
             </div>
             <div className="settings-panel-body">
               <p className="field-value">
-                As <strong>{ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0} longarina(s)</strong> dessa rua somem da tela, com o histórico de
+                As <strong>{ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0} gaveta(s)</strong> dessa rua somem da tela, com o histórico de
                 contagens. Nada é apagado de vez: fica guardado num arquivo de excluídos e dá pra recuperar se precisar.
               </p>
               <label className="field">
@@ -1657,7 +1797,7 @@ export function Estoque() {
           onFechar={() => setModal(null)}
           onSalvo={aoSalvar}
           onMetadadosSalvos={aoSalvarMetadados}
-          onExcluida={aoExcluirLongarina}
+          onExcluida={aoExcluirGaveta}
         />
       )}
 

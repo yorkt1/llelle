@@ -3,7 +3,7 @@ import { v2 as cloudinary } from "cloudinary";
 import * as store from "./store";
 
 /**
- * Registro do galpão organizado como a estrutura física real: Rua (letra) > Posição/longarina
+ * Registro do galpão organizado como a estrutura física real: Rua (letra) > Posição/gaveta
  * (código, ex.: "A5"). Cada posição guarda um HISTÓRICO de contagens — nunca sobrescreve, só
  * acrescenta — pra dar pra ver a evolução ao longo do tempo, não só o valor mais recente.
  *
@@ -161,6 +161,77 @@ export async function adicionarProdutos(nomes: string[]): Promise<{ produtos: st
   return { produtos, adicionados };
 }
 
+
+/** O nome do produto já diz a voltagem? ("... 110V", "... 220V", "... Bivolt"; 127V conta como 110V.) */
+export function voltagemNoNome(nome: string): Voltagem | null {
+  if (/\bbivolt\b/i.test(nome)) return "Bivolt";
+  const ocorrencias = [...nome.matchAll(/\b(110|127|220)\s*v\b/gi)];
+  if (ocorrencias.length === 0) return null;
+  return ocorrencias[ocorrencias.length - 1][1] === "220" ? "220V" : "110V";
+}
+
+export interface ResultadoDivisao {
+  /** Produto original → produtos novos criados a partir dele (um por voltagem). */
+  divisoes: { original: string; novos: string[]; gavetas: number }[];
+  gavetasAtualizadas: number;
+  /** Originais que saíram do catálogo (nenhuma gaveta usa mais o nome sem voltagem). */
+  removidosDoCatalogo: string[];
+}
+
+/**
+ * "Separar por voltagem": produto cadastrado SEM a voltagem no nome (de quando a voltagem era um
+ * campo da gaveta) vira um produto por voltagem — "Chaleira Elegance Azul" com gavetas 110V e
+ * 220V vira "Chaleira Elegance Azul 110V" e "Chaleira Elegance Azul 220V", e cada gaveta passa
+ * pro produto da voltagem dela. Contagens, fotos e histórico das gavetas não mudam.
+ *
+ * `nomes` vazio = todos os produtos nessa situação. Gaveta sem voltagem continua no produto
+ * original (que só sai do catálogo se nenhuma gaveta usar mais ele).
+ */
+export async function dividirProdutosPorVoltagem(nomes: string[] = []): Promise<ResultadoDivisao> {
+  const alvo = new Set(nomes.map((n) => n.trim().toLowerCase()));
+  const catalogo = await listarProdutos();
+  const nomeNoCatalogo = new Map(catalogo.map((p) => [p.toLowerCase(), p]));
+  const divisoes = new Map<string, { original: string; novos: Set<string>; gavetas: number }>();
+  let gavetasAtualizadas = 0;
+
+  const metadadosNovos = await store.update<MetadadosPorPosicao>(CHAVE_METADADOS, (atual) => {
+    const mapa = { ...(atual ?? {}) };
+    for (const [k, meta] of Object.entries(mapa)) {
+      if (!meta?.produto || !meta.voltagem) continue;
+      if (voltagemNoNome(meta.produto)) continue; // já é um produto por voltagem
+      if (alvo.size > 0 && !alvo.has(meta.produto.trim().toLowerCase())) continue;
+      const sugerido = `${meta.produto.trim()} ${meta.voltagem}`;
+      // Se o catálogo já tem esse produto (com outra caixa de letra), usa o nome de lá.
+      const novoNome = nomeNoCatalogo.get(sugerido.toLowerCase()) ?? sugerido;
+      mapa[k] = { ...meta, produto: novoNome };
+      const d = divisoes.get(meta.produto) ?? { original: meta.produto, novos: new Set<string>(), gavetas: 0 };
+      d.novos.add(novoNome);
+      d.gavetas++;
+      divisoes.set(meta.produto, d);
+      gavetasAtualizadas++;
+    }
+    return mapa;
+  });
+
+  if (divisoes.size === 0) return { divisoes: [], gavetasAtualizadas: 0, removidosDoCatalogo: [] };
+
+  const novos = [...divisoes.values()].flatMap((d) => [...d.novos]);
+  await adicionarProdutos(novos);
+
+  // O original sai do catálogo se nenhuma gaveta usa mais ele (as sem voltagem seguram).
+  const aindaUsados = new Set(Object.values(metadadosNovos).map((m) => m?.produto?.toLowerCase()).filter(Boolean));
+  const removidosDoCatalogo = [...divisoes.keys()].filter((original) => !aindaUsados.has(original.toLowerCase()));
+  if (removidosDoCatalogo.length > 0) {
+    const remover = new Set(removidosDoCatalogo.map((r) => r.toLowerCase()));
+    await store.update<string[]>(CHAVE_PRODUTOS, (atual) => (atual ?? []).filter((p) => !remover.has(p.toLowerCase())));
+  }
+
+  return {
+    divisoes: [...divisoes.values()].map((d) => ({ original: d.original, novos: [...d.novos].sort(), gavetas: d.gavetas })),
+    gavetasAtualizadas,
+    removidosDoCatalogo,
+  };
+}
 // Exclusão de posição/rua: nunca apaga de vez — o histórico (contagens + fotos) e o produto/voltagem
 // vão pra `estoque:excluidos`, com data, pra dar pra recuperar se alguém excluir por engano.
 const CHAVE_EXCLUIDOS = "estoque:excluidos";

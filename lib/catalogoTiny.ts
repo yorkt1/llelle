@@ -35,7 +35,7 @@ export interface ProdutoTiny {
 }
 
 /**
- * Nome pro catálogo do Estoque: o nome do Tiny SEM a voltagem (que é escolhida na longarina) — mas
+ * Nome pro catálogo do Estoque: o nome do Tiny SEM a voltagem (que é escolhida na gaveta) — mas
  * mantendo a cor, que separa produtos de verdade (ex.: Elegance Azul e Elegance Vermelha são dois
  * cards, cada um com a sua foto). Aceita os formatos que aparecem no Tiny:
  *   "Chaleira Koti Modern Preta 1,7L - 110V"   → "Chaleira Koti Modern Preta 1,7L"

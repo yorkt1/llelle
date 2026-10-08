@@ -254,3 +254,34 @@ export async function refazerFotoDoTiny(nome: string): Promise<void> {
     return mapa;
   });
 }
+
+/**
+ * Depois de "Separar por voltagem": os produtos novos herdam a foto do original (é o mesmo produto,
+ * só muda a voltagem) — assim os cards não ficam sem foto. Quem já tinha foto própria não muda.
+ */
+export async function copiarFotoParaProdutos(original: string, novos: string[]): Promise<void> {
+  const mapa = await listarInfoProdutos();
+  const origem = mapa[chaveProduto(original)];
+  if (!origem?.fotoUrl || origem.fotoStatus !== "ok") {
+    // Original sem foto: os novos entram na fila da busca do Tiny pelo nome deles.
+    await registrarInfoProdutos(novos.map((nome) => ({ nome })));
+    return;
+  }
+  await store.update<Record<string, InfoProduto>>(CHAVE_INFO, (atual) => {
+    const copia = { ...(atual ?? {}) };
+    for (const nome of novos) {
+      const k = chaveProduto(nome);
+      if (copia[k]?.fotoStatus === "ok" && copia[k]?.fotoUrl) continue;
+      copia[k] = {
+        nome,
+        idsTiny: [],
+        codigos: [],
+        fotoUrl: origem.fotoUrl,
+        fotoStatus: "ok",
+        fotoOrigem: origem.fotoOrigem,
+        fotoAtualizadaEm: new Date().toISOString(),
+      };
+    }
+    return copia;
+  });
+}

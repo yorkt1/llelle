@@ -2721,7 +2721,7 @@ th.matriz-dia {
   gap: 0.35rem;
 }
 
-/* Etiqueta de longarina — mesmo jeitão da etiqueta colada na viga (F3, H2…). */
+/* Etiqueta de gaveta — mesmo jeitão da etiqueta colada na gaveta (F3, H2…). */
 .local-chip {
   display: inline-flex;
   align-items: center;
@@ -2784,13 +2784,13 @@ th.matriz-dia {
   font-weight: 700;
 }
 
-.estoque-rua-longarina {
+.estoque-rua-gaveta {
   display: grid;
   grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr);
   gap: 0.35rem 1rem;
 }
 
-.estoque-rua-longarina-erro {
+.estoque-rua-gaveta-erro {
   grid-column: 1 / -1;
 }
 
@@ -2815,7 +2815,7 @@ th.matriz-dia {
   border: 1px dashed var(--line);
 }
 
-.estoque-rua-longarina .field-input {
+.estoque-rua-gaveta .field-input {
   width: 100%;
   min-width: 0;
 }
@@ -2880,4 +2880,59 @@ th.matriz-dia {
 .estoque-produto-voltagem .field-input {
   width: 100%;
   min-width: 0;
+}
+
+/* ---------- Separar por voltagem ---------- */
+
+.aviso-faixa {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 1.1rem;
+  background: var(--warning-soft);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-card);
+  font-size: 0.9rem;
+}
+
+.aviso-separar {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  color: var(--warning);
+}
+
+.separar-produto + .separar-produto {
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.separar-original {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  color: var(--fg-secondary);
+  text-decoration: line-through;
+  text-decoration-color: var(--muted);
+}
+
+.separar-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.separar-lista li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+.separar-seta {
+  color: var(--muted);
 }
