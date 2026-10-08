@@ -20,7 +20,7 @@ interface ProdutosPesquisaResponse {
     codigo_erro?: number | string;
     numero_paginas?: number;
     erros?: { erro: string }[];
-    produtos?: { produto: { id?: string | number; nome?: string; codigo?: string; situacao?: string } }[];
+    produtos?: { produto: { id?: string | number; nome?: string; codigo?: string; situacao?: string; tipoVariacao?: string } }[];
   };
 }
 
@@ -34,24 +34,71 @@ export interface ProdutoTiny {
   idsTiny: string[];
 }
 
+/**
+ * Nome pro catálogo do Estoque: o nome do Tiny SEM a voltagem (que é escolhida na longarina) — mas
+ * mantendo a cor, que separa produtos de verdade (ex.: Elegance Azul e Elegance Vermelha são dois
+ * cards, cada um com a sua foto). Aceita os formatos que aparecem no Tiny:
+ *   "Chaleira Koti Modern Preta 1,7L - 110V"   → "Chaleira Koti Modern Preta 1,7L"
+ *   "Chaleira Elegance - Azul - 220V"          → "Chaleira Elegance Azul"
+ *   "Chaleira Elegance Cor: Vermelha, Voltagem: 110V" → "Chaleira Elegance Vermelha"
+ */
 export function nomeSemVoltagem(nome: string): string {
-  return nome
+  const semVoltagem = nome
+    .replace(/\b(voltagem|tens[aã]o)\s*:\s*/gi, "")
+    .replace(/\bcor\s*:\s*/gi, "")
     .replace(/\b(110|127|220)\s*v\b/gi, "")
     .replace(/\bbivolt\b/gi, "")
-    .replace(/\s*[-–—/]\s*$/g, "")
-    .replace(/\s*[-–—]\s*(?=[-–—]|$)/g, "")
-    .replace(/\(\s*\)/g, "")
+    .replace(/\(\s*\)/g, "");
+  // Separadores (" - ", "/", ";", vírgula que NÃO está entre dígitos como em "1,7L") viram espaço;
+  // pedaços vazios (onde estava só a voltagem) somem.
+  return semVoltagem
+    .split(/\s*(?:[-–—/;|]|,(?!\d))\s*/)
+    .map((parte) => parte.trim())
+    .filter(Boolean)
+    .join(" ")
     .replace(/\s{2,}/g, " ")
-    .trim()
-    .replace(/[-–—/,]+$/, "")
     .trim();
+}
+
+interface ProdutoBruto {
+  id: string;
+  nome: string;
+  codigo?: string;
+  tipoVariacao?: string;
+}
+
+/**
+ * Agrupa os produtos do Tiny pelo nome sugerido. Produto PAI de variações (tipoVariacao "P") fica de
+ * fora quando as variações dele também vieram — o nome do pai não tem a cor, e viraria um card
+ * genérico ("Chaleira Elegance") além dos cards por cor.
+ */
+export function agruparProdutosTiny(brutos: ProdutoBruto[]): ProdutoTiny[] {
+  const nomesNorm = brutos.map((p) => p.nome.toLowerCase());
+  const visiveis = brutos.filter((p, i) => {
+    if ((p.tipoVariacao ?? "").toUpperCase() !== "P") return true;
+    const base = nomesNorm[i];
+    return !brutos.some((outro, j) => j !== i && (outro.tipoVariacao ?? "").toUpperCase() === "V" && nomesNorm[j].startsWith(base));
+  });
+
+  const porSugestao = new Map<string, ProdutoTiny>();
+  for (const produto of visiveis) {
+    const sugestao = nomeSemVoltagem(produto.nome);
+    if (!sugestao) continue;
+    const chave = sugestao.toLowerCase();
+    const atual = porSugestao.get(chave) ?? { sugestao, nomesTiny: [], codigos: [], idsTiny: [] };
+    if (!atual.nomesTiny.includes(produto.nome)) atual.nomesTiny.push(produto.nome);
+    if (produto.codigo && !atual.codigos.includes(produto.codigo)) atual.codigos.push(produto.codigo);
+    if (produto.id && !atual.idsTiny.includes(produto.id)) atual.idsTiny.push(produto.id);
+    porSugestao.set(chave, atual);
+  }
+  return [...porSugestao.values()].sort((a, b) => a.sugestao.localeCompare(b.sugestao, "pt-BR"));
 }
 
 export async function buscarProdutosTiny(termo: string): Promise<ProdutoTiny[]> {
   const pesquisa = termo.trim();
   if (!pesquisa) throw new Error("Informe uma palavra pra buscar no Tiny (ex.: koti).");
 
-  const porSugestao = new Map<string, ProdutoTiny>();
+  const brutos: ProdutoBruto[] = [];
   let pagina = 1;
   let totalPaginas = 1;
   do {
@@ -63,17 +110,11 @@ export async function buscarProdutosTiny(termo: string): Promise<ProdutoTiny[]> 
     for (const { produto } of retorno.produtos ?? []) {
       const nome = (produto.nome ?? "").trim();
       if (!nome) continue;
-      const sugestao = nomeSemVoltagem(nome);
-      const chave = sugestao.toLowerCase();
-      const atual = porSugestao.get(chave) ?? { sugestao, nomesTiny: [], codigos: [], idsTiny: [] };
-      if (!atual.nomesTiny.includes(nome)) atual.nomesTiny.push(nome);
-      if (produto.codigo && !atual.codigos.includes(produto.codigo)) atual.codigos.push(produto.codigo);
-      if (produto.id && !atual.idsTiny.includes(String(produto.id))) atual.idsTiny.push(String(produto.id));
-      porSugestao.set(chave, atual);
+      brutos.push({ id: produto.id ? String(produto.id) : "", nome, codigo: produto.codigo, tipoVariacao: produto.tipoVariacao });
     }
     totalPaginas = Math.min(retorno.numero_paginas ?? 1, MAX_PAGINAS);
     pagina++;
   } while (pagina <= totalPaginas);
 
-  return [...porSugestao.values()].sort((a, b) => a.sugestao.localeCompare(b.sugestao, "pt-BR"));
+  return agruparProdutosTiny(brutos);
 }
