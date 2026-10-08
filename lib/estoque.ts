@@ -265,7 +265,8 @@ async function salvarFoto(fotoDataUri: string): Promise<string> {
  * do mesmo produto de novo substitui em vez de acumular cópias.
  */
 export async function salvarImagemRemota(url: string, pasta: string, publicId: string): Promise<string> {
-  if (!/^https?:\/\//i.test(url)) throw new Error("Link de imagem inválido.");
+  // Aceita link externo (foto do Tiny) ou data URI de imagem (foto trocada à mão no sistema).
+  if (!/^https?:\/\//i.test(url) && !/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(url)) throw new Error("Imagem inválida.");
   if (!cloudinaryConfigurado()) {
     throw new CloudinaryConfigError(
       "Upload de foto não configurado — faltam CLOUDINARY_CLOUD_NAME/CLOUDINARY_API_KEY/CLOUDINARY_API_SECRET no ambiente.",

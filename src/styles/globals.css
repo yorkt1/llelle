@@ -2830,3 +2830,32 @@ th.matriz-dia {
     font-size: 1.15rem;
   }
 }
+
+.produto-detalhe-foto-coluna {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+/* Ação secundária em forma de link (ex.: "Trocar foto"). */
+.link-acao {
+  background: none;
+  border: none;
+  padding: 0.1rem 0.25rem;
+  color: var(--brand);
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.link-acao:hover {
+  text-decoration: underline;
+}
+
+.link-acao:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}

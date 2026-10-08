@@ -15,7 +15,13 @@ import {
 import { StoreConfigError } from "../../lib/store";
 import { OlistConfigError } from "../../lib/olist";
 import { buscarProdutosTiny } from "../../lib/catalogoTiny";
-import { listarInfoProdutos, registrarInfoProdutos, solicitarFotosFaltantes } from "../../lib/fotosProdutos";
+import {
+  definirFotoManual,
+  listarInfoProdutos,
+  refazerFotoDoTiny,
+  registrarInfoProdutos,
+  solicitarFotosFaltantes,
+} from "../../lib/fotosProdutos";
 
 export const estoqueRouter = Router();
 
@@ -105,6 +111,40 @@ estoqueRouter.post("/produtos/fotos/buscar", async (_req, res) => {
     res.status(202).json({ pendentes: await solicitarFotosFaltantes() });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao pedir as fotos." });
+  }
+});
+
+// "Trocar foto" no detalhe do produto: foto escolhida/tirada na hora, guardada no Cloudinary.
+estoqueRouter.post("/produtos/fotos/trocar", async (req, res) => {
+  const nome = paraTextoObrigatorio(req.body?.nome);
+  const fotoDataUri = paraTextoObrigatorio(req.body?.fotoDataUri);
+  if (!nome || !fotoDataUri) {
+    res.status(400).json({ error: "Informe o produto e a foto." });
+    return;
+  }
+  try {
+    res.status(200).json({ info: await definirFotoManual(nome, fotoDataUri) });
+  } catch (error) {
+    if (error instanceof CloudinaryConfigError || error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
+    res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao trocar a foto." });
+  }
+});
+
+// "Usar foto do Tiny": descarta a foto atual e põe o produto na fila da busca automática de novo.
+estoqueRouter.post("/produtos/fotos/tiny", async (req, res) => {
+  const nome = paraTextoObrigatorio(req.body?.nome);
+  if (!nome) {
+    res.status(400).json({ error: "Informe o produto." });
+    return;
+  }
+  try {
+    await refazerFotoDoTiny(nome);
+    res.status(202).json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado." });
   }
 });
 estoqueRouter.get("/produtos/tiny", async (req, res) => {

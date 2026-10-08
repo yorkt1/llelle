@@ -33,6 +33,8 @@ export interface InfoProduto {
   codigos: string[];
   fotoUrl?: string;
   fotoStatus: StatusFoto;
+  /** "manual" = trocada por alguém no sistema — a busca automática do Tiny nunca sobrescreve. */
+  fotoOrigem?: "tiny" | "manual";
   fotoErro?: string;
   fotoAtualizadaEm?: string;
 }
@@ -70,13 +72,13 @@ export async function registrarInfoProdutos(itens: { nome: string; idsTiny?: str
       const k = chaveProduto(item.nome);
       if (!k) continue;
       const existente = mapa[k];
+      const temFoto = existente?.fotoStatus === "ok" && Boolean(existente.fotoUrl);
       mapa[k] = {
         nome: item.nome.trim(),
         idsTiny: [...new Set([...(existente?.idsTiny ?? []), ...(item.idsTiny ?? [])])],
         codigos: [...new Set([...(existente?.codigos ?? []), ...(item.codigos ?? [])])],
-        fotoUrl: existente?.fotoUrl,
-        fotoStatus: existente?.fotoStatus === "ok" ? "ok" : "pendente",
-        fotoAtualizadaEm: existente?.fotoAtualizadaEm,
+        // Quem já tem foto (do Tiny ou trocada à mão) mantém exatamente a mesma — inclusive a origem.
+        ...(temFoto ? { fotoUrl: existente.fotoUrl, fotoStatus: "ok" as const, fotoOrigem: existente.fotoOrigem, fotoAtualizadaEm: existente.fotoAtualizadaEm } : { fotoStatus: "pendente" as const }),
       };
     }
     return mapa;
@@ -174,7 +176,7 @@ async function resolverFoto(info: InfoProduto): Promise<InfoProduto> {
     const url = await imagemDoProduto(id);
     if (url) {
       const fotoUrl = await salvarImagemRemota(url, PASTA_CLOUDINARY, slug(info.nome));
-      return { ...info, idsTiny: ids, fotoUrl, fotoStatus: "ok", fotoErro: undefined, fotoAtualizadaEm: agora };
+      return { ...info, idsTiny: ids, fotoUrl, fotoStatus: "ok", fotoOrigem: "tiny", fotoErro: undefined, fotoAtualizadaEm: agora };
     }
     await sleep(INTERVALO_ENTRE_CHAMADAS_MS);
   }
@@ -206,4 +208,46 @@ export async function tickFotosProdutos(): Promise<void> {
   } finally {
     rodando = false;
   }
+}
+
+// ---------- Troca manual ----------
+
+/**
+ * "Trocar foto": sobe a foto escolhida (data URI) pro Cloudinary e marca como manual — a partir daí
+ * a busca automática do Tiny não mexe mais nela (o job só processa "pendente", e "Buscar fotos no
+ * Tiny" pula quem já tem foto).
+ */
+export async function definirFotoManual(nome: string, fotoDataUri: string): Promise<InfoProduto> {
+  const k = chaveProduto(nome);
+  if (!k) throw new Error("Informe o produto.");
+  const fotoUrl = await salvarImagemRemota(fotoDataUri, PASTA_CLOUDINARY, `${slug(nome)}-manual`);
+  let resultado!: InfoProduto;
+  await store.update<Record<string, InfoProduto>>(CHAVE_INFO, (atual) => {
+    const mapa = { ...(atual ?? {}) };
+    const existente = mapa[k];
+    resultado = {
+      nome: existente?.nome ?? nome.trim(),
+      idsTiny: existente?.idsTiny ?? [],
+      codigos: existente?.codigos ?? [],
+      fotoUrl,
+      fotoStatus: "ok",
+      fotoOrigem: "manual",
+      fotoAtualizadaEm: new Date().toISOString(),
+    };
+    mapa[k] = resultado;
+    return mapa;
+  });
+  return resultado;
+}
+
+/** "Usar foto do Tiny": descarta a foto atual (manual ou não) e coloca o produto na fila de novo. */
+export async function refazerFotoDoTiny(nome: string): Promise<void> {
+  const k = chaveProduto(nome);
+  if (!k) throw new Error("Informe o produto.");
+  await store.update<Record<string, InfoProduto>>(CHAVE_INFO, (atual) => {
+    const mapa = { ...(atual ?? {}) };
+    const existente = mapa[k];
+    mapa[k] = { nome: existente?.nome ?? nome.trim(), idsTiny: existente?.idsTiny ?? [], codigos: existente?.codigos ?? [], fotoStatus: "pendente" };
+    return mapa;
+  });
 }

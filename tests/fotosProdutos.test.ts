@@ -69,6 +69,29 @@ describe("fotos dos produtos (Tiny → Cloudinary)", () => {
     expect(uploadMock).toHaveBeenCalledWith("https://img/pai.png", expect.anything());
   });
 
+  it("foto trocada à mão: vai pro Cloudinary, nunca é sobrescrita pela busca do Tiny; 'Usar foto do Tiny' volta pra fila", async () => {
+    const FOTO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    tinyGetMock.mockResolvedValue({ retorno: { status: "OK", produto: { anexos: [{ anexo: "https://tiny/foto.jpg" }] } } });
+    const { adicionarProdutos, registrarInfoProdutos, definirFotoManual, solicitarFotosFaltantes, tickFotosProdutos, refazerFotoDoTiny, listarInfoProdutos } =
+      await fresh();
+    await adicionarProdutos(["Air Fryer Koti 4L"]);
+
+    const info = await definirFotoManual("Air Fryer Koti 4L", FOTO);
+    expect(info).toMatchObject({ fotoStatus: "ok", fotoOrigem: "manual", fotoUrl: "https://res.cloudinary.com/t/llelle-produtos/air-fryer-koti-4l-manual.jpg" });
+
+    // Nada disso pode trocar a foto manual:
+    await registrarInfoProdutos([{ nome: "Air Fryer Koti 4L", idsTiny: ["77"] }]);
+    expect(await solicitarFotosFaltantes()).toBe(0);
+    await tickFotosProdutos();
+    expect(tinyGetMock).not.toHaveBeenCalled();
+    expect((await listarInfoProdutos())["air fryer koti 4l"]).toMatchObject({ fotoOrigem: "manual" });
+
+    await refazerFotoDoTiny("Air Fryer Koti 4L");
+    expect((await listarInfoProdutos())["air fryer koti 4l"].fotoStatus).toBe("pendente");
+    await tickFotosProdutos();
+    expect((await listarInfoProdutos())["air fryer koti 4l"]).toMatchObject({ fotoStatus: "ok", fotoOrigem: "tiny" });
+  });
+
   it("produto que o Tiny não acha fica 'não encontrado'; limite de taxa só pausa (continua pendente)", async () => {
     tinyGetMock.mockResolvedValueOnce({ retorno: { status: "Erro", codigo_erro: 6 } });
     const { adicionarProdutos, solicitarFotosFaltantes, tickFotosProdutos, listarInfoProdutos } = await fresh();

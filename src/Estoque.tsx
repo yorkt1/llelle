@@ -957,6 +957,7 @@ const LIMITE_ESTOQUE_BAIXO = null as number | null;
 interface InfoProduto {
   fotoUrl?: string;
   fotoStatus?: "pendente" | "ok" | "sem-foto" | "nao-encontrado" | "erro";
+  fotoOrigem?: "tiny" | "manual";
 }
 
 /** Um produto e todas as longarinas onde ele está. */
@@ -1023,12 +1024,75 @@ function ModalProduto({
   onFechar,
   onAbrirLongarina,
   onNovaLongarina,
+  onFotoAlterada,
 }: {
   grupo: GrupoProduto;
   onFechar: () => void;
   onAbrirLongarina: (posicao: PosicaoResumo) => void;
   onNovaLongarina: (produto: string) => void;
+  onFotoAlterada: () => void;
 }) {
+  const inputFotoRef = useRef<HTMLInputElement>(null);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [avisoFoto, setAvisoFoto] = useState<string | null>(null);
+  const [erroFoto, setErroFoto] = useState<string | null>(null);
+
+  const trocarFoto = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const arquivo = event.target.files?.[0];
+      event.target.value = ""; // permite escolher o mesmo arquivo de novo
+      if (!arquivo) return;
+      setEnviandoFoto(true);
+      setErroFoto(null);
+      setAvisoFoto(null);
+      try {
+        const fotoDataUri = await comprimirFoto(arquivo);
+        const resposta = await fetch(`${API_URL}/api/estoque/produtos/fotos/trocar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome: grupo.nome, fotoDataUri }),
+        });
+        const json = await resposta.json();
+        if (!resposta.ok) throw new Error(json.error ?? "Não consegui trocar a foto.");
+        setAvisoFoto("Foto trocada. A busca automática do Tiny não mexe mais nela.");
+        onFotoAlterada();
+      } catch (error) {
+        setErroFoto(error instanceof Error ? error.message : "Não consegui trocar a foto.");
+      } finally {
+        setEnviandoFoto(false);
+      }
+    },
+    [grupo.nome, onFotoAlterada],
+  );
+
+  const usarFotoDoTiny = useCallback(async () => {
+    setErroFoto(null);
+    setAvisoFoto(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos/fotos/tiny`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: grupo.nome }),
+      });
+      if (!resposta.ok) throw new Error("Não consegui pedir a foto do Tiny.");
+      setAvisoFoto("Buscando a foto no Tiny — aparece em alguns minutos.");
+      onFotoAlterada();
+    } catch (error) {
+      setErroFoto(error instanceof Error ? error.message : "Não consegui pedir a foto do Tiny.");
+    }
+  }, [grupo.nome, onFotoAlterada]);
+
+  const origemFoto =
+    grupo.info?.fotoStatus === "pendente"
+      ? "buscando no Tiny…"
+      : grupo.info?.fotoUrl
+        ? grupo.info.fotoOrigem === "manual"
+          ? "trocada à mão"
+          : "do Tiny"
+        : grupo.info?.fotoStatus === "nao-encontrado"
+          ? "produto não achado no Tiny"
+          : "sem foto";
+
   return (
     <div className="settings-overlay" onClick={onFechar}>
       <div className="settings-panel settings-panel--largo" onClick={(event) => event.stopPropagation()}>
@@ -1036,7 +1100,18 @@ function ModalProduto({
           <button className="settings-close" onClick={onFechar} aria-label="Fechar">
             ×
           </button>
-          <FotoProduto info={grupo.info} nome={grupo.nome} className="produto-detalhe-foto" />
+          <div className="produto-detalhe-foto-coluna">
+            <FotoProduto info={grupo.info} nome={grupo.nome} className="produto-detalhe-foto" />
+            <input ref={inputFotoRef} type="file" accept="image/*" onChange={(event) => void trocarFoto(event)} hidden />
+            <button type="button" className="link-acao" onClick={() => inputFotoRef.current?.click()} disabled={enviandoFoto}>
+              {enviandoFoto ? "Enviando…" : "Trocar foto"}
+            </button>
+            {grupo.info?.fotoOrigem === "manual" || !grupo.info?.fotoUrl ? (
+              <button type="button" className="link-acao" onClick={() => void usarFotoDoTiny()} disabled={enviandoFoto || grupo.info?.fotoStatus === "pendente"}>
+                Usar foto do Tiny
+              </button>
+            ) : null}
+          </div>
           <div className="produto-detalhe-texto">
             <h2 className="settings-title">{grupo.nome}</h2>
             <p className="produto-detalhe-total tabular">{grupo.total} un.</p>
@@ -1045,6 +1120,9 @@ function ModalProduto({
                 ? "Não está em nenhuma longarina."
                 : `Em ${grupo.longarinas.length} longarina(s)${grupo.porVoltagem.length > 0 ? " · " + grupo.porVoltagem.map((v) => `${v.voltagem}: ${v.quantidade}`).join(" · ") : ""}`}
             </p>
+            <p className="settings-hint">Foto: {origemFoto}</p>
+            {avisoFoto && <p className="aviso-sucesso">{avisoFoto}</p>}
+            {erroFoto && <p className="error-banner">{erroFoto}</p>}
           </div>
         </div>
         <div className="settings-panel-body">
@@ -1472,7 +1550,13 @@ export function Estoque() {
       )}
 
       {grupoAberto && (
-        <ModalProduto grupo={grupoAberto} onFechar={() => setProdutoAberto(null)} onAbrirLongarina={abrirLongarina} onNovaLongarina={abrirNovaLongarina} />
+        <ModalProduto
+          grupo={grupoAberto}
+          onFechar={() => setProdutoAberto(null)}
+          onAbrirLongarina={abrirLongarina}
+          onNovaLongarina={abrirNovaLongarina}
+          onFotoAlterada={() => void carregarProdutos()}
+        />
       )}
 
       {mostrarRuas && (
