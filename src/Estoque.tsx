@@ -30,6 +30,124 @@ interface ProdutoTiny {
   idsTiny: string[];
 }
 
+interface SugestaoProdutoGrupo {
+  categoria: string;
+  itens: { nome: string; estoque: number }[];
+}
+
+const SUGESTOES_PRODUTOS: SugestaoProdutoGrupo[] = [
+  {
+    categoria: "Chaleiras",
+    itens: [
+      { nome: "Chaleira Elétrica Koti 1,5L Modern Inox Preta - 110v ou 220v - 110V - Preta", estoque: 3743 },
+      { nome: "Chaleira Elétrica Koti 1,5L Modern Inox Preta - 110v ou 220v - 220V - Preta", estoque: 6142 },
+      { nome: "Chaleira Elétrica Koti 1,8L Acqua Jarra de Vidro - 110v ou 220v - 110V", estoque: 1502 },
+      { nome: "Chaleira Elétrica Koti 1,8L Acqua Jarra de Vidro - 110v ou 220v - 220V", estoque: 1738 },
+      { nome: "Chaleira Elétrica Koti 1,8L Basic Inox Prateada - 110v ou 220v - 110V", estoque: 177 },
+      { nome: "Chaleira Elétrica Koti 1,8L Basic Inox Prateada - 110v ou 220v - 220V", estoque: 2116 },
+      { nome: "Chaleira Elétrica Koti 1,8L Elegance - 110v ou 220v - Azul acinzentado - 110V", estoque: 407 },
+      { nome: "Chaleira Elétrica Koti 1,8L Elegance - 110v ou 220v - Azul acinzentado - 220V", estoque: 905 },
+      { nome: "Chaleira Elétrica Koti 1,8L Elegance - 110v ou 220v - Vermelho - 110V", estoque: 1185 },
+      { nome: "Chaleira Elétrica Koti 1,8L Elegance - 110v ou 220v - Vermelho - 220V", estoque: 2035 },
+    ],
+  },
+  {
+    categoria: "Fritadeiras elétricas",
+    itens: [
+      { nome: "Fritadeira Elétrica Koti 2,6L Petit 1000w - 110v ou 220v - 110V", estoque: 1923 },
+      { nome: "Fritadeira Elétrica Koti 2,6L Petit 1000w - 110v ou 220v - 220V", estoque: 1374 },
+      { nome: "Fritadeira Elétrica Koti 4L Smart 1200w - 110v ou 220v - 220V", estoque: 2 },
+      { nome: "Fritadeira elétrica Koti 4,5L Elegance 1350W - 110V ou 220v - 110v", estoque: 364 },
+      { nome: "Fritadeira elétrica Koti 4,5L Elegance 1350W - 110V ou 220v - 220v", estoque: 337 },
+      { nome: "Fritadeira Elétrica Koti 5,5L Family 1500w - 110v ou 220v - 110", estoque: 283 },
+      { nome: "Fritadeira Elétrica Koti 5,5L Family 1500w - 110v ou 220v - 220", estoque: 2 },
+      { nome: "Fritadeira Elétrica Koti 6,5L Titanium 1500w - 110v ou 220v - 110v", estoque: 456 },
+      { nome: "Fritadeira Elétrica Koti 6,5L Titanium 1500w - 110v ou 220v - 220v", estoque: 555 },
+    ],
+  },
+  {
+    categoria: "Outros eletrodomésticos",
+    itens: [
+      { nome: "Aquecedor Elétrico Thermo Confort Koti - 110v ou 220v - 110v", estoque: 6 },
+      { nome: "Aquecedor Elétrico Thermo Confort Koti - 110v ou 220v - 220V", estoque: 216 },
+      { nome: "Cafeteira Elétrica Koti Family 1,5L 800w - 110v ou 220v - 110v", estoque: 12 },
+      { nome: "Cafeteira Elétrica Koti Family 1,5L 800w - 110v ou 220v - 220v", estoque: 1 },
+      { nome: "Cafeteira Elétrica Koti Petit Cp15 650ml Vidro Preto - 110v ou 220v - 127V", estoque: 1 },
+      { nome: "Forno Elétrico Koti 10l Petit 750W 110v ou 220v - 110v", estoque: 3 },
+      { nome: "Grill Elétrico Multiuso Koti Elegance Toast 110V ou 220V - 110v", estoque: 1160 },
+      { nome: "Grill Elétrico Multiuso Koti Elegance Toast 110V ou 220V - 220v", estoque: 370 },
+      { nome: "Mini Processador Basic 200w Koti - 110v ou 220v - 127V", estoque: 333 },
+      { nome: "Mini Processador Basic 200w Koti - 110v ou 220v - 220V", estoque: 885 },
+      { nome: "Mixer de Mão Elétrico Koti Modern 200w - 110v ou 220v - 127V", estoque: 2 },
+      { nome: "Mixer de Mão Elétrico Koti Modern 200w - 110v ou 220v - 220V", estoque: 612 },
+      { nome: "Sanduicheira Grill Quality Koti Preta 750w - 110v ou 220v - 110V", estoque: 4321 },
+      { nome: "Sanduicheira Grill Quality Koti Preta 750w - 110v ou 220v - 220V", estoque: 3046 },
+    ],
+  },
+  {
+    categoria: "Portões retráteis",
+    itens: [
+      { nome: "Portão Tela Segurança Bebês Pets Cercadinho Grade Retrátil - 1.5m - Branco", estoque: 465 },
+      { nome: "Portão Tela Segurança Bebês Pets Cercadinho Grade Retrátil - 1.8m - Branco", estoque: 42 },
+      { nome: "Portão Tela Segurança Bebês Pets Cercadinho Grade Retrátil - 3.0m - Branco", estoque: 264 },
+      { nome: "Portão Tela Segurança Bebês Pets Cercadinho Grade Retrátil - 1.5m - Preto", estoque: 463 },
+      { nome: "Portão Tela Segurança Bebês Pets Cercadinho Grade Retrátil - 1.8m - Preto", estoque: 243 },
+      { nome: "Portão Tela Segurança Bebês Pets Cercadinho Grade Retrátil - 3.0m - Preto", estoque: 224 },
+      { nome: "Portão Tela Segurança Bebês Pets Cercadinho Grade Retrátil - 1.5m - Rosa", estoque: 358 },
+    ],
+  },
+  {
+    categoria: "Tendas infantis e de praia",
+    itens: [
+      { nome: "Tenda Barraca de Proteção Solar Praia Acampamento UV Portatil - Azul", estoque: 5 },
+      { nome: "Tenda Barraca Infantil Dobravel Praia Uv Piscina Bichos - Baleia", estoque: 1 },
+      { nome: "Tenda Barraca Toca Infantil Portátil Dobrável Menina Menino - Ovelha", estoque: 87 },
+      { nome: "Tenda Barraca Toca Infantil Portátil Dobrável Menina Menino - Patinho", estoque: 162 },
+      { nome: "Tenda Barraca Toca Infantil Portátil Dobrável Menina Menino - Porquinho", estoque: 200 },
+      { nome: "Tenda Barraca Toca Infantil Portátil Dobrável Menina Menino - Tigre", estoque: 48 },
+      { nome: "Tenda Barraca Infantil Dobravel Praia Uv Piscina Bichos - Tubarão", estoque: 8 },
+      { nome: "Tenda Barraca Toca Infantil Portátil Dobrável Menina Menino - Ursa", estoque: 48 },
+      { nome: "Tenda Barraca Toca Infantil Portátil Dobrável Menina Menino - Ursinho", estoque: 136 },
+      { nome: "Tenda Barraca de Proteção Solar Praia Acampamento UV Portatil - Rosa-chiclete", estoque: 5 },
+      { nome: "Tenda Barraca de Proteção Solar Praia Acampamento UV Portatil - Vermelho", estoque: 67 },
+      { nome: "Tenda Dobrável Praia Piscina Campo Proteção Uv Criança Bebê - Rosa e Branco", estoque: 583 },
+      { nome: "Tenda Dobrável Praia Piscina Campo Proteção Uv Criança Bebê - Verde e Branco", estoque: 617 },
+    ],
+  },
+  {
+    categoria: "Placas adesivas de mármore",
+    itens: [
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 001", estoque: 252 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 002", estoque: 2007 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 007", estoque: 92 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 009", estoque: 784 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 013", estoque: 44 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 014", estoque: 782 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 016", estoque: 18 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 019", estoque: 914 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 017", estoque: 517 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 022", estoque: 736 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 027", estoque: 515 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 026", estoque: 791 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 029", estoque: 81 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 030", estoque: 97 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 040", estoque: 795 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 041", estoque: 514 },
+      { nome: "Kit 10 Placas Adesivas Mármore 3D Autocolante Lavável 60x30cm Parede - 10 unidades - 046", estoque: 613 },
+    ],
+  },
+  {
+    categoria: "Tatames infantis",
+    itens: [
+      { nome: "Tapete Tatame Eva Bebê Infantil 60x60 Personalizável Unidade - Azul royal", estoque: 237 },
+      { nome: "Tapete Tatame Eva Bebê Infantil 60x60 Personalizável Unidade - Azul claro", estoque: 164 },
+      { nome: "Tapete Tatame Eva Bebê Infantil 60x60 Personalizável Unidade - Verde água", estoque: 25 },
+      { nome: "Tapete Tatame Eva Bebê Infantil 60x60 Personalizável Unidade - Amarelo", estoque: 308 },
+      { nome: "Tapete Tatame Eva Bebê Infantil 60x60 Personalizável Unidade - Roxo", estoque: 322 },
+    ],
+  },
+];
+
 interface RuaResumo {
   rua: string;
   posicoes: PosicaoResumo[];
@@ -138,7 +256,7 @@ function validarVoltagem(voltagem: string): string | null {
  */
 function voltagemDoNome(nome: string): Voltagem | null {
   if (/\bbivolt\b/i.test(nome)) return "Bivolt";
-  const ocorrencias = [...nome.matchAll(/\b(110|127|220)\s*v\b/gi)];
+  const ocorrencias = [...nome.matchAll(/\b(110|127|220)\s*v?\b/gi)];
   if (ocorrencias.length === 0) return null;
   return ocorrencias[ocorrencias.length - 1][1] === "220" ? "220V" : "110V";
 }
@@ -679,10 +797,18 @@ function ModalProdutos({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Cadastro em lote: "tiny" busca no cadastro de produtos do Tiny; "colar" aceita uma lista, um por linha.
-  const [modo, setModo] = useState<"lista" | "tiny" | "colar">("lista");
+  const [modo, setModo] = useState<"lista" | "tiny" | "colar" | "sugestoes">("lista");
   const [termoTiny, setTermoTiny] = useState("koti");
   const [resultadosTiny, setResultadosTiny] = useState<ProdutoTiny[] | null>(null);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [sugestoesSelecionadas, setSugestoesSelecionadas] = useState(
+    () =>
+      new Set(
+        SUGESTOES_PRODUTOS.flatMap((grupo) => grupo.itens)
+          .map((item) => item.nome)
+          .filter((nome) => !produtos.some((produto) => produto.toLowerCase() === nome.toLowerCase())),
+      ),
+  );
   const [buscandoTiny, setBuscandoTiny] = useState(false);
   const [textoColado, setTextoColado] = useState("");
   const [avisoLote, setAvisoLote] = useState<string | null>(null);
@@ -793,6 +919,7 @@ function ModalProdutos({
                 ["lista", "Um por um"],
                 ["tiny", "Buscar no Tiny"],
                 ["colar", "Colar uma lista"],
+                ["sugestoes", "Sugestões de produtos"],
               ] as const
             ).map(([valor, rotulo]) => (
               <button
@@ -813,6 +940,79 @@ function ModalProdutos({
           </div>
 
           {avisoLote && <p className="aviso-sucesso">{avisoLote}</p>}
+
+          {modo === "sugestoes" && (
+            <>
+              <p className="field-value--muted">
+                Sugestões baseadas no estoque informado em 30/09/2026. A quantidade é apenas referência; não altera o estoque. Os produtos já cadastrados aparecem desmarcados.
+              </p>
+              <div className="lote-acoes">
+                <span className="field-value--muted">
+                  {SUGESTOES_PRODUTOS.flatMap((grupo) => grupo.itens).filter((item) => !noCatalogo.has(item.nome.toLowerCase())).length} disponível(is) ·{" "}
+                  {sugestoesSelecionadas.size} selecionado(s)
+                </span>
+                <button
+                  type="button"
+                  className="refresh-btn"
+                  onClick={() =>
+                    setSugestoesSelecionadas(
+                      sugestoesSelecionadas.size > 0
+                        ? new Set()
+                        : new Set(
+                            SUGESTOES_PRODUTOS.flatMap((grupo) => grupo.itens)
+                              .map((item) => item.nome)
+                              .filter((nome) => !noCatalogo.has(nome.toLowerCase())),
+                          ),
+                    )
+                  }
+                >
+                  {sugestoesSelecionadas.size > 0 ? "Desmarcar todos" : "Selecionar disponíveis"}
+                </button>
+              </div>
+              {SUGESTOES_PRODUTOS.map((grupo) => (
+                <section key={grupo.categoria}>
+                  <p className="field-label">{grupo.categoria}</p>
+                  <ul className="lote-lista">
+                    {grupo.itens.map((item) => {
+                      const jaTem = noCatalogo.has(item.nome.toLowerCase());
+                      return (
+                        <li key={item.nome}>
+                          <label className={`lote-item${jaTem ? " lote-item--desabilitado" : ""}`}>
+                            <input
+                              type="checkbox"
+                              disabled={jaTem}
+                              checked={jaTem || sugestoesSelecionadas.has(item.nome)}
+                              onChange={(event) => {
+                                const novo = new Set(sugestoesSelecionadas);
+                                if (event.target.checked) novo.add(item.nome);
+                                else novo.delete(item.nome);
+                                setSugestoesSelecionadas(novo);
+                              }}
+                            />
+                            <span>
+                              {item.nome}
+                              <span className="field-value--muted">
+                                {jaTem ? " · já no catálogo" : ` · estoque informado: ${item.estoque}`}
+                              </span>
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+              {erroProdutos && <p className="error-banner">{erroProdutos}</p>}
+              <button
+                className="btn-primario"
+                type="button"
+                disabled={salvandoProduto || sugestoesSelecionadas.size === 0}
+                onClick={() => void adicionarEmLote([...sugestoesSelecionadas])}
+              >
+                {salvandoProduto ? "Salvando..." : `Adicionar ${sugestoesSelecionadas.size} ao catálogo`}
+              </button>
+            </>
+          )}
 
           {modo === "tiny" && (
             <>

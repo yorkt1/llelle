@@ -165,7 +165,7 @@ export async function adicionarProdutos(nomes: string[]): Promise<{ produtos: st
 /** O nome do produto já diz a voltagem? ("... 110V", "... 220V", "... Bivolt"; 127V conta como 110V.) */
 export function voltagemNoNome(nome: string): Voltagem | null {
   if (/\bbivolt\b/i.test(nome)) return "Bivolt";
-  const ocorrencias = [...nome.matchAll(/\b(110|127|220)\s*v\b/gi)];
+  const ocorrencias = [...nome.matchAll(/\b(110|127|220)\s*v?\b/gi)];
   if (ocorrencias.length === 0) return null;
   return ocorrencias[ocorrencias.length - 1][1] === "220" ? "220V" : "110V";
 }
