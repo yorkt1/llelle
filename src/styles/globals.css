@@ -2103,6 +2103,235 @@ body:has(.settings-overlay) .app-bottom-nav {
   width: min(44rem, 94vw);
 }
 
+.controle-pedidos {
+  justify-content: flex-start;
+  gap: 1rem;
+}
+
+.controle-pedidos-data {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.controle-pedidos-data .field-input {
+  width: auto;
+  min-width: 9rem;
+}
+
+.controle-pedidos-status {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.controle-pedidos-status--erro {
+  color: var(--danger);
+}
+
+.controle-pedidos-resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.75rem;
+}
+
+.controle-pedidos-kpi,
+.controle-pedidos-turno,
+.controle-pedidos-historico {
+  min-width: 0;
+  padding: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.controle-pedidos-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.controle-pedidos-kpi > strong {
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.controle-pedidos-kpi--sucesso > strong {
+  color: var(--success);
+}
+
+.controle-pedidos-kpi--aviso > strong {
+  color: var(--warning);
+}
+
+.controle-pedidos-marketplaces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.pedido-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  vertical-align: 0.03rem;
+}
+
+.controle-pedidos-barra {
+  height: 0.4rem;
+  overflow: hidden;
+  background: var(--brand-soft);
+  border-radius: 999px;
+}
+
+.controle-pedidos-barra i {
+  display: block;
+  height: 100%;
+  background: var(--success);
+  transition: width 0.25s ease;
+}
+
+.controle-pedidos-turnos {
+  display: grid;
+  gap: 1rem;
+}
+
+.controle-pedidos-turno {
+  display: grid;
+  gap: 1rem;
+}
+
+.controle-pedidos-turno-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.controle-pedidos-turno-cabecalho h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.controle-pedidos-responsavel {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.controle-pedidos-responsavel .field-input {
+  width: min(14rem, 50vw);
+}
+
+.controle-pedidos-tabela-scroll {
+  overflow-x: auto;
+}
+
+.controle-pedidos-tabela {
+  width: 100%;
+  min-width: 48rem;
+  border-collapse: collapse;
+}
+
+.controle-pedidos-tabela th,
+.controle-pedidos-tabela td {
+  padding: 0.55rem;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.controle-pedidos-tabela th {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.controle-pedidos-tabela th:first-child,
+.controle-pedidos-tabela td:first-child {
+  text-align: left;
+}
+
+.controle-pedidos-tabela td input {
+  width: 4.5rem;
+  padding: 0.35rem 0.2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.controle-pedidos-marketplace {
+  font-weight: 600;
+}
+
+.controle-pedidos-pill {
+  display: inline-block;
+  min-width: 2.3rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.controle-pedidos-pill--zero {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.controle-pedidos-pill--negativo {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.controle-pedidos-tabela tfoot td {
+  font-weight: 600;
+}
+
+.controle-pedidos-observacao {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.controle-pedidos-observacao textarea {
+  min-height: 4rem;
+  resize: vertical;
+}
+
+.controle-pedidos-historico {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.controle-pedidos-historico .controle-pedidos-tabela tbody tr {
+  cursor: pointer;
+}
+
+.controle-pedidos-historico .controle-pedidos-tabela tbody tr:hover,
+.controle-pedidos-dia-atual td {
+  background: var(--surface-hover);
+}
+
+@media (max-width: 700px) {
+  .controle-pedidos > .page-header {
+    align-items: flex-start;
+  }
+
+  .controle-pedidos > .page-header .page-header-acoes {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .controle-pedidos-responsavel {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
 .importar-textarea {
   min-height: 14rem;
   font-family: ui-monospace, monospace;

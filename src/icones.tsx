@@ -23,6 +23,16 @@ export function IconePainel({ className }: PropsIcone) {
   );
 }
 
+export function IconePedidos({ className }: PropsIcone) {
+  return (
+    <IconeBase className={className}>
+      <path d="M4 5h16v14H4z" />
+      <path d="M8 9h8M8 13h5M8 17h3" />
+      <path d="m16 16 1.5 1.5L21 14" />
+    </IconeBase>
+  );
+}
+
 export function IconeDevolucoes({ className }: PropsIcone) {
   return (
     <IconeBase className={className}>

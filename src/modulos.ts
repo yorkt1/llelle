@@ -6,6 +6,7 @@ import { Embalagem } from "@/Embalagem";
 import { Relatorios } from "@/Relatorios";
 import { Suporte } from "@/Suporte";
 import { Compras } from "@/Compras";
+import { ControlePedidos } from "@/ControlePedidos";
 import type { Ideia } from "@/EmBreve";
 import {
   IconeAcesso,
@@ -18,6 +19,7 @@ import {
   IconeFotoIa,
   IconeGargalos,
   IconePainel,
+  IconePedidos,
   IconeRelatorios,
   IconeSuporte,
   type PropsIcone,
@@ -107,6 +109,7 @@ const IDEIA_ACESSO: Ideia = {
  */
 export const MODULOS: Modulo[] = [
   { key: "separacao", label: "Painel", hash: "", Icone: IconePainel, Tela: App },
+  { key: "pedidos", label: "Controle de Pedidos", hash: "pedidos", Icone: IconePedidos, Tela: ControlePedidos },
   { key: "devolucoes", label: "Devoluções", hash: "devolucoes", Icone: IconeDevolucoes, Tela: Devolucoes },
   { key: "estoque", label: "Estoque", hash: "estoque", Icone: IconeEstoque, Tela: Estoque },
   { key: "embalagem", label: "Embalagem", hash: "embalagem", Icone: IconeEmbalagem, Tela: Embalagem },

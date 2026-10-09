@@ -30,6 +30,8 @@ diferentes acompanharem etapas diferentes sem afetar o que aparece em outra TV.
   — cada um preserva no cache o que o outro já tinha calculado. `fetchSeparacaoCountsLive()`
   faz os dois de uma vez (só usada pelo botão manual). `getCachedCounts()` serve o cache.
 - `server/routes/separacao.ts` — `GET /api/separacao` (cache, rápido) e `POST /api/separacao/sync` (força uma sincronização completa sob demanda).
+- `lib/controlePedidos.ts` / `server/routes/pedidos.ts` — Controle diário de pedidos por marketplace e turno, com histórico persistido na chave `controle-pedidos:dias` do mesmo `kv_store`. O campo interno `doTiago` é derivado do responsável do turno e não é devolvido ao navegador.
+- `src/ControlePedidos.tsx` — tela Controle de Pedidos, acessível em `#pedidos`, com salvamento automático e histórico compartilhado entre dispositivos.
 - `server/index.ts` — sobe o Express e agenda **dois** `setInterval` — um pra Aguardando/Em
   separação/Separadas (30s, padrão) e outro pra Embaladas (10min, padrão) — como o
   processo fica sempre no ar (Render, PC do escritório etc.), não precisa de Vercel Cron
