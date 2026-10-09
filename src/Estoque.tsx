@@ -225,12 +225,12 @@ async function comprimirFoto(arquivo: File): Promise<string> {
   return canvas.toDataURL("image/jpeg", 0.82);
 }
 
-const PADRAO_CODIGO = /^[A-Z]+\d+$/;
+const PADRAO_NUMERO_GAVETA = /^\d+$/;
 
-function validarCodigo(codigo: string): string | null {
-  const limpo = codigo.trim();
-  if (!limpo) return "Informe o código da gaveta.";
-  if (!PADRAO_CODIGO.test(limpo)) return "Use a letra da rua + número (ex.: H2).";
+function validarNumeroGaveta(numero: string): string | null {
+  const limpo = numero.trim();
+  if (!limpo) return "Informe o número da gaveta.";
+  if (!PADRAO_NUMERO_GAVETA.test(limpo)) return "Use apenas o número da gaveta (ex.: 3).";
   return null;
 }
 
@@ -273,14 +273,14 @@ function voltagemDoNome(nome: string): Voltagem | null {
 /** Valor da opção "Posição vazia" no select de produto — não é um produto do catálogo, nunca vai pro backend. */
 const PRODUTO_VAZIA = "__vazia__";
 
-/** "H" +[H2, H3, H7] → "H8". Sem nenhuma posição ainda na rua, sugere "H1". */
-function proximoCodigoSugerido(rua: string, codigosExistentes: string[]): string {
+/** [H2, H3, H7] → "8". Sem nenhuma posição ainda na rua, sugere "1". */
+function proximoNumeroGavetaSugerido(rua: string, codigosExistentes: string[]): string {
   const numeros = codigosExistentes
     .map((codigo) => codigo.match(/^([A-Z]+)(\d+)$/))
     .filter((m): m is RegExpMatchArray => m !== null && m[1] === rua)
     .map((m) => Number(m[2]));
   const proximo = numeros.length > 0 ? Math.max(...numeros) + 1 : 1;
-  return `${rua}${proximo}`;
+  return String(proximo);
 }
 
 function FormularioContagem({
@@ -302,7 +302,7 @@ function FormularioContagem({
   const [ruaNova, setRuaNova] = useState(() => (modal.modo === "nova" && modal.ruasExistentes.length === 1 ? modal.ruasExistentes[0] : ""));
   const ruaAtual = modal.modo === "existente" ? modal.rua : ruaNova.trim().toUpperCase();
   const codigosExistentes = modal.modo === "nova" ? modal.codigosPorRua[ruaAtual] ?? [] : [];
-  const [codigo, setCodigo] = useState(() => (modal.modo === "nova" && ruaAtual ? proximoCodigoSugerido(ruaAtual, codigosExistentes) : ""));
+  const [numeroGaveta, setNumeroGaveta] = useState(() => (modal.modo === "nova" && ruaAtual ? proximoNumeroGavetaSugerido(ruaAtual, codigosExistentes) : ""));
   const [quantidade, setQuantidade] = useState(modal.modo === "existente" ? String(modal.ultima.quantidade) : "");
   const [responsavel, setResponsavel] = useState(() => (modal.modo === "existente" ? modal.ultima.responsavel : lerUltimoResponsavel()));
   // Posição nova, ou existente que foi registrada vazia (sem produto): escolhe o produto aqui — ou
@@ -348,9 +348,9 @@ function FormularioContagem({
   const mostrar = useCallback((campo: string, erroCampo: string | null) => (tentouSalvar || tocados.has(campo) ? erroCampo : null), [tentouSalvar, tocados]);
 
   const erroRua = modal.modo === "nova" ? (!ruaAtual ? "Informe a rua (letra)." : !/^[A-Z]+$/.test(ruaAtual) ? "Rua é só a letra (ex.: F)." : null) : null;
-  const erroCodigoFormato = modal.modo === "nova" ? validarCodigo(codigo) : null;
+  const erroCodigoFormato = modal.modo === "nova" ? validarNumeroGaveta(numeroGaveta) : null;
   const erroCodigoDuplicado =
-    modal.modo === "nova" && !erroCodigoFormato && codigosExistentes.includes(codigo.trim()) ? "Essa gaveta já existe nessa rua." : null;
+    modal.modo === "nova" && !erroCodigoFormato && codigosExistentes.includes(`${ruaAtual}${numeroGaveta.trim()}`) ? "Essa gaveta já existe nessa rua." : null;
   const erroCodigo = erroRua ?? erroCodigoFormato ?? erroCodigoDuplicado;
   const vazia = definirProduto && produto === PRODUTO_VAZIA;
   // Cada cor+voltagem é um produto próprio (nome igual ao do Tiny, ex.: "... Azul 110V"): quando o nome
@@ -418,7 +418,7 @@ function FormularioContagem({
       focarPrimeiroErro();
       return;
     }
-    const codigoFinal = modal.modo === "existente" ? modal.codigo : codigo.trim();
+    const codigoFinal = modal.modo === "existente" ? modal.codigo : `${ruaAtual}${numeroGaveta.trim()}`;
 
     setSalvando(true);
     setErro(null);
@@ -443,7 +443,7 @@ function FormularioContagem({
     } finally {
       setSalvando(false);
     }
-  }, [codigo, ruaAtual, definirProduto, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, vazia, voltagem]);
+  }, [numeroGaveta, ruaAtual, definirProduto, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, vazia, voltagem]);
 
   const excluirPosicao = useCallback(async () => {
     if (modal.modo !== "existente") return;
@@ -496,8 +496,9 @@ function FormularioContagem({
   // Código em destaque pra bater com a etiqueta física da prateleira — só o código da posição
   // (mesmo texto que já aparece no card e, em tese, na etiqueta colada na prateleira), sem juntar
   // com a letra da rua, que já aparece em separado no título do modal. Na posição existente é
-  // fixo, numa posição nova acompanha o que a pessoa for digitando.
-  const codigoEmDestaque = modal.modo === "existente" ? modal.codigo : codigo.trim() || "?";
+  // fixo, numa posição nova acompanha o número digitado e a rua escolhida.
+  const codigoEmDestaque =
+    modal.modo === "existente" ? modal.codigo : ruaAtual && numeroGaveta.trim() ? `${ruaAtual}${numeroGaveta.trim()}` : "?";
 
   return (
     <div className="settings-overlay" onClick={onFechar}>
@@ -527,7 +528,7 @@ function FormularioContagem({
                     const rua = event.target.value.toUpperCase().replace(/[^A-Z]/g, "");
                     setRuaNova(rua);
                     // Enquanto a pessoa não mexeu no código, ele acompanha a rua (F → próxima gaveta livre da F).
-                    if (!tocados.has("codigo") && rua) setCodigo(proximoCodigoSugerido(rua, modal.codigosPorRua[rua] ?? []));
+                    if (!tocados.has("codigo") && rua) setNumeroGaveta(proximoNumeroGavetaSugerido(rua, modal.codigosPorRua[rua] ?? []));
                   }}
                   placeholder="Ex.: F"
                   autoFocus
@@ -540,15 +541,16 @@ function FormularioContagem({
               </label>
               <label className="field">
                 <span className="field-label">
-                  Gaveta (etiqueta, ex.: F3) <span className="field-obrigatorio">*</span>
+                  Número da gaveta <span className="field-obrigatorio">*</span>
                 </span>
                 <input
                   ref={codigoRef}
                   className={`field-input${mostrar("codigo", erroCodigo) ? " field-input--erro" : ""}`}
-                  value={codigo}
-                  onChange={(event) => setCodigo(event.target.value.toUpperCase().replace(/\s+/g, ""))}
+                  inputMode="numeric"
+                  value={numeroGaveta}
+                  onChange={(event) => setNumeroGaveta(event.target.value.replace(/\s+/g, ""))}
                   onBlur={() => tocar("codigo")}
-                  placeholder="Ex.: F3"
+                  placeholder="Ex.: 3"
                 />
               </label>
               {mostrar("codigo", erroCodigo) && <span className="field-erro estoque-rua-gaveta-erro">{mostrar("codigo", erroCodigo)}</span>}
