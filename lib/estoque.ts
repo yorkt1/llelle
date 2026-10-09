@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { v2 as cloudinary } from "cloudinary";
 import * as store from "./store";
+import { nomeProdutoComVoltagemUnica } from "./nomeProduto";
 
 /**
  * Registro do galpão organizado como a estrutura física real: Rua (letra) > Posição/gaveta
@@ -159,6 +160,84 @@ export async function adicionarProdutos(nomes: string[]): Promise<{ produtos: st
     return lista.sort((a, b) => a.localeCompare(b, "pt-BR"));
   });
   return { produtos, adicionados };
+}
+
+export interface ResultadoNormalizacaoProdutos {
+  produtos: string[];
+  renomeados: number;
+  duplicadosRemovidos: number;
+  posicoesAtualizadas: number;
+  produtosComEstoquePreservado: string[];
+  mapaNomes: Record<string, string>;
+}
+
+/** Corrige produtos com faixa bivolt repetida, consolidando nomes iguais sem alterar contagens. */
+export async function normalizarNomesComVoltagemDuplicada(): Promise<ResultadoNormalizacaoProdutos> {
+  const [catalogo, ruas] = await Promise.all([listarProdutos(), listarEstoque()]);
+  const mapaNomes = new Map<string, string>();
+
+  for (const nome of catalogo) {
+    const normalizado = nomeProdutoComVoltagemUnica(nome);
+    if (!normalizado) continue;
+    mapaNomes.set(nome.toLowerCase(), normalizado.nome);
+  }
+
+  if (mapaNomes.size === 0) {
+    return { produtos: catalogo, renomeados: 0, duplicadosRemovidos: 0, posicoesAtualizadas: 0, produtosComEstoquePreservado: [], mapaNomes: {} };
+  }
+
+  const quantidadesPorProduto = new Map<string, number>();
+  for (const rua of ruas) {
+    for (const posicao of rua.posicoes) {
+      if (!posicao.produto) continue;
+      const chaveProduto = posicao.produto.toLowerCase();
+      quantidadesPorProduto.set(chaveProduto, (quantidadesPorProduto.get(chaveProduto) ?? 0) + posicao.ultima.quantidade);
+    }
+  }
+
+  const produtosComEstoquePreservado = [...new Set(
+    [...mapaNomes.entries()]
+      .filter(([original]) => (quantidadesPorProduto.get(original) ?? 0) > 0)
+      .map(([, canonico]) => canonico),
+  )];
+  let posicoesAtualizadas = 0;
+
+  const mapaNomesObjeto = Object.fromEntries(mapaNomes);
+  await store.update<MetadadosPorPosicao>(CHAVE_METADADOS, (atual) => {
+    const metadados = { ...(atual ?? {}) };
+    for (const [chavePosicao, meta] of Object.entries(metadados)) {
+      const canonico = mapaNomes.get(meta.produto.toLowerCase());
+      if (!canonico) continue;
+      const normalizado = nomeProdutoComVoltagemUnica(meta.produto);
+      metadados[chavePosicao] = { ...meta, produto: canonico, voltagem: normalizado?.voltagem ?? meta.voltagem };
+      posicoesAtualizadas++;
+    }
+    return metadados;
+  });
+
+  let produtos: string[] = [];
+  await store.update<string[]>(CHAVE_PRODUTOS, (atual) => {
+    const vistos = new Set<string>();
+    produtos = (atual ?? [])
+      .map((nome) => mapaNomes.get(nome.toLowerCase()) ?? nome)
+      .filter((nome) => {
+        const chaveProduto = nome.toLowerCase();
+        if (vistos.has(chaveProduto)) return false;
+        vistos.add(chaveProduto);
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return produtos;
+  });
+
+  return {
+    produtos,
+    renomeados: mapaNomes.size,
+    duplicadosRemovidos: catalogo.length - produtos.length,
+    posicoesAtualizadas,
+    produtosComEstoquePreservado,
+    mapaNomes: mapaNomesObjeto,
+  };
 }
 
 

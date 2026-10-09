@@ -12,6 +12,7 @@ import {
   removerPosicao,
   removerRua,
   dividirProdutosPorVoltagem,
+  normalizarNomesComVoltagemDuplicada,
 } from "../../lib/estoque";
 import { StoreConfigError } from "../../lib/store";
 import { OlistConfigError } from "../../lib/olist";
@@ -20,6 +21,7 @@ import {
   copiarFotoParaProdutos,
   definirFotoManual,
   listarInfoProdutos,
+  normalizarInfoProdutos,
   refazerFotoDoTiny,
   registrarInfoProdutos,
   solicitarFotosFaltantes,
@@ -81,6 +83,26 @@ estoqueRouter.delete("/produtos/:nome", async (req, res) => {
 
 // Rotas específicas ANTES das genéricas `/:rua/:codigo...` lá embaixo — senão "produtos/lote" e
 // "rua/X" seriam lidos como rua+código.
+
+estoqueRouter.post("/produtos/normalizar-voltagens", async (_req, res) => {
+  try {
+    const resultado = await normalizarNomesComVoltagemDuplicada();
+    await normalizarInfoProdutos(resultado.mapaNomes);
+    res.status(200).json({
+      produtos: resultado.produtos,
+      renomeados: resultado.renomeados,
+      duplicadosRemovidos: resultado.duplicadosRemovidos,
+      posicoesAtualizadas: resultado.posicoesAtualizadas,
+      produtosComEstoquePreservado: resultado.produtosComEstoquePreservado,
+    });
+  } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: error instanceof Error ? error.message : "Não consegui padronizar os produtos." });
+  }
+});
 
 estoqueRouter.post("/produtos/lote", async (req, res) => {
   const nomes: unknown[] = Array.isArray(req.body?.nomes) ? req.body.nomes : [];

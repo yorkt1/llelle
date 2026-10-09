@@ -48,6 +48,26 @@ describe("fotos dos produtos (Tiny → Cloudinary)", () => {
     expect((await listarInfoProdutos())["air fryer koti 4l"]).toMatchObject({ fotoStatus: "ok", fotoUrl: "https://res.cloudinary.com/t/llelle-produtos/air-fryer-koti-4l.jpg" });
   });
 
+  it("move IDs e códigos Tiny para o nome normalizado e elimina a chave antiga", async () => {
+    const { listarInfoProdutos, normalizarInfoProdutos, registrarInfoProdutos } = await fresh();
+    const antigo = "Chaleira Koti - 110v ou 220v - 220V - Preta";
+    const canonico = "Chaleira Koti - Preta 220V";
+    await registrarInfoProdutos([
+      { nome: antigo, idsTiny: ["1"], codigos: ["CHALEIRA-220"] },
+      { nome: canonico, idsTiny: ["2"], codigos: ["CHALEIRA-PRETA"] },
+    ]);
+
+    await normalizarInfoProdutos({ [antigo]: canonico });
+
+    const info = await listarInfoProdutos();
+    expect(info["chaleira koti - preta 220v"]).toMatchObject({
+      nome: canonico,
+      idsTiny: ["2", "1"],
+      codigos: ["CHALEIRA-PRETA", "CHALEIRA-220"],
+    });
+    expect(info["chaleira koti - 110v ou 220v - 220v - preta"]).toBeUndefined();
+  });
+
   it("cadastrado à mão: botão acha pelo nome no Tiny; variação sem imagem usa a do produto pai", async () => {
     tinyGetMock.mockImplementation(async (endpoint: string, params: Record<string, string>) => {
       if (endpoint === "produtos.pesquisa.php") {

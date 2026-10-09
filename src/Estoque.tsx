@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PageHeader } from "@/PageHeader";
+import { nomeProdutoComVoltagemUnica } from "../lib/nomeProduto";
 
 interface RegistroContagem {
   id: string;
@@ -35,7 +36,7 @@ interface SugestaoProdutoGrupo {
   itens: { nome: string; estoque: number }[];
 }
 
-const SUGESTOES_PRODUTOS: SugestaoProdutoGrupo[] = [
+const SUGESTOES_BASE: SugestaoProdutoGrupo[] = [
   {
     categoria: "Chaleiras",
     itens: [
@@ -147,6 +148,14 @@ const SUGESTOES_PRODUTOS: SugestaoProdutoGrupo[] = [
     ],
   },
 ];
+
+const SUGESTOES_PRODUTOS = SUGESTOES_BASE.map((grupo) => ({
+  ...grupo,
+  itens: grupo.itens.map((item) => ({
+    ...item,
+    nome: nomeProdutoComVoltagemUnica(item.nome)?.nome ?? item.nome,
+  })),
+}));
 
 interface RuaResumo {
   rua: string;
@@ -812,7 +821,7 @@ function ModalProdutos({
   const [buscandoTiny, setBuscandoTiny] = useState(false);
   const [textoColado, setTextoColado] = useState("");
   const [avisoLote, setAvisoLote] = useState<string | null>(null);
-  const noCatalogo = useMemo(() => new Set(produtos.map((p) => p.toLowerCase())), [produtos]);
+  const noCatalogo = useMemo(() => new Set(produtos.map((p) => (nomeProdutoComVoltagemUnica(p)?.nome ?? p).toLowerCase())), [produtos]);
 
   const buscarNoTiny = useCallback(async () => {
     setBuscandoTiny(true);
@@ -883,6 +892,31 @@ function ModalProdutos({
     },
     [novoProduto, onAlterado],
   );
+
+  const normalizarProdutos = useCallback(async () => {
+    const confirmou = window.confirm(
+      "Vou deixar apenas a última voltagem nos nomes e consolidar os produtos duplicados. 110V e 220V continuarão separados; gavetas, quantidades, histórico e fotos serão preservados. Continuar?",
+    );
+    if (!confirmou) return;
+
+    setSalvandoProduto(true);
+    setErroProdutos(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos/normalizar-voltagens`, { method: "POST" });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui corrigir os nomes dos produtos.");
+      onAlterado(json.produtos ?? []);
+      setAvisoLote(
+        json.renomeados === 0 && json.duplicadosRemovidos === 0
+          ? "Os nomes já estavam padronizados; nenhum produto precisava ser removido."
+          : `${json.renomeados} nome(s) corrigido(s), ${json.duplicadosRemovidos} duplicado(s) removido(s) do catálogo e ${json.posicoesAtualizadas} gaveta(s) atualizada(s). Estoque e histórico preservados.`,
+      );
+    } catch (error) {
+      setErroProdutos(error instanceof Error ? error.message : "Não consegui corrigir os nomes dos produtos.");
+    } finally {
+      setSalvandoProduto(false);
+    }
+  }, [onAlterado]);
 
   const removerProdutoCatalogo = useCallback(
     async (nome: string) => {
@@ -1125,6 +1159,9 @@ function ModalProdutos({
 
           {modo === "lista" && (
           <>
+          <button type="button" className="refresh-btn" onClick={() => void normalizarProdutos()} disabled={salvandoProduto}>
+            {salvandoProduto ? "Corrigindo produtos..." : "Corrigir voltagens e remover duplicados"}
+          </button>
           <button
             type="button"
             className="btn-primario"

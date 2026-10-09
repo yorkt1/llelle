@@ -85,6 +85,38 @@ export async function registrarInfoProdutos(itens: { nome: string; idsTiny?: str
   });
 }
 
+/** Move fotos e códigos Tiny para nomes normalizados, mantendo a foto válida já cadastrada. */
+export async function normalizarInfoProdutos(mapaNomes: Record<string, string>): Promise<void> {
+  const grupos = new Map<string, { nome: string; origens: Set<string> }>();
+  for (const [origem, nome] of Object.entries(mapaNomes)) {
+    const destino = chaveProduto(nome);
+    if (!destino) continue;
+    const grupo = grupos.get(destino) ?? { nome, origens: new Set<string>() };
+    grupo.origens.add(chaveProduto(origem));
+    grupos.set(destino, grupo);
+  }
+  if (grupos.size === 0) return;
+
+  await store.update<Record<string, InfoProduto>>(CHAVE_INFO, (atual) => {
+    const mapa = { ...(atual ?? {}) };
+    for (const [destino, grupo] of grupos) {
+      const origens = [...grupo.origens].filter((origem) => origem !== destino);
+      const candidatos = [mapa[destino], ...origens.map((origem) => mapa[origem])].filter((info): info is InfoProduto => Boolean(info));
+      if (candidatos.length === 0) continue;
+
+      const escolhido = candidatos.find((info) => info.fotoStatus === "ok" && info.fotoUrl) ?? candidatos[0];
+      mapa[destino] = {
+        ...escolhido,
+        nome: grupo.nome,
+        idsTiny: [...new Set(candidatos.flatMap((info) => info.idsTiny))],
+        codigos: [...new Set(candidatos.flatMap((info) => info.codigos))],
+      };
+      for (const origem of origens) delete mapa[origem];
+    }
+    return mapa;
+  });
+}
+
 /**
  * Botão "Buscar fotos no Tiny": marca como pendente todo produto do catálogo que ainda não tem foto
  * (inclusive os que antes deram "não encontrado"/"sem foto"/erro — pode ter mudado no Tiny).

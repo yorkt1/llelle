@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { nomeProdutoComVoltagemUnica } from "../lib/nomeProduto";
 
 // PNG 1x1 real (não precisa ser uma foto de verdade, só um data URI válido).
 const FOTO_1X1 =
@@ -43,6 +44,18 @@ describe("estoque", () => {
     delete process.env.CLOUDINARY_API_KEY;
     delete process.env.CLOUDINARY_API_SECRET;
     await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  it("mantém apenas a última voltagem no nome, sem confundir 110V com 220V", () => {
+    expect(nomeProdutoComVoltagemUnica("Chaleira Koti - 110v ou 220v - 220V - Preta")).toEqual({
+      nome: "Chaleira Koti - Preta 220V",
+      voltagem: "220V",
+    });
+    expect(nomeProdutoComVoltagemUnica("Fritadeira Koti - 110v ou 220v - 110")).toEqual({
+      nome: "Fritadeira Koti 110V",
+      voltagem: "110V",
+    });
+    expect(nomeProdutoComVoltagemUnica("Chaleira Koti 220V")).toBeNull();
   });
 
   it("lista vazio quando nunca teve nenhuma contagem", async () => {
@@ -345,6 +358,41 @@ describe("estoque", () => {
       await adicionarProduto("Liquidificador");
       await removerProduto("Liquidificador");
       expect(await listarProdutos()).toEqual([]);
+    });
+
+    it("consolida nomes com voltagem repetida, preservando saldo e histórico das gavetas", async () => {
+      const {
+        adicionarProdutos,
+        listarProdutos,
+        normalizarNomesComVoltagemDuplicada,
+        obterHistorico,
+        obterMetadados,
+        registrarContagem,
+      } = await freshEstoque();
+      const antigo110 = "Chaleira Koti - 110v ou 220v - 110V - Preta";
+      const antigo220 = "Chaleira Koti - 110v ou 220v - 220V - Preta";
+      const duplicado220 = "Chaleira Koti - 110v ou 220v - 220 - Preta";
+      const nome110 = "Chaleira Koti - Preta 110V";
+      const nome220 = "Chaleira Koti - Preta 220V";
+      await adicionarProdutos([antigo110, antigo220, duplicado220]);
+      await registrarContagem({
+        rua: "A",
+        codigo: "A1",
+        quantidade: 7,
+        responsavel: "Teste",
+        fotoDataUri: FOTO_1X1,
+        produto: antigo220,
+        voltagem: "220V",
+      });
+
+      const resultado = await normalizarNomesComVoltagemDuplicada();
+
+      expect(await listarProdutos()).toEqual([nome110, nome220]);
+      expect(resultado.duplicadosRemovidos).toBe(1);
+      expect(resultado.produtosComEstoquePreservado).toEqual([nome220]);
+      expect(resultado.posicoesAtualizadas).toBe(1);
+      expect(await obterMetadados("A", "A1")).toMatchObject({ produto: nome220, voltagem: "220V" });
+      expect(await obterHistorico("A", "A1")).toMatchObject([{ quantidade: 7 }]);
     });
   });
 });
