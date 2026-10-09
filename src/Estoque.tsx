@@ -2113,17 +2113,17 @@ export function Estoque() {
                     <button
                       key={`${posicao.rua}::${posicao.codigo}`}
                       type="button"
-                      className={`estoque-longarina-gaveta${posicao.ultima.quantidade === 0 ? " estoque-longarina-gaveta--vazia" : ""}${posicao.produto ? " estoque-longarina-gaveta--com-foto" : ""}`}
+                      className={`estoque-longarina-gaveta${posicao.ultima.quantidade === 0 ? " estoque-longarina-gaveta--vazia" : ""}`}
                       onClick={() => abrirGaveta(posicao)}
                       title={`Abrir gaveta ${posicao.codigo}`}
                     >
-                      {posicao.produto && (
-                        <FotoProduto
-                          info={info[chaveDoProduto(posicao.produto)]}
-                          nome={posicao.produto}
-                          className="estoque-longarina-foto"
-                        />
-                      )}
+                      <img
+                        className="estoque-longarina-foto"
+                        src={posicao.ultima.fotoUrl}
+                        alt={`Foto da gaveta ${posicao.codigo}`}
+                        loading="lazy"
+                        decoding="async"
+                      />
                       <span className="estoque-longarina-gaveta-conteudo">
                         <strong>{posicao.codigo}</strong>
                         <span>{posicao.produto ?? "Gaveta vazia"}</span>

@@ -3068,17 +3068,14 @@ th.matriz-dia {
   border-color: var(--muted);
 }
 
-.estoque-longarina-gaveta--com-foto {
-  grid-template-columns: 3.5rem minmax(0, 1fr);
-  align-items: flex-start;
-}
-
 .estoque-longarina-foto {
-  width: 3.5rem;
-  height: 3.5rem;
+  display: block;
+  width: 100%;
+  height: 5rem;
+  flex-shrink: 0;
   border-radius: var(--radius-control);
-  background: var(--foto-fundo);
-  object-fit: contain;
+  background: var(--bg);
+  object-fit: cover;
 }
 
 .estoque-longarina-gaveta-conteudo {
