@@ -102,6 +102,7 @@ export function ControlePedidos() {
   const [state, setState] = useState<EstadoDia>(blankDia);
   const [historico, setHistorico] = useState<DiaPedidos[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [registroExiste, setRegistroExiste] = useState(false);
   const [sujo, setSujo] = useState(false);
   const [status, setStatus] = useState("Carregando…");
   const [erro, setErro] = useState<string | null>(null);
@@ -139,6 +140,7 @@ export function ControlePedidos() {
       .then(([dia, dias]) => {
         if (!ativo) return;
         setState(normalizarDia(dia));
+        setRegistroExiste(Boolean(dia));
         setHistorico(dias);
         setStatus("Dados salvos no banco");
       })
@@ -170,6 +172,7 @@ export function ControlePedidos() {
         const json = await resposta.json();
         if (!resposta.ok) throw new Error(json.error ?? "Não consegui salvar os pedidos.");
         if (atualizarStatus && dataAtualRef.current === dia && revisaoAtualRef.current === versao) {
+          setRegistroExiste(true);
           setSujo(false);
           setStatus("Salvo · compartilhado com a equipe");
         }
@@ -233,6 +236,25 @@ export function ControlePedidos() {
     navegar(`${novo.getFullYear()}-${String(novo.getMonth() + 1).padStart(2, "0")}-${String(novo.getDate()).padStart(2, "0")}`);
   };
 
+  const excluirDia = async () => {
+    if (!registroExiste || !window.confirm(`Excluir os dados do dia ${formatarData(data)}? Essa ação não pode ser desfeita.`)) return;
+    setStatus("Excluindo…");
+    setErro(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/pedidos/${data}`, { method: "DELETE" });
+      const json = resposta.status === 204 ? null : await resposta.json();
+      if (!resposta.ok) throw new Error(json?.error ?? "Não consegui excluir esse dia.");
+      setState(blankDia());
+      setRegistroExiste(false);
+      setSujo(false);
+      setHistorico((atual) => atual.filter((dia) => dia.data !== data));
+      setStatus("Dia excluído");
+    } catch (error) {
+      setErro(formatarErro(error, "Não consegui excluir esse dia."));
+      setStatus("Falha ao excluir");
+    }
+  };
+
   const porMarketplace = MARKETPLACES.map((marketplace) => {
     const total = TURNOS.reduce((soma, turno) => soma + state[turno.key][marketplace.key].recebidos, 0);
     return <span key={marketplace.key}><i className="pedido-dot" style={{ background: marketplace.cor }} />{marketplace.nome}: {total}</span>;
@@ -246,6 +268,9 @@ export function ControlePedidos() {
           <input className="field-input" type="date" aria-label="Data" value={data} onChange={(event) => event.target.value && navegar(event.target.value)} />
           <button type="button" className="refresh-btn" aria-label="Próximo dia" onClick={() => deslocarDia(1)}>›</button>
           <button type="button" className="refresh-btn" onClick={() => navegar(hojeLocal())}>Hoje</button>
+          <button type="button" className="btn-perigo-texto" disabled={!registroExiste || carregando || sujo} onClick={() => void excluirDia()}>
+            Excluir dia
+          </button>
         </div>
         <span className={`controle-pedidos-status${erro ? " controle-pedidos-status--erro" : ""}`} role="status">{status}</span>
       </PageHeader>

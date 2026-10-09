@@ -53,11 +53,14 @@ describe("controle de pedidos", () => {
     expect(arquivo["controle-pedidos:dias"]["2026-10-09"].tarde.doTiago).toBe(false);
   });
 
-  it("rejeita data inválida e calcula histórico do mais recente para o mais antigo", async () => {
-    const { listarDiasPedidos, obterDiaPedidos, salvarDiaPedidos } = await freshPedidos();
+  it("rejeita data inválida, ordena histórico e permite excluir o dia salvo", async () => {
+    const { excluirDiaPedidos, listarDiasPedidos, obterDiaPedidos, salvarDiaPedidos } = await freshPedidos();
     await expect(obterDiaPedidos("09/10/2026")).rejects.toThrow(/data inválida/i);
     await salvarDiaPedidos("2026-10-08", {});
     await salvarDiaPedidos("2026-10-09", {});
     expect((await listarDiasPedidos()).map((dia) => dia.data)).toEqual(["2026-10-09", "2026-10-08"]);
+    expect(await excluirDiaPedidos("2026-10-09")).toBe(true);
+    expect(await obterDiaPedidos("2026-10-09")).toBeNull();
+    expect(await excluirDiaPedidos("2026-10-09")).toBe(false);
   });
 });

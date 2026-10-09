@@ -143,6 +143,23 @@ export async function listarDiasPedidos(limite = 14): Promise<DiaPedidos[]> {
     .map(apresentacao);
 }
 
+export async function listarTodosDiasPedidos(): Promise<DiaPedidos[]> {
+  const dias = (await store.get<DiasPedidos>(CHAVE_DIAS)) ?? {};
+  return Object.values(dias).sort((a, b) => b.data.localeCompare(a.data)).map(apresentacao);
+}
+
+export async function excluirDiaPedidos(data: string): Promise<boolean> {
+  validarData(data);
+  let excluido = false;
+  await store.update<DiasPedidos>(CHAVE_DIAS, (atual) => {
+    const dias = { ...(atual ?? {}) };
+    excluido = Object.hasOwn(dias, data);
+    delete dias[data];
+    return dias;
+  });
+  return excluido;
+}
+
 export function pedidoPendente(dados: DadosMarketplace): number {
   return dados.recebidos - dados.expedidos - dados.cancelados;
 }
