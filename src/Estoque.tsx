@@ -1125,6 +1125,17 @@ function ModalProdutos({
 
           {modo === "lista" && (
           <>
+          <button
+            type="button"
+            className="btn-primario"
+            onClick={() => {
+              setModo("sugestoes");
+              setAvisoLote(null);
+              setErroProdutos(null);
+            }}
+          >
+            Escolher produtos sugeridos do estoque
+          </button>
           <form className="estoque-form-produto" onSubmit={adicionarProdutoCatalogo}>
             <label className="field">
               <span className="field-label">Novo produto</span>
