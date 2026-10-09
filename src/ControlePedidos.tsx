@@ -15,8 +15,8 @@ const ETAPAS = [
   { key: "cancelados", nome: "Cancelados" },
 ] as const;
 const TURNOS = [
-  { key: "manha", nome: "Turno manhã", horario: "06h – 12h" },
-  { key: "tarde", nome: "Turno tarde", horario: "12h – 18h" },
+  { key: "manha", nome: "Turno manhã", horario: "08:00 – 12:00" },
+  { key: "tarde", nome: "Turno tarde", horario: "13:12 – 17:00" },
 ] as const;
 type MarketplaceKey = (typeof MARKETPLACES)[number]["key"];
 type EtapaKey = (typeof ETAPAS)[number]["key"];
