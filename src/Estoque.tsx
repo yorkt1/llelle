@@ -1569,7 +1569,55 @@ function ModalSepararVoltagem({
   );
 }
 
-function ModalRuas({ ruas, onFechar, onExcluir }: { ruas: RuaResumo[]; onFechar: () => void; onExcluir: (rua: string) => void }) {
+function ModalLongarinas({
+  ruas,
+  onFechar,
+  onCriar,
+  onRenomear,
+  onExcluir,
+}: {
+  ruas: RuaResumo[];
+  onFechar: () => void;
+  onCriar: (nome: string) => Promise<void>;
+  onRenomear: (atual: string, novo: string) => Promise<void>;
+  onExcluir: (rua: string) => void;
+}) {
+  const [novaLongarina, setNovaLongarina] = useState("");
+  const [editando, setEditando] = useState<string | null>(null);
+  const [nomeEditado, setNomeEditado] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const criar = async (event: FormEvent) => {
+    event.preventDefault();
+    setSalvando(true);
+    setErro(null);
+    try {
+      await onCriar(novaLongarina);
+      setNovaLongarina("");
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não consegui criar a longarina.");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const renomear = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editando) return;
+    setSalvando(true);
+    setErro(null);
+    try {
+      await onRenomear(editando, nomeEditado);
+      setEditando(null);
+      setNomeEditado("");
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não consegui renomear a longarina.");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
   return (
     <div className="settings-overlay" onClick={onFechar}>
       <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
@@ -1577,26 +1625,78 @@ function ModalRuas({ ruas, onFechar, onExcluir }: { ruas: RuaResumo[]; onFechar:
           <button className="settings-close" onClick={onFechar} aria-label="Fechar">
             ×
           </button>
-          <h2 className="settings-title">Ruas</h2>
-          <p className="settings-hint">Uma rua aparece aqui assim que tem pelo menos uma gaveta registrada. Pra criar uma rua nova, é só usar "+ Gaveta" com a letra nova.</p>
+          <h2 className="settings-title">Gerenciar longarinas</h2>
+          <p className="settings-hint">Crie longarinas vazias ou renomeie uma existente. Ao renomear, as gavetas e seus históricos são preservados.</p>
         </div>
         <div className="settings-panel-body">
+          <form className="estoque-longarina-form" onSubmit={(event) => void criar(event)}>
+            <label className="field">
+              <span className="field-label">Nova longarina</span>
+              <input
+                className="field-input"
+                value={novaLongarina}
+                onChange={(event) => setNovaLongarina(event.target.value.toUpperCase().replace(/[^A-Z]/g, ""))}
+                placeholder="Ex.: F"
+                aria-label="Nome da nova longarina"
+              />
+            </label>
+            <button type="submit" className="btn-primario" disabled={salvando || !novaLongarina.trim()}>
+              Criar
+            </button>
+          </form>
+          {erro && <p className="error-banner" role="alert">{erro}</p>}
           {ruas.length === 0 ? (
-            <p className="field-value--muted">Nenhuma rua ainda.</p>
+            <p className="field-value--muted">Nenhuma longarina cadastrada ainda.</p>
           ) : (
             <ul className="estoque-lista-produtos">
               {ruas.map((r) => (
                 <li key={r.rua}>
-                  <span>
-                    <strong>Rua {r.rua}</strong>
-                    <span className="field-value--muted">
-                      {" "}
-                      · {r.posicoes.length} gaveta(s) · {r.posicoes.reduce((s, p) => s + p.ultima.quantidade, 0)} un.
-                    </span>
-                  </span>
-                  <button type="button" className="btn-perigo-texto" onClick={() => onExcluir(r.rua)}>
-                    Excluir
-                  </button>
+                  {editando === r.rua ? (
+                    <form className="estoque-longarina-editar" onSubmit={(event) => void renomear(event)}>
+                      <label className="field">
+                        <span className="field-label">Novo nome da longarina</span>
+                        <input
+                          className="field-input"
+                          value={nomeEditado}
+                          onChange={(event) => setNomeEditado(event.target.value.toUpperCase().replace(/[^A-Z]/g, ""))}
+                          aria-label={`Novo nome da longarina ${r.rua}`}
+                          autoFocus
+                        />
+                      </label>
+                      <button type="submit" className="btn-primario" disabled={salvando || !nomeEditado.trim()}>
+                        Salvar
+                      </button>
+                      <button type="button" className="refresh-btn" disabled={salvando} onClick={() => setEditando(null)}>
+                        Cancelar
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <span>
+                        <strong>Longarina {r.rua}</strong>
+                        <span className="field-value--muted">
+                          {" "}
+                          · {r.posicoes.length} gaveta(s) · {r.posicoes.reduce((s, p) => s + p.ultima.quantidade, 0)} un.
+                        </span>
+                      </span>
+                      <span className="estoque-longarina-acoes">
+                        <button
+                          type="button"
+                          className="refresh-btn"
+                          onClick={() => {
+                            setErro(null);
+                            setEditando(r.rua);
+                            setNomeEditado(r.rua);
+                          }}
+                        >
+                          Renomear
+                        </button>
+                        <button type="button" className="btn-perigo-texto" onClick={() => onExcluir(r.rua)}>
+                          Excluir
+                        </button>
+                      </span>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
@@ -1652,6 +1752,36 @@ export function Estoque() {
       setCarregou(true);
     }
   }, []);
+
+  const criarLongarina = useCallback(
+    async (nome: string) => {
+      const resposta = await fetch(`${API_URL}/api/estoque/longarinas`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome }),
+      });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui criar a longarina.");
+      await carregar();
+      mostrarToast(`Longarina ${json.longarina} criada`);
+    },
+    [carregar, mostrarToast],
+  );
+
+  const renomearLongarina = useCallback(
+    async (atual: string, novo: string) => {
+      const resposta = await fetch(`${API_URL}/api/estoque/longarinas/${encodeURIComponent(atual)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: novo }),
+      });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui renomear a longarina.");
+      await carregar();
+      mostrarToast(`Longarina ${atual} renomeada para ${json.longarina}`);
+    },
+    [carregar, mostrarToast],
+  );
 
   const carregarProdutos = useCallback(async () => {
     try {
@@ -1810,15 +1940,15 @@ export function Estoque() {
     setExcluindo(true);
     setErroExcluirRua(null);
     try {
-      const resposta = await fetch(`${API_URL}/api/estoque/rua/${encodeURIComponent(excluindoRua)}`, { method: "DELETE" });
+      const resposta = await fetch(`${API_URL}/api/estoque/longarinas/${encodeURIComponent(excluindoRua)}`, { method: "DELETE" });
       const json = await resposta.json();
-      if (!resposta.ok) throw new Error(json.error ?? "Não consegui excluir a rua.");
-      mostrarToast(`Rua ${excluindoRua} excluída (${json.posicoesExcluidas ?? 0} gaveta(s))`);
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui excluir a longarina.");
+      mostrarToast(`Longarina ${excluindoRua} excluída (${json.gavetasExcluidas ?? 0} gaveta(s) arquivadas)`);
       setExcluindoRua(null);
       setConfirmacaoRua("");
       void carregar();
     } catch (error) {
-      setErroExcluirRua(error instanceof Error ? error.message : "Não consegui excluir a rua.");
+      setErroExcluirRua(error instanceof Error ? error.message : "Não consegui excluir a longarina.");
     } finally {
       setExcluindo(false);
     }
@@ -1833,7 +1963,7 @@ export function Estoque() {
           + Produto
         </button>
         <button type="button" className="refresh-btn" onClick={() => setMostrarRuas(true)}>
-          Gerenciar ruas
+          Gerenciar longarinas
         </button>
         <button type="button" className="btn-primario" onClick={() => abrirNovaGaveta()}>
           + Gaveta
@@ -2078,9 +2208,11 @@ export function Estoque() {
       )}
 
       {mostrarRuas && (
-        <ModalRuas
+        <ModalLongarinas
           ruas={ruas}
           onFechar={() => setMostrarRuas(false)}
+          onCriar={criarLongarina}
+          onRenomear={renomearLongarina}
           onExcluir={(rua) => {
             setMostrarRuas(false);
             setExcluindoRua(rua);
@@ -2097,12 +2229,12 @@ export function Estoque() {
               <button className="settings-close" onClick={() => setExcluindoRua(null)} aria-label="Fechar">
                 ×
               </button>
-              <h2 className="settings-title">Excluir Rua {excluindoRua}?</h2>
+              <h2 className="settings-title">Excluir longarina {excluindoRua}?</h2>
             </div>
             <div className="settings-panel-body">
               <p className="field-value">
-                As <strong>{ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0} gaveta(s)</strong> dessa rua somem da tela, com o histórico de
-                contagens. Nada é apagado de vez: fica guardado num arquivo de excluídos e dá pra recuperar se precisar.
+                As <strong>{ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0} gaveta(s)</strong> dessa longarina serão arquivadas com o histórico
+                de contagens. Nada é apagado de vez: fica guardado num arquivo de excluídos e dá pra recuperar se precisar.
               </p>
               <label className="field">
                 <span className="field-label">
@@ -2119,7 +2251,7 @@ export function Estoque() {
                 disabled={excluindo || confirmacaoRua.trim().toUpperCase() !== excluindoRua.toUpperCase()}
                 onClick={() => void confirmarExclusaoRua()}
               >
-                {excluindo ? "Excluindo..." : `Excluir Rua ${excluindoRua}`}
+                {excluindo ? "Excluindo..." : `Excluir longarina ${excluindoRua}`}
               </button>
             </div>
           </div>

@@ -43,6 +43,40 @@ describe("catálogo e exclusão no estoque", () => {
     expect(produtos).toEqual(["Air Fryer Koti 4L", "Cafeteira Koti", "Chaleira Koti Modern Preta"]);
   });
 
+  it("cria longarina vazia, renomeia preservando gavetas e histórico, e exclui arquivando dados", async () => {
+    const { adicionarProduto, criarLongarina, listarEstoque, obterHistorico, obterMetadados, registrarContagem, removerRua, renomearLongarina, store } = await fresh();
+    await expect(criarLongarina("f")).resolves.toBe("F");
+    expect(await listarEstoque()).toEqual([{ rua: "F", posicoes: [] }]);
+    await expect(criarLongarina("F")).rejects.toThrow(/já existe/);
+
+    await adicionarProduto("Chaleira Koti");
+    await registrarContagem({
+      rua: "F",
+      codigo: "F3",
+      quantidade: 4,
+      responsavel: "Ana",
+      fotoDataUri: FOTO_1X1,
+      produto: "Chaleira Koti",
+      voltagem: "110V",
+    });
+
+    await expect(renomearLongarina("F", "G")).resolves.toBe("G");
+    expect(await listarEstoque()).toEqual([
+      {
+        rua: "G",
+        posicoes: [expect.objectContaining({ rua: "G", codigo: "G3", ultima: expect.objectContaining({ quantidade: 4 }) })],
+      },
+    ]);
+    expect(await obterHistorico("G", "G3")).toHaveLength(1);
+    expect(await obterHistorico("F", "F3")).toEqual([]);
+    expect(await obterMetadados("G", "G3")).toEqual({ produto: "Chaleira Koti", voltagem: "110V" });
+
+    expect(await removerRua("G")).toBe(1);
+    expect(await listarEstoque()).toEqual([]);
+    const excluidos = await store.get<{ rua: string; codigo: string; historico: unknown[] }[]>("estoque:excluidos");
+    expect(excluidos).toMatchObject([{ rua: "G", codigo: "G3", historico: [{ quantidade: 4 }] }]);
+  });
+
   it("exclui a rua inteira, mas guarda tudo no arquivo de excluídos", async () => {
     const { registrarContagem, removerRua, listarEstoque, store } = await fresh();
     for (const codigo of ["D1", "D2"]) await registrarContagem({ rua: "D", codigo, quantidade: 0, responsavel: "Ana", fotoDataUri: FOTO_1X1 });

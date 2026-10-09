@@ -62,6 +62,7 @@ export interface RuaResumo {
 const CHAVE_STORE = "estoque";
 const CHAVE_METADADOS = "estoque:metadados";
 const CHAVE_PRODUTOS = "estoque:produtos";
+const CHAVE_LONGARINAS = "estoque:longarinas";
 const PASTA_CLOUDINARY = "llelle-estoque";
 
 function normalizar(texto: string): string {
@@ -75,8 +76,10 @@ function chave(rua: string, codigo: string): string {
 export async function listarEstoque(): Promise<RuaResumo[]> {
   const tudo = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
   const metadados = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
+  const longarinas = (await store.get<string[]>(CHAVE_LONGARINAS)) ?? [];
   const porRua = new Map<string, PosicaoResumo[]>();
 
+  for (const rua of longarinas) porRua.set(rua, []);
   for (const [chaveComposta, historico] of Object.entries(tudo)) {
     if (historico.length === 0) continue;
     const [rua, codigo] = chaveComposta.split("::");
@@ -92,6 +95,81 @@ export async function listarEstoque(): Promise<RuaResumo[]> {
       rua,
       posicoes: posicoes.sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true })),
     }));
+}
+
+function validarNomeLongarina(nome: string): string {
+  const limpo = normalizar(nome);
+  if (!/^[A-Z]+$/.test(limpo)) throw new Error("A longarina deve ter apenas letras (ex.: F).");
+  return limpo;
+}
+
+async function longarinasConhecidas(): Promise<string[]> {
+  const registradas = (await store.get<string[]>(CHAVE_LONGARINAS)) ?? [];
+  const historicos = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
+  const metadados = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
+  const encontradas = [...Object.keys(historicos), ...Object.keys(metadados)].map((k) => k.split("::")[0]);
+  return [...new Set([...registradas, ...encontradas])];
+}
+
+export async function criarLongarina(nome: string): Promise<string> {
+  const longarina = validarNomeLongarina(nome);
+  if ((await longarinasConhecidas()).some((item) => normalizar(item) === longarina)) {
+    throw new Error(`A longarina ${longarina} já existe.`);
+  }
+  await store.update<string[]>(CHAVE_LONGARINAS, (atuais) => {
+    const lista = atuais ?? [];
+    if (lista.some((item) => normalizar(item) === longarina)) throw new Error(`A longarina ${longarina} já existe.`);
+    return [...lista, longarina].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  });
+  return longarina;
+}
+
+export async function renomearLongarina(nomeAtual: string, novoNome: string): Promise<string> {
+  const atual = validarNomeLongarina(nomeAtual);
+  const novo = validarNomeLongarina(novoNome);
+  const conhecidas = await longarinasConhecidas();
+  if (!conhecidas.some((item) => normalizar(item) === atual)) throw new Error(`A longarina ${atual} não existe.`);
+  if (atual === novo) return novo;
+  if (conhecidas.some((item) => normalizar(item) === novo)) throw new Error(`A longarina ${novo} já existe.`);
+
+  const historicos = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
+  const metadados = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
+  const prefixo = `${atual}::`;
+  const chaves = [...new Set([...Object.keys(historicos), ...Object.keys(metadados)])].filter((k) => k.startsWith(prefixo));
+  const remapeadas = chaves.map((chaveAntiga) => {
+    const codigo = chaveAntiga.slice(prefixo.length);
+    const codigoNovo = codigo.replace(new RegExp(`^${atual}(?=\\d)`), novo);
+    return { chaveAntiga, chaveNova: `${novo}::${codigoNovo}` };
+  });
+  const chavesRemapeadas = new Set(remapeadas.map((item) => item.chaveNova));
+  if (chavesRemapeadas.size !== remapeadas.length || remapeadas.some(({ chaveNova }) => (historicos[chaveNova] || metadados[chaveNova]) && !chaves.includes(chaveNova))) {
+    throw new Error(`Não foi possível renomear: já existe uma gaveta na longarina ${novo}.`);
+  }
+
+  await store.update<HistoricoPorPosicao>(CHAVE_STORE, (atuais) => {
+    const copia = { ...(atuais ?? {}) };
+    for (const { chaveAntiga, chaveNova } of remapeadas) {
+      if (copia[chaveAntiga]) {
+        copia[chaveNova] = copia[chaveAntiga];
+        delete copia[chaveAntiga];
+      }
+    }
+    return copia;
+  });
+  await store.update<MetadadosPorPosicao>(CHAVE_METADADOS, (atuais) => {
+    const copia = { ...(atuais ?? {}) };
+    for (const { chaveAntiga, chaveNova } of remapeadas) {
+      if (copia[chaveAntiga]) {
+        copia[chaveNova] = copia[chaveAntiga];
+        delete copia[chaveAntiga];
+      }
+    }
+    return copia;
+  });
+  await store.update<string[]>(CHAVE_LONGARINAS, (atuais) =>
+    [...new Set([...(atuais ?? []).filter((item) => normalizar(item) !== atual), novo])].sort((a, b) => a.localeCompare(b, "pt-BR")),
+  );
+  return novo;
 }
 
 export async function obterHistorico(rua: string, codigo: string): Promise<RegistroContagem[]> {
@@ -358,11 +436,14 @@ export async function removerPosicao(rua: string, codigo: string): Promise<void>
 
 /** Exclui a rua inteira (todas as posições dela). Devolve quantas posições foram arquivadas. */
 export async function removerRua(rua: string): Promise<number> {
-  const prefixo = `${normalizar(rua)}::`;
+  const longarina = normalizar(rua);
+  const prefixo = `${longarina}::`;
   const historicos = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
   const metadados = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
   const chaves = [...new Set([...Object.keys(historicos), ...Object.keys(metadados)])].filter((k) => k.startsWith(prefixo));
-  return excluirChaves(chaves);
+  const excluidas = await excluirChaves(chaves);
+  await store.update<string[]>(CHAVE_LONGARINAS, (atuais) => (atuais ?? []).filter((item) => normalizar(item) !== longarina));
+  return excluidas;
 }
 const FORMATOS_AUTORIZADOS = new Set(["jpeg", "jpg", "png", "webp"]);
 
@@ -473,6 +554,12 @@ export async function registrarContagem(params: RegistrarContagemParams): Promis
   await store.update<HistoricoPorPosicao>(CHAVE_STORE, (atual) => {
     const tudo = atual ?? {};
     return { ...tudo, [k]: [registro, ...(tudo[k] ?? [])] };
+  });
+  await store.update<string[]>(CHAVE_LONGARINAS, (atuais) => {
+    const lista = atuais ?? [];
+    return lista.some((rua) => normalizar(rua) === normalizar(params.rua))
+      ? lista
+      : [...lista, normalizar(params.rua)].sort((a, b) => a.localeCompare(b, "pt-BR"));
   });
 
   return registro;

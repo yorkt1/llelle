@@ -1967,6 +1967,33 @@ body:has(.settings-overlay) .app-bottom-nav {
   border-bottom: 1px solid var(--line);
 }
 
+.estoque-longarina-form,
+.estoque-longarina-editar,
+.estoque-longarina-acoes {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.estoque-longarina-form {
+  margin-bottom: 1rem;
+}
+
+.estoque-longarina-form .field,
+.estoque-longarina-editar .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.estoque-longarina-editar {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.estoque-longarina-acoes {
+  flex-shrink: 0;
+}
+
 .estoque-form-produto {
   display: flex;
   align-items: flex-end;

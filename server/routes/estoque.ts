@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   CloudinaryConfigError,
   adicionarProduto,
+  criarLongarina,
   definirMetadados,
   listarEstoque,
   listarProdutos,
@@ -11,6 +12,7 @@ import {
   adicionarProdutos,
   removerPosicao,
   removerRua,
+  renomearLongarina,
   dividirProdutosPorVoltagem,
   normalizarNomesComVoltagemDuplicada,
 } from "../../lib/estoque";
@@ -83,6 +85,49 @@ estoqueRouter.delete("/produtos/:nome", async (req, res) => {
 
 // Rotas específicas ANTES das genéricas `/:rua/:codigo...` lá embaixo — senão "produtos/lote" e
 // "rua/X" seriam lidos como rua+código.
+
+estoqueRouter.post("/longarinas", async (req, res) => {
+  const nome = paraTextoObrigatorio(req.body?.nome);
+  if (!nome) {
+    res.status(400).json({ error: "Informe o nome da longarina." });
+    return;
+  }
+  try {
+    const longarina = await criarLongarina(nome);
+    res.status(201).json({ longarina });
+  } catch (error) {
+    res.status(error instanceof StoreConfigError ? 503 : 400).json({
+      error: error instanceof Error ? error.message : "Não consegui criar a longarina.",
+    });
+  }
+});
+
+estoqueRouter.put("/longarinas/:rua", async (req, res) => {
+  const nome = paraTextoObrigatorio(req.body?.nome);
+  if (!nome) {
+    res.status(400).json({ error: "Informe o novo nome da longarina." });
+    return;
+  }
+  try {
+    const longarina = await renomearLongarina(String(req.params.rua), nome);
+    res.status(200).json({ longarina });
+  } catch (error) {
+    res.status(error instanceof StoreConfigError ? 503 : 400).json({
+      error: error instanceof Error ? error.message : "Não consegui renomear a longarina.",
+    });
+  }
+});
+
+estoqueRouter.delete("/longarinas/:rua", async (req, res) => {
+  try {
+    const gavetasExcluidas = await removerRua(String(req.params.rua));
+    res.status(200).json({ gavetasExcluidas });
+  } catch (error) {
+    res.status(error instanceof StoreConfigError ? 503 : 500).json({
+      error: error instanceof Error ? error.message : "Não consegui excluir a longarina.",
+    });
+  }
+});
 
 estoqueRouter.post("/produtos/normalizar-voltagens", async (_req, res) => {
   try {
