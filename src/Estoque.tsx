@@ -1253,6 +1253,7 @@ interface GrupoProduto {
 }
 
 type Ordem = "nome" | "unidades";
+type VisaoEstoque = "produtos" | "longarinas";
 
 function chaveDoProduto(nome: string): string {
   return nome.trim().replace(/\s+/g, " ").toLowerCase();
@@ -1618,6 +1619,7 @@ export function Estoque() {
   const [mostrarModalProdutos, setMostrarModalProdutos] = useState(false);
   const [mostrarRuas, setMostrarRuas] = useState(false);
   const [produtoAberto, setProdutoAberto] = useState<string | null>(null);
+  const [visaoEstoque, setVisaoEstoque] = useState<VisaoEstoque>("produtos");
 
   const [busca, setBusca] = useState("");
   const [filtroVoltagem, setFiltroVoltagem] = useState("");
@@ -1724,6 +1726,28 @@ export function Estoque() {
     )
     .sort((a, b) => (ordem === "unidades" ? b.total - a.total : 0) || a.nome.localeCompare(b.nome, "pt-BR"));
 
+  const longarinasExibidas = ruas
+    .map((rua) => {
+      const termoBateRua = Boolean(termo && normalizar(`rua ${rua.rua}`).includes(termo));
+      const posicoes = rua.posicoes
+        .filter(
+          (posicao) =>
+            (!soComEstoque || posicao.ultima.quantidade > 0) &&
+            (!filtroVoltagem || posicao.voltagem === filtroVoltagem) &&
+            (!termo ||
+              termoBateRua ||
+              normalizar(`${posicao.codigo} ${posicao.produto ?? ""} rua ${posicao.rua}`).includes(termo)),
+        )
+        .sort(ordenarGavetas);
+      return { ...rua, posicoes };
+    })
+    .filter((rua) => rua.posicoes.length > 0)
+    .sort((a, b) => {
+      const totalA = a.posicoes.reduce((soma, posicao) => soma + posicao.ultima.quantidade, 0);
+      const totalB = b.posicoes.reduce((soma, posicao) => soma + posicao.ultima.quantidade, 0);
+      return (ordem === "unidades" ? totalB - totalA : 0) || a.rua.localeCompare(b.rua, "pt-BR");
+    });
+
   const totalUnidades = todasAsGavetas.reduce((s, p) => s + p.ultima.quantidade, 0);
   const ocupadas = todasAsGavetas.filter((p) => p.ultima.quantidade > 0).length;
   const semFoto = grupos.filter((g) => g.noCatalogo && !g.info?.fotoUrl).length;
@@ -1809,7 +1833,7 @@ export function Estoque() {
           + Produto
         </button>
         <button type="button" className="refresh-btn" onClick={() => setMostrarRuas(true)}>
-          Ruas
+          Gerenciar ruas
         </button>
         <button type="button" className="btn-primario" onClick={() => abrirNovaGaveta()}>
           + Gaveta
@@ -1824,6 +1848,27 @@ export function Estoque() {
         <CardResumo rotulo="Gavetas ocupadas" valor={ocupadas} detalhe={`de ${todasAsGavetas.length} registradas em ${ruas.length} rua(s)`} tom="vazia" />
         <CardResumo rotulo="Gavetas vazias" valor={gavetasVazias.length} detalhe="sem produto" tom="baixo" />
       </section>
+
+      <div className="abas" role="tablist" aria-label="Visualização do estoque">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={visaoEstoque === "produtos"}
+          className={`aba${visaoEstoque === "produtos" ? " aba--ativa" : ""}`}
+          onClick={() => setVisaoEstoque("produtos")}
+        >
+          Por produtos
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={visaoEstoque === "longarinas"}
+          className={`aba${visaoEstoque === "longarinas" ? " aba--ativa" : ""}`}
+          onClick={() => setVisaoEstoque("longarinas")}
+        >
+          Por longarinas
+        </button>
+      </div>
 
       <div className="filtro-barra" role="search">
         <label className="filtro-busca">
@@ -1846,7 +1891,7 @@ export function Estoque() {
           ))}
         </select>
         <select className="field-input" aria-label="Ordenar" value={ordem} onChange={(event) => setOrdem(event.target.value as Ordem)}>
-          <option value="nome">Ordem: nome</option>
+          <option value="nome">{visaoEstoque === "produtos" ? "Ordem: nome" : "Ordem: longarina"}</option>
           <option value="unidades">Ordem: mais unidades</option>
         </select>
         <label className="filtro-check">
@@ -1874,7 +1919,7 @@ export function Estoque() {
 
       {!carregou ? (
         <p className="nota-info">Carregando estoque…</p>
-      ) : grupos.length === 0 ? (
+      ) : visaoEstoque === "produtos" && grupos.length === 0 ? (
         <div className="estado-vazio">
           <IconeGondola className="estado-vazio-icone" />
           <p className="estado-vazio-titulo">Nenhum produto cadastrado ainda.</p>
@@ -1883,7 +1928,7 @@ export function Estoque() {
             + Adicionar produtos
           </button>
         </div>
-      ) : gruposExibidos.length === 0 ? (
+      ) : visaoEstoque === "produtos" && gruposExibidos.length === 0 ? (
         <div className="estado-vazio estado-vazio--compacto">
           <p className="estado-vazio-titulo">Nenhum produto com esses filtros.</p>
           {filtroAtivo && (
@@ -1899,6 +1944,59 @@ export function Estoque() {
               Limpar filtros
             </button>
           )}
+        </div>
+      ) : visaoEstoque === "longarinas" && longarinasExibidas.length === 0 ? (
+        <div className="estado-vazio estado-vazio--compacto">
+          <p className="estado-vazio-titulo">{ruas.length === 0 ? "Nenhuma longarina cadastrada ainda." : "Nenhuma gaveta com esses filtros."}</p>
+          {ruas.length === 0 ? (
+            <button type="button" className="btn-primario" onClick={() => abrirNovaGaveta()}>
+              + Adicionar gaveta
+            </button>
+          ) : filtroAtivo ? (
+            <button
+              type="button"
+              className="refresh-btn"
+              onClick={() => {
+                setBusca("");
+                setFiltroVoltagem("");
+                setSoComEstoque(false);
+              }}
+            >
+              Limpar filtros
+            </button>
+          ) : null}
+        </div>
+      ) : visaoEstoque === "longarinas" ? (
+        <div className="estoque-longarinas-grid">
+          {longarinasExibidas.map((rua) => {
+            const total = rua.posicoes.reduce((soma, posicao) => soma + posicao.ultima.quantidade, 0);
+            const ocupadasNaRua = rua.posicoes.filter((posicao) => posicao.ultima.quantidade > 0).length;
+            return (
+              <section className="estoque-longarina" key={rua.rua}>
+                <div className="estoque-longarina-cabecalho">
+                  <h2>Longarina {rua.rua}</h2>
+                  <span className="field-value--muted">
+                    {total} un. · {ocupadasNaRua}/{rua.posicoes.length} gavetas ocupadas
+                  </span>
+                </div>
+                <div className="estoque-longarina-posicoes">
+                  {rua.posicoes.map((posicao) => (
+                    <button
+                      key={`${posicao.rua}::${posicao.codigo}`}
+                      type="button"
+                      className={`estoque-longarina-gaveta${posicao.ultima.quantidade === 0 ? " estoque-longarina-gaveta--vazia" : ""}`}
+                      onClick={() => abrirGaveta(posicao)}
+                      title={`Abrir gaveta ${posicao.codigo}`}
+                    >
+                      <strong>{posicao.codigo}</strong>
+                      <span>{posicao.produto ?? "Gaveta vazia"}</span>
+                      <span className="estoque-longarina-quantidade">{posicao.ultima.quantidade} un.</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       ) : (
         <div className="produtos-grid">
@@ -1940,7 +2038,7 @@ export function Estoque() {
         </div>
       )}
 
-      {gavetasVazias.length > 0 && (
+      {visaoEstoque === "produtos" && gavetasVazias.length > 0 && (
         <section className="painel-card">
           <h2 className="painel-card-titulo">Gavetas vazias ({gavetasVazias.length})</h2>
           <div className="produto-card-locais">

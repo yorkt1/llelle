@@ -2986,6 +2986,78 @@ th.matriz-dia {
   background: var(--brand-soft);
 }
 
+.estoque-longarinas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+}
+
+.estoque-longarina {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.estoque-longarina-cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.estoque-longarina-cabecalho h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.estoque-longarina-posicoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8rem), 1fr));
+  gap: 0.5rem;
+}
+
+.estoque-longarina-gaveta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 0.65rem;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-control);
+  background: var(--brand-soft);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.estoque-longarina-gaveta:hover {
+  border-color: var(--muted);
+}
+
+.estoque-longarina-gaveta > span:nth-child(2) {
+  width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--fg-secondary);
+  font-size: 0.78rem;
+}
+
+.estoque-longarina-gaveta--vazia {
+  border-style: dashed;
+  background: none;
+}
+
+.estoque-longarina-quantidade {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .produto-detalhe-cabecalho {
   display: flex;
   gap: 1rem;
