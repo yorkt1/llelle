@@ -3068,7 +3068,28 @@ th.matriz-dia {
   border-color: var(--muted);
 }
 
-.estoque-longarina-gaveta > span:nth-child(2) {
+.estoque-longarina-gaveta--com-foto {
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: flex-start;
+}
+
+.estoque-longarina-foto {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-control);
+  background: var(--foto-fundo);
+  object-fit: contain;
+}
+
+.estoque-longarina-gaveta-conteudo {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.estoque-longarina-gaveta-conteudo > span:nth-child(2) {
   width: 100%;
   overflow-wrap: anywhere;
   color: var(--fg-secondary);

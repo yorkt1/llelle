@@ -702,7 +702,6 @@ function FormularioContagem({
             >
               {fotoPreview ? "Trocar foto" : "Tirar / escolher foto"}
             </button>
-            <p className="estoque-em-breve">🔜 Em breve a IA vai sugerir a contagem a partir dessa foto.</p>
             {mostrar("foto", erroFoto) && <span className="field-erro">{mostrar("foto", erroFoto)}</span>}
           </div>
 
@@ -2114,13 +2113,22 @@ export function Estoque() {
                     <button
                       key={`${posicao.rua}::${posicao.codigo}`}
                       type="button"
-                      className={`estoque-longarina-gaveta${posicao.ultima.quantidade === 0 ? " estoque-longarina-gaveta--vazia" : ""}`}
+                      className={`estoque-longarina-gaveta${posicao.ultima.quantidade === 0 ? " estoque-longarina-gaveta--vazia" : ""}${posicao.produto ? " estoque-longarina-gaveta--com-foto" : ""}`}
                       onClick={() => abrirGaveta(posicao)}
                       title={`Abrir gaveta ${posicao.codigo}`}
                     >
-                      <strong>{posicao.codigo}</strong>
-                      <span>{posicao.produto ?? "Gaveta vazia"}</span>
-                      <span className="estoque-longarina-quantidade">{posicao.ultima.quantidade} un.</span>
+                      {posicao.produto && (
+                        <FotoProduto
+                          info={info[chaveDoProduto(posicao.produto)]}
+                          nome={posicao.produto}
+                          className="estoque-longarina-foto"
+                        />
+                      )}
+                      <span className="estoque-longarina-gaveta-conteudo">
+                        <strong>{posicao.codigo}</strong>
+                        <span>{posicao.produto ?? "Gaveta vazia"}</span>
+                        <span className="estoque-longarina-quantidade">{posicao.ultima.quantidade} un.</span>
+                      </span>
                     </button>
                   ))}
                 </div>
