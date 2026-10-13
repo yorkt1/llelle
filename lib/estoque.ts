@@ -71,7 +71,7 @@ export const LIMITE_ESTOQUE_BAIXO_PADRAO = 5;
 type UnidadesPorCaixa = Record<string, number>;
 
 function chaveProduto(produto: string): string {
-  return produto.trim().toLowerCase();
+  return produto.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 export async function listarUnidadesPorCaixa(): Promise<UnidadesPorCaixa> {
@@ -92,18 +92,6 @@ export async function definirUnidadesPorCaixa(produto: string, unidadesPorCaixa:
     else configuradas[chave] = unidadesPorCaixa;
     return configuradas;
   });
-}
-
-export function calcularQuantidadeContada(caixas: number, unidadesAvulsas: number, unidadesPorCaixa: number): number {
-  if (![caixas, unidadesAvulsas].every((valor) => Number.isSafeInteger(valor) && valor >= 0)) {
-    throw new Error("Caixas e unidades avulsas devem ser números inteiros iguais ou maiores que zero.");
-  }
-  if (!Number.isSafeInteger(unidadesPorCaixa) || unidadesPorCaixa < 1) {
-    throw new Error("A quantidade por caixa deve ser um número inteiro maior que zero.");
-  }
-  const total = caixas * unidadesPorCaixa + unidadesAvulsas;
-  if (!Number.isSafeInteger(total)) throw new Error("A quantidade total ultrapassa o limite permitido.");
-  return total;
 }
 
 export async function obterLimiteEstoqueBaixo(): Promise<number> {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PageHeader } from "@/PageHeader";
+import { calcularQuantidadeContada } from "../lib/contagemEstoque";
 import { nomeProdutoComVoltagemUnica } from "../lib/nomeProduto";
 
 interface RegistroContagem {
@@ -323,8 +324,8 @@ function ContagemPorCaixa({
       onQuantidadeChange("");
       return;
     }
-    const total = Number(novasCaixas) * unidadesPorCaixa + Number(novasAvulsas);
-    onQuantidadeChange(Number.isSafeInteger(total) ? String(total) : "");
+    const total = calcularQuantidadeContada(Number(novasCaixas), Number(novasAvulsas), unidadesPorCaixa);
+    onQuantidadeChange(total === null ? "" : String(total));
   };
 
   return (

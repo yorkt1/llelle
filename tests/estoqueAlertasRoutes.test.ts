@@ -93,9 +93,10 @@ describe("configuração do alerta de estoque baixo", () => {
   }, 15_000);
 
   it("calcula total de caixas e avulsas sem permitir valores não inteiros", async () => {
-    const { calcularQuantidadeContada } = await import("../lib/estoque");
+    const { calcularQuantidadeContada } = await import("../lib/contagemEstoque");
     expect(calcularQuantidadeContada(2, 3, 12)).toBe(27);
-    expect(() => calcularQuantidadeContada(-1, 0, 12)).toThrow(/inteiros/i);
-    expect(() => calcularQuantidadeContada(1, 0, 0)).toThrow(/maior que zero/i);
+    expect(calcularQuantidadeContada(-1, 0, 12)).toBeNull();
+    expect(calcularQuantidadeContada(1, 0, 0)).toBeNull();
+    expect(calcularQuantidadeContada(Number.MAX_SAFE_INTEGER, 1, 2)).toBeNull();
   });
 });
