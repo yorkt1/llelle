@@ -257,6 +257,15 @@ function validarVoltagem(voltagem: string): string | null {
   return (VOLTAGENS as readonly string[]).includes(voltagem) ? null : "Selecione a voltagem dessa gaveta.";
 }
 
+function isUnidadesPorCaixa(value: unknown): value is Record<string, number> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.entries(value).every(([, unidades]) => typeof unidades === "number" && Number.isSafeInteger(unidades) && unidades >= 1)
+  );
+}
+
 /**
  * Voltagem dita no próprio nome do produto ("... Azul 110V", "... Bivolt") — cada cor+voltagem é um
  * produto (SKU) próprio, então a voltagem vem do nome. 127V conta como 110V (a lista de voltagens do
@@ -283,9 +292,89 @@ function proximoNumeroGavetaSugerido(rua: string, codigosExistentes: string[]): 
   return String(proximo);
 }
 
+function ContagemPorCaixa({
+  unidadesPorCaixa,
+  quantidadeInicial,
+  onQuantidadeChange,
+  inputRef,
+  erro,
+  onBlur,
+}: {
+  unidadesPorCaixa: number;
+  quantidadeInicial: string;
+  onQuantidadeChange: (quantidade: string) => void;
+  inputRef: (input: HTMLInputElement | null) => void;
+  erro: string | null;
+  onBlur: () => void;
+}) {
+  const numeroInicial = Number(quantidadeInicial);
+  const inicialValido = quantidadeInicial.trim() !== "" && Number.isSafeInteger(numeroInicial) && numeroInicial >= 0;
+  const [caixas, setCaixas] = useState(inicialValido ? String(Math.floor(numeroInicial / unidadesPorCaixa)) : "");
+  const [avulsas, setAvulsas] = useState(inicialValido ? String(numeroInicial % unidadesPorCaixa) : "");
+
+  const atualizar = (novasCaixas: string, novasAvulsas: string) => {
+    setCaixas(novasCaixas);
+    setAvulsas(novasAvulsas);
+    if (
+      !novasCaixas.trim() ||
+      !novasAvulsas.trim() ||
+      ![novasCaixas, novasAvulsas].every((valor) => Number.isSafeInteger(Number(valor)) && Number(valor) >= 0)
+    ) {
+      onQuantidadeChange("");
+      return;
+    }
+    const total = Number(novasCaixas) * unidadesPorCaixa + Number(novasAvulsas);
+    onQuantidadeChange(Number.isSafeInteger(total) ? String(total) : "");
+  };
+
+  return (
+    <div className="field">
+      <span className="field-label">
+        Contagem por caixa <span className="field-obrigatorio">*</span>
+      </span>
+      <div className="estoque-contagem-caixas">
+        <label className="field">
+          <span className="field-label">Caixas ({unidadesPorCaixa} un. cada)</span>
+          <input
+            ref={inputRef}
+            className={`field-input${erro ? " field-input--erro" : ""}`}
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            value={caixas}
+            onChange={(event) => atualizar(event.target.value, avulsas)}
+            onBlur={onBlur}
+            placeholder="Ex.: 2"
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">Unidades avulsas</span>
+          <input
+            className={`field-input${erro ? " field-input--erro" : ""}`}
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            value={avulsas}
+            onChange={(event) => atualizar(caixas, event.target.value)}
+            onBlur={onBlur}
+            placeholder="Ex.: 3"
+          />
+        </label>
+      </div>
+      <span className="estoque-quantidade-calculada tabular">
+        Total contado: <strong>{quantidadeInicial === "" ? "—" : `${quantidadeInicial} un.`}</strong>
+      </span>
+      {erro && <span className="field-erro">{erro}</span>}
+    </div>
+  );
+}
+
 function FormularioContagem({
   modal,
   produtos,
+  unidadesPorCaixa,
   onFechar,
   onSalvo,
   onMetadadosSalvos,
@@ -293,6 +382,7 @@ function FormularioContagem({
 }: {
   modal: Exclude<Modal, null>;
   produtos: string[];
+  unidadesPorCaixa: Record<string, number>;
   onFechar: () => void;
   onSalvo: (rua: string, codigo: string) => void;
   onMetadadosSalvos: (rua: string, codigo: string, produto: string, voltagem: Voltagem) => void;
@@ -331,6 +421,9 @@ function FormularioContagem({
   const produtoRef = useRef<HTMLSelectElement>(null);
   const voltagemRef = useRef<HTMLSelectElement>(null);
   const quantidadeRef = useRef<HTMLInputElement>(null);
+  const setQuantidadeInputRef = useCallback((input: HTMLInputElement | null) => {
+    quantidadeRef.current = input;
+  }, []);
   const responsavelRef = useRef<HTMLInputElement>(null);
   const fotoBotaoRef = useRef<HTMLButtonElement>(null);
 
@@ -357,11 +450,18 @@ function FormularioContagem({
   // do produto já diz a voltagem, ela vem dele e não é perguntada de novo.
   const voltagemDoProduto = vazia ? null : voltagemDoNome(produto);
   const voltagem = voltagemDoProduto ?? voltagemEscolhida;
+  const produtoContado = definirProduto ? (vazia ? "" : produto) : (modal.produto ?? "");
+  const quantidadePorCaixa = unidadesPorCaixa[chaveDoProduto(produtoContado)];
   const erroProduto = definirProduto ? validarProduto(produto) : null;
   const erroVoltagem = definirProduto && !vazia ? validarVoltagem(voltagem) : null;
-  const erroQuantidade =
-    validarQuantidade(quantidade) ??
-    (vazia && Number(quantidade) > 0 ? "Gaveta vazia fica com 0 un. — pra contar unidades, escolha o produto." : null);
+  const erroQuantidade = quantidadePorCaixa
+    ? !quantidade.trim()
+      ? "Informe a quantidade de caixas e as unidades avulsas."
+      : !Number.isSafeInteger(Number(quantidade)) || Number(quantidade) < 0
+        ? "A quantidade total ultrapassa o limite permitido."
+        : null
+    : validarQuantidade(quantidade) ??
+      (vazia && Number(quantidade) > 0 ? "Gaveta vazia fica com 0 un. — pra contar unidades, escolha o produto." : null);
   const erroResponsavel = validarResponsavel(responsavel);
   const erroFoto = validarFoto(fotoPreview);
   const formularioInvalido = Boolean(erroCodigo || erroProduto || erroVoltagem || erroQuantidade || erroResponsavel || erroFoto);
@@ -705,33 +805,45 @@ function FormularioContagem({
             {mostrar("foto", erroFoto) && <span className="field-erro">{mostrar("foto", erroFoto)}</span>}
           </div>
 
-          <label className="field">
-            <span className="field-label">
-              Quantidade contada <span className="field-obrigatorio">*</span>
-            </span>
-            <div className="estoque-qtd-controle">
-              <button type="button" className="estoque-qtd-btn" onClick={() => ajustarQuantidade(-1)} disabled={vazia} aria-label="Diminuir quantidade">
-                −
-              </button>
-              <input
-                ref={quantidadeRef}
-                className={`field-input${mostrar("quantidade", erroQuantidade) ? " field-input--erro" : ""}`}
-                type="number"
-                min={0}
-                inputMode="numeric"
-                disabled={vazia}
-                value={quantidade}
-                onChange={(event) => setQuantidade(event.target.value)}
-                onBlur={() => tocar("quantidade")}
-                placeholder="Ex.: 48"
-              />
-              <button type="button" className="estoque-qtd-btn" onClick={() => ajustarQuantidade(1)} disabled={vazia} aria-label="Aumentar quantidade">
-                +
-              </button>
-              <span className="estoque-qtd-unidade">un.</span>
-            </div>
-            {mostrar("quantidade", erroQuantidade) && <span className="field-erro">{mostrar("quantidade", erroQuantidade)}</span>}
-          </label>
+          {quantidadePorCaixa ? (
+            <ContagemPorCaixa
+              key={`${chaveDoProduto(produtoContado)}:${quantidadePorCaixa}`}
+              unidadesPorCaixa={quantidadePorCaixa}
+              quantidadeInicial={quantidade}
+              onQuantidadeChange={setQuantidade}
+              inputRef={setQuantidadeInputRef}
+              erro={mostrar("quantidade", erroQuantidade)}
+              onBlur={() => tocar("quantidade")}
+            />
+          ) : (
+            <label className="field">
+              <span className="field-label">
+                Quantidade contada <span className="field-obrigatorio">*</span>
+              </span>
+              <div className="estoque-qtd-controle">
+                <button type="button" className="estoque-qtd-btn" onClick={() => ajustarQuantidade(-1)} disabled={vazia} aria-label="Diminuir quantidade">
+                  −
+                </button>
+                <input
+                  ref={quantidadeRef}
+                  className={`field-input${mostrar("quantidade", erroQuantidade) ? " field-input--erro" : ""}`}
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  disabled={vazia}
+                  value={quantidade}
+                  onChange={(event) => setQuantidade(event.target.value)}
+                  onBlur={() => tocar("quantidade")}
+                  placeholder="Ex.: 48"
+                />
+                <button type="button" className="estoque-qtd-btn" onClick={() => ajustarQuantidade(1)} disabled={vazia} aria-label="Aumentar quantidade">
+                  +
+                </button>
+                <span className="estoque-qtd-unidade">un.</span>
+              </div>
+              {mostrar("quantidade", erroQuantidade) && <span className="field-erro">{mostrar("quantidade", erroQuantidade)}</span>}
+            </label>
+          )}
 
           <label className="field">
             <span className="field-label">
@@ -789,17 +901,76 @@ function FormularioContagem({
   );
 }
 
+function CampoUnidadesPorCaixa({
+  produto,
+  unidadesPorCaixa,
+  onSalvar,
+}: {
+  produto: string;
+  unidadesPorCaixa: number | undefined;
+  onSalvar: (produto: string, unidades: number | null) => Promise<void>;
+}) {
+  const [valor, setValor] = useState(unidadesPorCaixa === undefined ? "" : String(unidadesPorCaixa));
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const salvar = async (event: FormEvent) => {
+    event.preventDefault();
+    const unidades = valor.trim() === "" ? null : Number(valor);
+    if (unidades !== null && (!Number.isSafeInteger(unidades) || unidades < 1)) {
+      setErro("Use um número inteiro maior que zero.");
+      return;
+    }
+    setSalvando(true);
+    setErro(null);
+    try {
+      await onSalvar(produto, unidades);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não consegui salvar a quantidade por caixa.");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <form className="estoque-config-caixa" onSubmit={(event) => void salvar(event)}>
+      <label className="field">
+        <span className="field-label">Unidades por caixa</span>
+        <input
+          className="field-input"
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          value={valor}
+          onChange={(event) => setValor(event.target.value)}
+          aria-label={`Unidades por caixa de ${produto}`}
+          placeholder="Não usa caixa"
+        />
+      </label>
+      <button type="submit" className="refresh-btn" disabled={salvando}>
+        {salvando ? "Salvando..." : "Salvar"}
+      </button>
+      {erro && <span className="field-erro" role="alert">{erro}</span>}
+    </form>
+  );
+}
+
 /** Catálogo de produtos — antes um painel no topo da tela, agora um modal aberto pelo "+ Produto" do cabeçalho. */
 function ModalProdutos({
   produtos,
   info,
+  unidadesPorCaixa,
   onFechar,
   onAlterado,
+  onSalvarUnidadesPorCaixa,
 }: {
   produtos: string[];
   info: Record<string, InfoProduto>;
+  unidadesPorCaixa: Record<string, number>;
   onFechar: () => void;
   onAlterado: (produtos: string[]) => void;
+  onSalvarUnidadesPorCaixa: (produto: string, unidades: number | null) => Promise<void>;
 }) {
   const [novoProduto, setNovoProduto] = useState("");
   const [erroProdutos, setErroProdutos] = useState<string | null>(null);
@@ -1183,6 +1354,12 @@ function ModalProdutos({
                     )}
                     {nome}
                   </span>
+                  <CampoUnidadesPorCaixa
+                    key={`${chaveDoProduto(nome)}:${unidadesPorCaixa[chaveDoProduto(nome)] ?? ""}`}
+                    produto={nome}
+                    unidadesPorCaixa={unidadesPorCaixa[chaveDoProduto(nome)]}
+                    onSalvar={onSalvarUnidadesPorCaixa}
+                  />
                   <button type="button" className="refresh-btn" onClick={() => void removerProdutoCatalogo(nome)}>
                     Excluir
                   </button>
@@ -1722,6 +1899,8 @@ export function Estoque() {
   const [ruas, setRuas] = useState<RuaResumo[]>([]);
   const [produtos, setProdutos] = useState<string[]>([]);
   const [info, setInfo] = useState<Record<string, InfoProduto>>({});
+  const [unidadesPorCaixa, setUnidadesPorCaixa] = useState<Record<string, number>>({});
+  const [erroUnidadesPorCaixa, setErroUnidadesPorCaixa] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [carregou, setCarregou] = useState(false);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
@@ -1801,13 +1980,30 @@ export function Estoque() {
     try {
       const resposta = await fetch(`${API_URL}/api/estoque/produtos`, { cache: "no-store" });
       const json = await resposta.json();
-      if (resposta.ok) {
-        setProdutos(json.produtos ?? []);
-        setInfo(json.info ?? {});
-      }
-    } catch {
-      // Catálogo/fotos não travam a tela — os cards aparecem a partir das gavetas mesmo assim.
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui carregar o cadastro de produtos.");
+      const configuracoes: unknown = json.unidadesPorCaixa ?? {};
+      if (!isUnidadesPorCaixa(configuracoes)) throw new Error("O servidor retornou configurações de embalagem inválidas.");
+      setProdutos(json.produtos ?? []);
+      setInfo(json.info ?? {});
+      setUnidadesPorCaixa(configuracoes);
+      setErroUnidadesPorCaixa(null);
+    } catch (error) {
+      // Catálogo, fotos e embalagens não travam a tela — os cards aparecem a partir das gavetas.
+      setErroUnidadesPorCaixa(error instanceof Error ? error.message : "Não consegui carregar a configuração de embalagem.");
     }
+  }, []);
+
+  const salvarUnidadesPorCaixa = useCallback(async (produto: string, unidades: number | null) => {
+    const resposta = await fetch(`${API_URL}/api/estoque/produtos/embalagens`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ produto, unidadesPorCaixa: unidades }),
+    });
+    const json = await resposta.json();
+    if (!resposta.ok) throw new Error(json.error ?? "Não consegui salvar a quantidade por caixa.");
+    if (!isUnidadesPorCaixa(json.unidadesPorCaixa)) throw new Error("O servidor retornou configurações de embalagem inválidas.");
+    setUnidadesPorCaixa(json.unidadesPorCaixa);
+    setErroUnidadesPorCaixa(null);
   }, []);
 
   const carregarConfiguracaoAlerta = useCallback(async () => {
@@ -2008,6 +2204,7 @@ export function Estoque() {
 
       {erroCarregamento && <p className="error-banner">{erroCarregamento}</p>}
       {erroConfiguracaoAlerta && <p className="error-banner" role="alert">{erroConfiguracaoAlerta}</p>}
+      {erroUnidadesPorCaixa && <p className="error-banner" role="alert">{erroUnidadesPorCaixa} A contagem por caixa pode não estar disponível.</p>}
 
       <section className="resumo-grid" aria-label="Resumo do estoque">
         <CardResumo rotulo="Produtos" valor={grupos.length} detalhe={`${grupos.filter((g) => g.total > 0).length} com estoque`} tom="marca" />
@@ -2317,11 +2514,13 @@ export function Estoque() {
         <ModalProdutos
           produtos={produtos}
           info={info}
+          unidadesPorCaixa={unidadesPorCaixa}
           onFechar={() => setMostrarModalProdutos(false)}
           onAlterado={(lista) => {
             setProdutos(lista);
             void carregarProdutos();
           }}
+          onSalvarUnidadesPorCaixa={salvarUnidadesPorCaixa}
         />
       )}
 
@@ -2329,6 +2528,7 @@ export function Estoque() {
         <FormularioContagem
           modal={modal}
           produtos={produtos}
+          unidadesPorCaixa={unidadesPorCaixa}
           onFechar={() => setModal(null)}
           onSalvo={aoSalvar}
           onMetadadosSalvos={aoSalvarMetadados}

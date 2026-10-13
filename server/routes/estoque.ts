@@ -17,6 +17,8 @@ import {
   normalizarNomesComVoltagemDuplicada,
   obterLimiteEstoqueBaixo,
   definirLimiteEstoqueBaixo,
+  listarUnidadesPorCaixa,
+  definirUnidadesPorCaixa,
 } from "../../lib/estoque";
 import { StoreConfigError } from "../../lib/store";
 import { OlistConfigError } from "../../lib/olist";
@@ -67,11 +69,32 @@ estoqueRouter.put("/configuracao-alerta", async (req, res) => {
 
 estoqueRouter.get("/produtos", async (_req, res) => {
   try {
-    const [produtos, info] = await Promise.all([listarProdutos(), listarInfoProdutos()]);
+    const [produtos, info, unidadesPorCaixa] = await Promise.all([listarProdutos(), listarInfoProdutos(), listarUnidadesPorCaixa()]);
     // `info` = foto e IDs do Tiny por produto (chave: nome em minúsculas) — ver lib/fotosProdutos.ts.
-    res.status(200).json({ produtos, info });
+    res.status(200).json({ produtos, info, unidadesPorCaixa });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao listar produtos." });
+  }
+});
+
+estoqueRouter.put("/produtos/embalagens", async (req, res) => {
+  const produto = paraTextoObrigatorio(req.body?.produto);
+  const unidadesPorCaixa: unknown = req.body?.unidadesPorCaixa;
+  if (!produto) {
+    res.status(400).json({ error: "Informe o produto." });
+    return;
+  }
+  if (unidadesPorCaixa !== null && (typeof unidadesPorCaixa !== "number" || !Number.isSafeInteger(unidadesPorCaixa) || unidadesPorCaixa < 1)) {
+    res.status(400).json({ error: "A quantidade por caixa deve ser um número inteiro maior que zero, ou vazia para remover a configuração." });
+    return;
+  }
+  try {
+    const configuracoes = await definirUnidadesPorCaixa(produto, unidadesPorCaixa);
+    res.status(200).json({ unidadesPorCaixa: configuracoes });
+  } catch (error) {
+    res.status(error instanceof StoreConfigError ? 503 : 400).json({
+      error: error instanceof Error ? error.message : "Não consegui salvar a quantidade por caixa.",
+    });
   }
 });
 
