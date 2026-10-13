@@ -1198,13 +1198,6 @@ function ModalProdutos({
   );
 }
 
-/**
- * Ainda não existe regra de negócio pra "estoque baixo" — com null o aviso fica desligado. Pra
- * ativar, troque por um número de unidades (ex.: 10): produto com 1..N un. no total ganha o selo
- * "Estoque baixo" no card.
- */
-const LIMITE_ESTOQUE_BAIXO = null as number | null;
-
 interface InfoProduto {
   fotoUrl?: string;
   fotoStatus?: "pendente" | "ok" | "sem-foto" | "nao-encontrado" | "erro";
@@ -1652,6 +1645,79 @@ function ModalLongarinas({
   );
 }
 
+function ModalConfiguracaoAlerta({
+  limiteAtual,
+  onFechar,
+  onSalvar,
+}: {
+  limiteAtual: number;
+  onFechar: () => void;
+  onSalvar: (limite: number) => Promise<void>;
+}) {
+  const [limite, setLimite] = useState(String(limiteAtual));
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const salvar = async (event: FormEvent) => {
+    event.preventDefault();
+    const valor = Number(limite);
+    if (!limite.trim() || !Number.isSafeInteger(valor) || valor < 0) {
+      setErro("Informe um número inteiro igual ou maior que zero.");
+      return;
+    }
+    setSalvando(true);
+    setErro(null);
+    try {
+      await onSalvar(valor);
+      onFechar();
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não consegui salvar o limite.");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div className="settings-overlay" onClick={onFechar}>
+      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="settings-panel-header">
+          <button className="settings-close" onClick={onFechar} aria-label="Fechar configuração">
+            ×
+          </button>
+          <h2 className="settings-title">Configuração geral do estoque</h2>
+          <p className="settings-hint">Este limite vale para todos os produtos e fica salvo para todos os aparelhos.</p>
+        </div>
+        <form onSubmit={(event) => void salvar(event)}>
+          <div className="settings-panel-body">
+            <label className="field">
+              <span className="field-label">Alertar quando o estoque chegar a (unidades)</span>
+              <input
+                className="field-input"
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                value={limite}
+                onChange={(event) => setLimite(event.target.value)}
+                autoFocus
+              />
+              <span className="field-value--muted">
+                Produtos com até esse número de unidades recebem um alerta vermelho. Com 0, o alerta aparece apenas para produtos sem estoque.
+              </span>
+            </label>
+          </div>
+          <div className="settings-panel-footer">
+            {erro && <p className="error-banner" role="alert">{erro}</p>}
+            <button type="submit" className="btn-primario" disabled={salvando}>
+              {salvando ? "Salvando..." : "Salvar limite"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function Estoque() {
   const [ruas, setRuas] = useState<RuaResumo[]>([]);
   const [produtos, setProdutos] = useState<string[]>([]);
@@ -1663,6 +1729,9 @@ export function Estoque() {
 
   const [mostrarModalProdutos, setMostrarModalProdutos] = useState(false);
   const [mostrarRuas, setMostrarRuas] = useState(false);
+  const [mostrarConfiguracaoAlerta, setMostrarConfiguracaoAlerta] = useState(false);
+  const [limiteEstoqueBaixo, setLimiteEstoqueBaixo] = useState<number | null>(null);
+  const [erroConfiguracaoAlerta, setErroConfiguracaoAlerta] = useState<string | null>(null);
   const [produtoAberto, setProdutoAberto] = useState<string | null>(null);
   const [visaoEstoque, setVisaoEstoque] = useState<VisaoEstoque>("produtos");
 
@@ -1741,10 +1810,38 @@ export function Estoque() {
     }
   }, []);
 
+  const carregarConfiguracaoAlerta = useCallback(async () => {
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/configuracao-alerta`, { cache: "no-store" });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui carregar o limite de estoque baixo.");
+      if (typeof json.limiteEstoqueBaixo !== "number" || !Number.isSafeInteger(json.limiteEstoqueBaixo) || json.limiteEstoqueBaixo < 0) {
+        throw new Error("O servidor retornou um limite de estoque inválido.");
+      }
+      setLimiteEstoqueBaixo(json.limiteEstoqueBaixo);
+      setErroConfiguracaoAlerta(null);
+    } catch (error) {
+      setErroConfiguracaoAlerta(error instanceof Error ? error.message : "Não consegui carregar o limite de estoque baixo.");
+    }
+  }, []);
+
+  const salvarConfiguracaoAlerta = useCallback(async (limite: number) => {
+    const resposta = await fetch(`${API_URL}/api/estoque/configuracao-alerta`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limiteEstoqueBaixo: limite }),
+    });
+    const json = await resposta.json();
+    if (!resposta.ok) throw new Error(json.error ?? "Não consegui salvar o limite de estoque baixo.");
+    setLimiteEstoqueBaixo(json.limiteEstoqueBaixo);
+    setErroConfiguracaoAlerta(null);
+  }, []);
+
   useEffect(() => {
     const kickoff = setTimeout(() => {
       void carregar();
       void carregarProdutos();
+      void carregarConfiguracaoAlerta();
     }, 0);
     const id = setInterval(() => {
       void carregar();
@@ -1754,7 +1851,7 @@ export function Estoque() {
       clearTimeout(kickoff);
       clearInterval(id);
     };
-  }, [carregar, carregarProdutos]);
+  }, [carregar, carregarProdutos, carregarConfiguracaoAlerta]);
 
   const todasAsGavetas = useMemo(() => ruas.flatMap((r) => r.posicoes), [ruas]);
   const gavetasVazias = todasAsGavetas.filter((p) => !p.produto).sort(ordenarGavetas);
@@ -1893,6 +1990,14 @@ export function Estoque() {
         <button type="button" className="refresh-btn" onClick={() => setMostrarModalProdutos(true)}>
           + Produto
         </button>
+        <button
+          type="button"
+          className="refresh-btn"
+          onClick={() => setMostrarConfiguracaoAlerta(true)}
+          disabled={limiteEstoqueBaixo === null}
+        >
+          Configuração geral
+        </button>
         <button type="button" className="refresh-btn" onClick={() => setMostrarRuas(true)}>
           Gerenciar longarinas
         </button>
@@ -1902,6 +2007,7 @@ export function Estoque() {
       </PageHeader>
 
       {erroCarregamento && <p className="error-banner">{erroCarregamento}</p>}
+      {erroConfiguracaoAlerta && <p className="error-banner" role="alert">{erroConfiguracaoAlerta}</p>}
 
       <section className="resumo-grid" aria-label="Resumo do estoque">
         <CardResumo rotulo="Produtos" valor={grupos.length} detalhe={`${grupos.filter((g) => g.total > 0).length} com estoque`} tom="marca" />
@@ -2066,7 +2172,7 @@ export function Estoque() {
       ) : (
         <div className="produtos-grid">
           {gruposExibidos.map((g) => {
-            const baixo = LIMITE_ESTOQUE_BAIXO !== null && g.total > 0 && g.total <= LIMITE_ESTOQUE_BAIXO;
+            const baixo = limiteEstoqueBaixo !== null && g.total > 0 && g.total <= limiteEstoqueBaixo;
             return (
               <button key={g.chave} type="button" className={`produto-card${g.total === 0 ? " produto-card--sem-estoque" : ""}`} onClick={() => setProdutoAberto(g.chave)}>
                 <FotoProduto info={g.info} nome={g.nome} className="produto-card-foto" />
@@ -2075,9 +2181,15 @@ export function Estoque() {
                   <span className="produto-card-linha">
                     <span className="produto-card-total tabular">{g.total} un.</span>
                     {g.total === 0 ? (
-                      <span className="estado-chip estado-chip--vazia">Sem estoque</span>
+                      <span className="estado-chip estado-chip--ruptura">
+                        <span className="alerta-estoque-ponto" aria-hidden="true" />
+                        Sem estoque
+                      </span>
                     ) : baixo ? (
-                      <span className="estado-chip estado-chip--baixo">Estoque baixo</span>
+                      <span className="estado-chip estado-chip--baixo">
+                        <span className="alerta-estoque-ponto" aria-hidden="true" />
+                        Estoque baixo
+                      </span>
                     ) : null}
                   </span>
                   {g.porVoltagem.length > 0 && (
@@ -2154,6 +2266,14 @@ export function Estoque() {
             setConfirmacaoRua("");
             setErroExcluirRua(null);
           }}
+        />
+      )}
+
+      {mostrarConfiguracaoAlerta && limiteEstoqueBaixo !== null && (
+        <ModalConfiguracaoAlerta
+          limiteAtual={limiteEstoqueBaixo}
+          onFechar={() => setMostrarConfiguracaoAlerta(false)}
+          onSalvar={salvarConfiguracaoAlerta}
         />
       )}
 

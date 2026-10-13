@@ -15,6 +15,8 @@ import {
   renomearLongarina,
   dividirProdutosPorVoltagem,
   normalizarNomesComVoltagemDuplicada,
+  obterLimiteEstoqueBaixo,
+  definirLimiteEstoqueBaixo,
 } from "../../lib/estoque";
 import { StoreConfigError } from "../../lib/store";
 import { OlistConfigError } from "../../lib/olist";
@@ -35,6 +37,31 @@ estoqueRouter.get("/", async (_req, res) => {
     res.status(200).json({ ruas });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao listar o estoque." });
+  }
+});
+
+estoqueRouter.get("/configuracao-alerta", async (_req, res) => {
+  try {
+    res.status(200).json({ limiteEstoqueBaixo: await obterLimiteEstoqueBaixo() });
+  } catch (error) {
+    res.status(error instanceof StoreConfigError ? 503 : 500).json({
+      error: error instanceof Error ? error.message : "Não consegui carregar a configuração do alerta.",
+    });
+  }
+});
+
+estoqueRouter.put("/configuracao-alerta", async (req, res) => {
+  const limite = req.body?.limiteEstoqueBaixo;
+  if (typeof limite !== "number" || !Number.isSafeInteger(limite) || limite < 0) {
+    res.status(400).json({ error: "O limite deve ser um número inteiro igual ou maior que zero." });
+    return;
+  }
+  try {
+    res.status(200).json({ limiteEstoqueBaixo: await definirLimiteEstoqueBaixo(limite) });
+  } catch (error) {
+    res.status(error instanceof StoreConfigError ? 503 : 500).json({
+      error: error instanceof Error ? error.message : "Não consegui salvar a configuração do alerta.",
+    });
   }
 });
 

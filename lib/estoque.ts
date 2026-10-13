@@ -63,7 +63,26 @@ const CHAVE_STORE = "estoque";
 const CHAVE_METADADOS = "estoque:metadados";
 const CHAVE_PRODUTOS = "estoque:produtos";
 const CHAVE_LONGARINAS = "estoque:longarinas";
+const CHAVE_LIMITE_ESTOQUE_BAIXO = "estoque:limite-estoque-baixo";
 const PASTA_CLOUDINARY = "llelle-estoque";
+export const LIMITE_ESTOQUE_BAIXO_PADRAO = 5;
+
+export async function obterLimiteEstoqueBaixo(): Promise<number> {
+  const limite = await store.get<unknown>(CHAVE_LIMITE_ESTOQUE_BAIXO);
+  if (limite === null) return LIMITE_ESTOQUE_BAIXO_PADRAO;
+  if (typeof limite !== "number" || !Number.isSafeInteger(limite) || limite < 0) {
+    throw new Error("O limite de estoque baixo salvo está inválido.");
+  }
+  return limite;
+}
+
+export async function definirLimiteEstoqueBaixo(limite: number): Promise<number> {
+  if (!Number.isSafeInteger(limite) || limite < 0) {
+    throw new Error("O limite deve ser um número inteiro igual ou maior que zero.");
+  }
+  await store.set(CHAVE_LIMITE_ESTOQUE_BAIXO, limite);
+  return limite;
+}
 
 function normalizar(texto: string): string {
   return texto.trim().toUpperCase();

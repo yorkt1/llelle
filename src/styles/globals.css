@@ -1336,13 +1336,28 @@ body:has(.settings-overlay) .app-bottom-nav {
 .estoque-card--baixo,
 .estado-chip--baixo,
 .estoque-legenda-item--baixo {
-  --estado-cor: var(--warning);
-  --estado-fundo: var(--warning-soft);
+  --estado-cor: var(--danger);
+  --estado-fundo: var(--danger-soft);
+}
+
+.estado-chip--ruptura {
+  --estado-cor: var(--danger);
+  --estado-fundo: var(--danger-soft);
+}
+
+.alerta-estoque-ponto {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--danger-glow);
 }
 
 .estado-chip {
   display: inline-flex;
   align-items: center;
+  gap: 0.35rem;
   padding: 0.1rem 0.55rem;
   border-radius: 999px;
   background: var(--estado-fundo);
