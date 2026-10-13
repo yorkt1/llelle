@@ -894,31 +894,6 @@ function ModalProdutos({
     [novoProduto, onAlterado],
   );
 
-  const normalizarProdutos = useCallback(async () => {
-    const confirmou = window.confirm(
-      "Vou deixar apenas a última voltagem nos nomes e consolidar os produtos duplicados. 110V e 220V continuarão separados; gavetas, quantidades, histórico e fotos serão preservados. Continuar?",
-    );
-    if (!confirmou) return;
-
-    setSalvandoProduto(true);
-    setErroProdutos(null);
-    try {
-      const resposta = await fetch(`${API_URL}/api/estoque/produtos/normalizar-voltagens`, { method: "POST" });
-      const json = await resposta.json();
-      if (!resposta.ok) throw new Error(json.error ?? "Não consegui corrigir os nomes dos produtos.");
-      onAlterado(json.produtos ?? []);
-      setAvisoLote(
-        json.renomeados === 0 && json.duplicadosRemovidos === 0
-          ? "Os nomes já estavam padronizados; nenhum produto precisava ser removido."
-          : `${json.renomeados} nome(s) corrigido(s), ${json.duplicadosRemovidos} duplicado(s) removido(s) do catálogo e ${json.posicoesAtualizadas} gaveta(s) atualizada(s). Estoque e histórico preservados.`,
-      );
-    } catch (error) {
-      setErroProdutos(error instanceof Error ? error.message : "Não consegui corrigir os nomes dos produtos.");
-    } finally {
-      setSalvandoProduto(false);
-    }
-  }, [onAlterado]);
-
   const removerProdutoCatalogo = useCallback(
     async (nome: string) => {
       if (!window.confirm(`Remover "${nome}" do catálogo de produtos?`)) return;
@@ -1160,9 +1135,6 @@ function ModalProdutos({
 
           {modo === "lista" && (
           <>
-          <button type="button" className="refresh-btn" onClick={() => void normalizarProdutos()} disabled={salvandoProduto}>
-            {salvandoProduto ? "Corrigindo produtos..." : "Corrigir voltagens e remover duplicados"}
-          </button>
           <button
             type="button"
             className="btn-primario"
@@ -1294,7 +1266,7 @@ function FotoProduto({ info, nome, className }: { info?: InfoProduto; nome: stri
   return (
     <div className={`${className} produto-foto--vazia`}>
       <IconeGondola className="estoque-card-icone" />
-      <span>{info?.fotoStatus === "pendente" ? "Buscando foto…" : "Sem foto"}</span>
+      <span>Sem foto cadastrada</span>
     </div>
   );
 }
@@ -1336,7 +1308,7 @@ function ModalProduto({
         });
         const json = await resposta.json();
         if (!resposta.ok) throw new Error(json.error ?? "Não consegui trocar a foto.");
-        setAvisoFoto("Foto trocada. A busca automática do Tiny não mexe mais nela.");
+        setAvisoFoto("Foto atualizada.");
         onFotoAlterada();
       } catch (error) {
         setErroFoto(error instanceof Error ? error.message : "Não consegui trocar a foto.");
@@ -1347,33 +1319,12 @@ function ModalProduto({
     [grupo.nome, onFotoAlterada],
   );
 
-  const usarFotoDoTiny = useCallback(async () => {
-    setErroFoto(null);
-    setAvisoFoto(null);
-    try {
-      const resposta = await fetch(`${API_URL}/api/estoque/produtos/fotos/tiny`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome: grupo.nome }),
-      });
-      if (!resposta.ok) throw new Error("Não consegui pedir a foto do Tiny.");
-      setAvisoFoto("Buscando a foto no Tiny — aparece em alguns minutos.");
-      onFotoAlterada();
-    } catch (error) {
-      setErroFoto(error instanceof Error ? error.message : "Não consegui pedir a foto do Tiny.");
-    }
-  }, [grupo.nome, onFotoAlterada]);
-
   const origemFoto =
-    grupo.info?.fotoStatus === "pendente"
-      ? "buscando no Tiny…"
-      : grupo.info?.fotoUrl
-        ? grupo.info.fotoOrigem === "manual"
-          ? "trocada à mão"
-          : "do Tiny"
-        : grupo.info?.fotoStatus === "nao-encontrado"
-          ? "produto não achado no Tiny"
-          : "sem foto";
+    grupo.info?.fotoUrl
+      ? grupo.info.fotoOrigem === "manual"
+        ? "enviada manualmente"
+        : "já cadastrada"
+      : "sem foto cadastrada";
 
   return (
     <div className="settings-overlay" onClick={onFechar}>
@@ -1388,11 +1339,6 @@ function ModalProduto({
             <button type="button" className="link-acao" onClick={() => inputFotoRef.current?.click()} disabled={enviandoFoto}>
               {enviandoFoto ? "Enviando…" : "Trocar foto"}
             </button>
-            {grupo.info?.fotoOrigem === "manual" || !grupo.info?.fotoUrl ? (
-              <button type="button" className="link-acao" onClick={() => void usarFotoDoTiny()} disabled={enviandoFoto || grupo.info?.fotoStatus === "pendente"}>
-                Usar foto do Tiny
-              </button>
-            ) : null}
           </div>
           <div className="produto-detalhe-texto">
             <h2 className="settings-title">{grupo.nome}</h2>
@@ -1879,8 +1825,6 @@ export function Estoque() {
 
   const totalUnidades = todasAsGavetas.reduce((s, p) => s + p.ultima.quantidade, 0);
   const ocupadas = todasAsGavetas.filter((p) => p.ultima.quantidade > 0).length;
-  const semFoto = grupos.filter((g) => g.noCatalogo && !g.info?.fotoUrl).length;
-  const buscandoFotos = grupos.some((g) => g.info?.fotoStatus === "pendente");
   const grupoAberto = produtoAberto ? grupos.find((g) => g.chave === produtoAberto) ?? null : null;
   const paraSeparar = grupos.filter(podeSepararPorVoltagem);
 
@@ -1921,18 +1865,6 @@ export function Estoque() {
     },
     [carregar, mostrarToast],
   );
-
-  const buscarFotos = useCallback(async () => {
-    try {
-      const resposta = await fetch(`${API_URL}/api/estoque/produtos/fotos/buscar`, { method: "POST" });
-      const json = await resposta.json();
-      if (!resposta.ok) throw new Error(json.error ?? "falhou");
-      mostrarToast(json.pendentes > 0 ? `Buscando ${json.pendentes} foto(s) no Tiny — aparecem aos poucos` : "Todos os produtos já têm foto");
-      void carregarProdutos();
-    } catch {
-      mostrarToast("Não consegui pedir as fotos agora");
-    }
-  }, [carregarProdutos, mostrarToast]);
 
   const confirmarExclusaoRua = useCallback(async () => {
     if (!excluindoRua) return;
@@ -2027,11 +1959,6 @@ export function Estoque() {
           <input type="checkbox" checked={soComEstoque} onChange={(event) => setSoComEstoque(event.target.checked)} />
           Só com estoque
         </label>
-        {semFoto > 0 && (
-          <button type="button" className="refresh-btn filtro-acao" onClick={() => void buscarFotos()} disabled={buscandoFotos}>
-            {buscandoFotos ? "Buscando fotos…" : `Buscar fotos no Tiny (${semFoto})`}
-          </button>
-        )}
       </div>
 
       {paraSeparar.length > 0 && (
@@ -2052,7 +1979,7 @@ export function Estoque() {
         <div className="estado-vazio">
           <IconeGondola className="estado-vazio-icone" />
           <p className="estado-vazio-titulo">Nenhum produto cadastrado ainda.</p>
-          <p className="field-value--muted">Comece trazendo os produtos do Tiny (já com foto) — depois é só dizer em que gaveta cada um está.</p>
+          <p className="field-value--muted">Cadastre os produtos e, se quiser, adicione uma foto manualmente no detalhe do produto.</p>
           <button type="button" className="btn-primario" onClick={() => setMostrarModalProdutos(true)}>
             + Adicionar produtos
           </button>

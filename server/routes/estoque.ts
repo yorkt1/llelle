@@ -24,9 +24,7 @@ import {
   definirFotoManual,
   listarInfoProdutos,
   normalizarInfoProdutos,
-  refazerFotoDoTiny,
   registrarInfoProdutos,
-  solicitarFotosFaltantes,
 } from "../../lib/fotosProdutos";
 
 export const estoqueRouter = Router();
@@ -175,14 +173,6 @@ estoqueRouter.post("/produtos/lote", async (req, res) => {
 });
 
 
-estoqueRouter.post("/produtos/fotos/buscar", async (_req, res) => {
-  try {
-    res.status(202).json({ pendentes: await solicitarFotosFaltantes() });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao pedir as fotos." });
-  }
-});
-
 // "Trocar foto" no detalhe do produto: foto escolhida/tirada na hora, guardada no Cloudinary.
 estoqueRouter.post("/produtos/fotos/trocar", async (req, res) => {
   const nome = paraTextoObrigatorio(req.body?.nome);
@@ -199,21 +189,6 @@ estoqueRouter.post("/produtos/fotos/trocar", async (req, res) => {
       return;
     }
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao trocar a foto." });
-  }
-});
-
-// "Usar foto do Tiny": descarta a foto atual e põe o produto na fila da busca automática de novo.
-estoqueRouter.post("/produtos/fotos/tiny", async (req, res) => {
-  const nome = paraTextoObrigatorio(req.body?.nome);
-  if (!nome) {
-    res.status(400).json({ error: "Informe o produto." });
-    return;
-  }
-  try {
-    await refazerFotoDoTiny(nome);
-    res.status(202).json({ ok: true });
-  } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado." });
   }
 });
 
