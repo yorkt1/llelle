@@ -34,6 +34,7 @@ describe("embalagem", () => {
   afterEach(async () => {
     delete process.env.DATA_DIR;
     vi.unstubAllGlobals();
+    vi.setSystemTime(new Date());
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
@@ -287,6 +288,39 @@ describe("embalagem", () => {
   });
 
   describe("obterDesempenho(hoje) — nunca chama o Tiny direto, só lê o que sincronizarEmbalagemHoje já deixou em cache", () => {
+    it("calcula o tempo desde o primeiro pedido detectado e atualiza o ritmo por hora", async () => {
+      vi.setSystemTime(new Date("2026-10-13T12:00:00-03:00"));
+      const dia = todayInSaoPaulo();
+      let ids = ["1"];
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const endpoint = endpointDe(input);
+        const url = new URL(String(input));
+        if (endpoint === "separacao.pesquisa.php") {
+          return jsonResponse({
+            retorno: { status: "OK", numero_paginas: 1, separacoes: ids.map((id) => ({ id, dataCheckout: dia })) },
+          });
+        }
+        if (endpoint === "separacao.obter.php") {
+          const id = url.searchParams.get("idSeparacao");
+          return jsonResponse({ retorno: { status: "OK", separacao: { idUsuarioEmbalador: id === "1" ? "111" : "222" } } });
+        }
+        throw new Error(`endpoint inesperado: ${String(input)}`);
+      });
+
+      const { obterDesempenho, sincronizarEmbalagemHoje } = await freshEmbalagem();
+      await sincronizarEmbalagemHoje();
+      vi.setSystemTime(new Date("2026-10-13T12:10:00-03:00"));
+      ids = ["1", "2"];
+      await sincronizarEmbalagemHoje();
+
+      const resultado = await obterDesempenho();
+      expect(resultado.totalTempoFormatado).toBe("0h 10min");
+      expect(resultado.colaboradores).toEqual([
+        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 1, tempoFormatado: "0h 10min", pedidosPorHora: 6 }),
+        expect.objectContaining({ idUsuarioEmbalador: "222", pedidos: 1, tempoFormatado: "0h 00min", pedidosPorHora: 60 }),
+      ]);
+    });
+
     it("sem nenhuma sincronização ainda (boot): relatório vazio com completo:false, sem nenhuma chamada ao Tiny", async () => {
       const { obterDesempenho } = await freshEmbalagem();
       const resultado = await obterDesempenho();

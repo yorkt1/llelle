@@ -195,7 +195,7 @@ async function buscarResumosEmbaladosNoDia(dia: string): Promise<SeparacaoResumo
   return encontrados;
 }
 
-type ResolucoesPorSeparacao = Record<string, { idUsuarioEmbalador: string | null; dataCheckout: string }>;
+type ResolucoesPorSeparacao = Record<string, { idUsuarioEmbalador: string | null; dataCheckout: string; detectadoEm?: string }>;
 
 async function resolverEmbaladores(
   resumos: SeparacaoResumo[],
@@ -215,7 +215,11 @@ async function resolverEmbaladores(
     // tentar de novo na próxima sincronização, em vez de ficar "não identificado" pra sempre por
     // causa de um erro passageiro.
     if (retorno.status === "OK") {
-      novasResolucoes[resumo.id] = { idUsuarioEmbalador: retorno.separacao?.idUsuarioEmbalador ?? null, dataCheckout: resumo.dataCheckout ?? "" };
+      novasResolucoes[resumo.id] = {
+        idUsuarioEmbalador: retorno.separacao?.idUsuarioEmbalador ?? null,
+        dataCheckout: resumo.dataCheckout ?? "",
+        detectadoEm: new Date().toISOString(),
+      };
     }
     await sleep(RATE_LIMIT_DELAY_MS);
   }
@@ -312,11 +316,14 @@ function montarRelatorio(
   resolucoes: ResolucoesPorSeparacao,
   completo: boolean,
   colaboradoresCadastrados: ColaboradorEmbalagem[],
+  contarTempoReal = false,
 ): DesempenhoEmbalagem {
   const pedidosPorHora = pedidosPorHoraPadrao();
+  const agora = Date.now();
   const nomePorId = new Map(colaboradoresCadastrados.map((c) => [c.idUsuarioEmbalador, c.nome]));
 
   const pedidosPorColaborador = new Map<string, number>();
+  const inicioPorColaborador = new Map<string, number>();
   let naoIdentificados = 0;
 
   for (const resumo of resumos) {
@@ -324,22 +331,33 @@ function montarRelatorio(
     // tentar resolver agora) — fica de fora por completo, sem contar como "não identificado"
     // (esse balde é só pra resposta "OK" sem o campo, ver resolverEmbaladores).
     if (!(resumo.id in resolucoes)) continue;
-    const idUsuarioEmbalador = resolucoes[resumo.id]?.idUsuarioEmbalador;
+    const resolucao = resolucoes[resumo.id];
+    const idUsuarioEmbalador = resolucao?.idUsuarioEmbalador;
     if (!idUsuarioEmbalador) {
       naoIdentificados++;
       continue;
     }
     pedidosPorColaborador.set(idUsuarioEmbalador, (pedidosPorColaborador.get(idUsuarioEmbalador) ?? 0) + 1);
+
+    if (contarTempoReal && resolucao.detectadoEm) {
+      const detectadoEm = Date.parse(resolucao.detectadoEm);
+      const inicioAtual = inicioPorColaborador.get(idUsuarioEmbalador);
+      if (Number.isFinite(detectadoEm) && (inicioAtual === undefined || detectadoEm < inicioAtual)) {
+        inicioPorColaborador.set(idUsuarioEmbalador, detectadoEm);
+      }
+    }
   }
 
   const colaboradores: DesempenhoColaborador[] = [...pedidosPorColaborador.entries()]
     .map(([idUsuarioEmbalador, pedidos]) => {
-      const horas = pedidos / pedidosPorHora;
+      const inicio = inicioPorColaborador.get(idUsuarioEmbalador);
+      const horas = inicio === undefined ? pedidos / pedidosPorHora : Math.max(0, (agora - inicio) / 3_600_000);
+      const ritmoPorHora = inicio === undefined ? pedidosPorHora : Math.round(pedidos / Math.max(horas, 1 / 60));
       return {
         idUsuarioEmbalador,
         nome: nomePorId.get(idUsuarioEmbalador) ?? `ID ${idUsuarioEmbalador} (sem nome cadastrado)`,
         pedidos,
-        pedidosPorHora,
+        pedidosPorHora: ritmoPorHora,
         horas,
         tempoFormatado: formatarTempo(horas),
       };
@@ -347,7 +365,9 @@ function montarRelatorio(
     .sort((a, b) => b.pedidos - a.pedidos);
 
   const totalPedidos = colaboradores.reduce((soma, c) => soma + c.pedidos, 0);
-  const totalHoras = totalPedidos / pedidosPorHora;
+  const totalHoras = contarTempoReal
+    ? colaboradores.reduce((soma, c) => soma + c.horas, 0)
+    : totalPedidos / pedidosPorHora;
 
   return {
     dia,
@@ -374,6 +394,29 @@ export async function sincronizarEmbalagemHoje(): Promise<void> {
   const resumos = await buscarResumosEmbaladosNoDia(dia);
   await store.set(CHAVE_RESUMOS_HOJE, { dia, resumos } satisfies SnapshotResumosHoje);
   await resolverEmbaladores(resumos);
+
+  // Cache criado antes do início real não tem o horário da primeira detecção. Usa a primeira
+  // sincronização desta versão como referência, sem sobrescrever horários já registrados.
+  const resolucoes = (await store.get<ResolucoesPorSeparacao>(CHAVE_RESOLUCOES)) ?? {};
+  if (
+    resumos.some((resumo) => {
+      const resolucao = resolucoes[resumo.id];
+      return resolucao?.idUsuarioEmbalador && !resolucao.detectadoEm;
+    })
+  ) {
+    const detectadoEm = new Date().toISOString();
+    const idsDoDia = new Set(resumos.map((resumo) => resumo.id));
+    await store.update<ResolucoesPorSeparacao>(CHAVE_RESOLUCOES, (atual) => {
+      const atualizado = { ...(atual ?? {}) };
+      for (const id of idsDoDia) {
+        const resolucao = atualizado[id];
+        if (resolucao?.idUsuarioEmbalador && !resolucao.detectadoEm) {
+          atualizado[id] = { ...resolucao, detectadoEm };
+        }
+      }
+      return atualizado;
+    });
+  }
 }
 
 export async function obterDesempenho(diaBr?: string): Promise<DesempenhoEmbalagem> {
@@ -391,7 +434,7 @@ export async function obterDesempenho(diaBr?: string): Promise<DesempenhoEmbalag
     const resumos = sincronizado ? snapshot!.resumos : [];
     const resolucoes = (await store.get<ResolucoesPorSeparacao>(CHAVE_RESOLUCOES)) ?? {};
     const completo = sincronizado && resumos.every((resumo) => resumo.id in resolucoes);
-    return montarRelatorio(hoje, resumos, resolucoes, completo, colaboradoresCadastrados);
+    return montarRelatorio(hoje, resumos, resolucoes, completo, colaboradoresCadastrados, true);
   }
 
   // Dia passado específico — consulta rara/manual, ainda busca ao vivo (ver aviso no topo do

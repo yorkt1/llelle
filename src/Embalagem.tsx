@@ -353,6 +353,12 @@ export function Embalagem() {
               ? ` · ${desempenho.naoIdentificados} pedido(s) embalado(s) sem identificação de quem embalou (campo não veio do Tiny).`
               : ""}
           </p>
+          {desempenho.dia === hojeBr() && (
+            <p className="nota-info">
+              Hoje, o tempo é contado desde a primeira detecção de pedido pelo sistema, e Pedidos/Hora é calculado pelos bipados nesse período.
+              Pode haver atraso entre o bipado e a sincronização do Tiny.
+            </p>
+          )}
 
           {bancadas.length === 0 ? (
             <div className="estado-vazio">
@@ -394,7 +400,8 @@ export function Embalagem() {
           )}
 
           <p className="bancada-total">
-            total: {desempenho.totalPedidos} pedidos · {desempenho.totalTempoFormatado}
+            total: {desempenho.totalPedidos} pedidos · {desempenho.dia === hojeBr() ? "tempo acumulado " : ""}
+            {desempenho.totalTempoFormatado}
           </p>
 
           {desempenhoSemBancada.length > 0 && (
