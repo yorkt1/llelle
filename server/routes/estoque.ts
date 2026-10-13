@@ -119,7 +119,14 @@ estoqueRouter.post("/produtos", async (req, res) => {
 
 estoqueRouter.delete("/produtos/:nome", async (req, res) => {
   try {
-    await removerProduto(decodeURIComponent(String(req.params.nome)));
+    const nome = decodeURIComponent(String(req.params.nome));
+    const ruas = await listarEstoque();
+    const possuiGavetas = ruas.some((rua) => rua.posicoes.some((posicao) => posicao.produto?.toLowerCase() === nome.toLowerCase()));
+    if (possuiGavetas) {
+      res.status(409).json({ error: "Não é possível excluir este produto enquanto houver gavetas vinculadas a ele." });
+      return;
+    }
+    await removerProduto(nome);
     res.status(204).end();
   } catch (error) {
     if (error instanceof StoreConfigError) {

@@ -1448,6 +1448,7 @@ function ModalProduto({
   onAbrirGaveta,
   onNovaGaveta,
   onFotoAlterada,
+  onExcluirProduto,
   onSepararVoltagem,
 }: {
   grupo: GrupoProduto;
@@ -1455,12 +1456,35 @@ function ModalProduto({
   onAbrirGaveta: (posicao: PosicaoResumo) => void;
   onNovaGaveta: (produto: string) => void;
   onFotoAlterada: () => void;
+  onExcluirProduto: (produto: string) => Promise<void>;
   onSepararVoltagem: (grupo: GrupoProduto) => void;
 }) {
   const inputFotoRef = useRef<HTMLInputElement>(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [avisoFoto, setAvisoFoto] = useState<string | null>(null);
   const [erroFoto, setErroFoto] = useState<string | null>(null);
+  const [excluindoProduto, setExcluindoProduto] = useState(false);
+  const [erroExcluirProduto, setErroExcluirProduto] = useState<string | null>(null);
+
+  const excluirProduto = useCallback(async () => {
+    if (
+      !grupo.noCatalogo ||
+      grupo.total !== 0 ||
+      grupo.gavetas.length !== 0 ||
+      !window.confirm(`Excluir "${grupo.nome}" do catálogo? Essa ação não pode ser desfeita.`)
+    ) {
+      return;
+    }
+    setExcluindoProduto(true);
+    setErroExcluirProduto(null);
+    try {
+      await onExcluirProduto(grupo.nome);
+    } catch (error) {
+      setErroExcluirProduto(error instanceof Error ? error.message : "Não consegui excluir o produto.");
+    } finally {
+      setExcluindoProduto(false);
+    }
+  }, [grupo.gavetas.length, grupo.noCatalogo, grupo.nome, grupo.total, onExcluirProduto]);
 
   const trocarFoto = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1577,9 +1601,15 @@ function ModalProduto({
           <p className="field-value--muted">Clique numa gaveta pra fazer uma nova contagem (com foto) ou corrigir produto/voltagem.</p>
         </div>
         <div className="settings-panel-footer">
+          {erroExcluirProduto && <p className="error-banner" role="alert">{erroExcluirProduto}</p>}
           <button type="button" className="btn-primario" onClick={() => onNovaGaveta(grupo.nome)}>
             + Colocar em outra gaveta
           </button>
+          {grupo.noCatalogo && grupo.total === 0 && grupo.gavetas.length === 0 && (
+            <button type="button" className="btn-perigo-texto" onClick={() => void excluirProduto()} disabled={excluindoProduto}>
+              {excluindoProduto ? "Excluindo..." : "Excluir produto"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1993,6 +2023,21 @@ export function Estoque() {
       setErroUnidadesPorCaixa(error instanceof Error ? error.message : "Não consegui carregar a configuração de embalagem.");
     }
   }, []);
+
+  const excluirProdutoDoCatalogo = useCallback(
+    async (nome: string) => {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos/${encodeURIComponent(nome)}`, { method: "DELETE" });
+      if (!resposta.ok) {
+        const json = await resposta.json();
+        throw new Error(json.error ?? "Não consegui excluir o produto.");
+      }
+      setProdutos((atuais) => atuais.filter((produto) => produto.toLowerCase() !== nome.toLowerCase()));
+      setProdutoAberto(null);
+      void carregarProdutos();
+      mostrarToast(`Produto "${nome}" excluído do catálogo`);
+    },
+    [carregarProdutos, mostrarToast],
+  );
 
   const salvarUnidadesPorCaixa = useCallback(async (produto: string, unidades: number | null) => {
     const resposta = await fetch(`${API_URL}/api/estoque/produtos/embalagens`, {
@@ -2433,6 +2478,7 @@ export function Estoque() {
           onAbrirGaveta={abrirGaveta}
           onNovaGaveta={abrirNovaGaveta}
           onFotoAlterada={() => void carregarProdutos()}
+          onExcluirProduto={excluirProdutoDoCatalogo}
           onSepararVoltagem={(grupo) => setSeparando({ grupos: [grupo], todos: false })}
         />
       )}

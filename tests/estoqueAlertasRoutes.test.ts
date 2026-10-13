@@ -99,4 +99,28 @@ describe("configuração do alerta de estoque baixo", () => {
     expect(calcularQuantidadeContada(1, 0, 0)).toBeNull();
     expect(calcularQuantidadeContada(Number.MAX_SAFE_INTEGER, 1, 2)).toBeNull();
   });
+
+  it("impede excluir do catálogo produto vinculado a uma gaveta", async () => {
+    const api = await iniciarApiEstoque();
+    try {
+      const store = await import("../lib/store");
+      await store.set("estoque:produtos", ["Liquidificador"]);
+      await store.set("estoque:longarinas", ["A"]);
+      await store.set("estoque", {
+        "A::A1": [{ id: "contagem-1", quantidade: 0, responsavel: "Ana", fotoUrl: "", criadoEm: "2026-10-13T12:00:00.000Z" }],
+      });
+      await store.set("estoque:metadados", { "A::A1": { produto: "Liquidificador", voltagem: "110V" } });
+
+      const resposta = await fetch(`${api.url}/produtos/${encodeURIComponent("Liquidificador")}`, { method: "DELETE" });
+      expect(resposta.status).toBe(409);
+      expect(await resposta.json()).toEqual({
+        error: "Não é possível excluir este produto enquanto houver gavetas vinculadas a ele.",
+      });
+
+      const produtos = await store.get<string[]>("estoque:produtos");
+      expect(produtos).toEqual(["Liquidificador"]);
+    } finally {
+      await api.fechar();
+    }
+  }, 15_000);
 });
