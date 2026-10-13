@@ -289,7 +289,7 @@ describe("embalagem", () => {
 
   describe("obterDesempenho(hoje) — nunca chama o Tiny direto, só lê o que sincronizarEmbalagemHoje já deixou em cache", () => {
     it("calcula o tempo desde o primeiro pedido detectado e atualiza o ritmo por hora", async () => {
-      vi.setSystemTime(new Date("2026-10-13T10:00:00-03:00"));
+      vi.setSystemTime(new Date("2026-10-14T10:00:00-03:00"));
       const dia = todayInSaoPaulo();
       let ids = ["1"];
       vi.mocked(fetch).mockImplementation(async (input) => {
@@ -309,7 +309,7 @@ describe("embalagem", () => {
 
       const { obterDesempenho, sincronizarEmbalagemHoje } = await freshEmbalagem();
       await sincronizarEmbalagemHoje();
-      vi.setSystemTime(new Date("2026-10-13T13:30:00-03:00"));
+      vi.setSystemTime(new Date("2026-10-14T13:30:00-03:00"));
       ids = ["1", "2"];
       await sincronizarEmbalagemHoje();
 
@@ -321,13 +321,13 @@ describe("embalagem", () => {
       ]);
     });
 
-    it("ignora horários antigos e encerra a contagem às 16h", async () => {
-      vi.setSystemTime(new Date("2026-10-13T17:00:00-03:00"));
+    it("ignora horários antigos e encerra a contagem às 17h", async () => {
+      vi.setSystemTime(new Date("2026-10-14T18:00:00-03:00"));
       const dia = todayInSaoPaulo();
       const { obterDesempenho } = await freshEmbalagem();
       const store = await import("../lib/store");
       const resumos = Array.from({ length: 487 }, (_, index) => ({ id: String(index + 1), dataCheckout: dia }));
-      const detectadoEm = new Date("2026-10-13T10:00:00-03:00").toISOString();
+      const detectadoEm = new Date("2026-10-14T10:00:00-03:00").toISOString();
       await store.set("embalagem:resumosHoje", { dia, resumos });
       await store.set(
         "embalagem:resolucoesPorSeparacao",
@@ -338,13 +338,13 @@ describe("embalagem", () => {
 
       const resultado = await obterDesempenho();
       expect(resultado.colaboradores).toEqual([
-        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 487, pedidosPorHora: 101, tempoFormatado: "4h 48min" }),
+        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 487, pedidosPorHora: 84, tempoFormatado: "5h 48min" }),
       ]);
-      expect(resultado.totalTempoFormatado).toBe("4h 48min");
+      expect(resultado.totalTempoFormatado).toBe("5h 48min");
     });
 
     it("desconta o almoço e ignora timestamps inválidos", async () => {
-      vi.setSystemTime(new Date("2026-10-13T12:45:00-03:00"));
+      vi.setSystemTime(new Date("2026-10-14T12:45:00-03:00"));
       const dia = todayInSaoPaulo();
       const { obterDesempenho } = await freshEmbalagem();
       const store = await import("../lib/store");
@@ -354,7 +354,7 @@ describe("embalagem", () => {
         "1": {
           idUsuarioEmbalador: "111",
           dataCheckout: dia,
-          primeiraDeteccaoEm: new Date("2026-10-13T11:00:00-03:00").toISOString(),
+          primeiraDeteccaoEm: new Date("2026-10-14T11:00:00-03:00").toISOString(),
         },
         "2": { idUsuarioEmbalador: "222", dataCheckout: dia, primeiraDeteccaoEm: "horário inválido" },
       });
@@ -363,6 +363,42 @@ describe("embalagem", () => {
       expect(resultado.colaboradores).toEqual([
         expect.objectContaining({ idUsuarioEmbalador: "111", tempoFormatado: "1h 00min", pedidosPorHora: 1 }),
         expect.objectContaining({ idUsuarioEmbalador: "222", tempoFormatado: "0h 00min", pedidosPorHora: 0 }),
+      ]);
+    });
+
+    it("usa o início combinado das 7h20 para todos os pedidos de 13/10/2026", async () => {
+      vi.setSystemTime(new Date("2026-10-13T15:40:00-03:00"));
+      const dia = todayInSaoPaulo();
+      const { obterDesempenho } = await freshEmbalagem();
+      const store = await import("../lib/store");
+      const colaboradores = [
+        { id: "kaike", idUsuarioEmbalador: "893689787", pedidos: 487 },
+        { id: "tiago", idUsuarioEmbalador: "893692197", pedidos: 132 },
+        { id: "werisvan", idUsuarioEmbalador: "893706113", pedidos: 221 },
+        { id: "geovane", idUsuarioEmbalador: "893709362", pedidos: 213 },
+      ];
+      const resumos = colaboradores.flatMap(({ id, pedidos }) =>
+        Array.from({ length: pedidos }, (_, index) => ({ id: `${id}-${index}`, dataCheckout: dia })),
+      );
+      await store.set("embalagem:resumosHoje", { dia, resumos });
+      await store.set(
+        "embalagem:resolucoesPorSeparacao",
+        Object.fromEntries(
+          colaboradores.flatMap(({ id, idUsuarioEmbalador, pedidos }) =>
+            Array.from({ length: pedidos }, (_, index) => [
+              `${id}-${index}`,
+              { idUsuarioEmbalador, dataCheckout: dia },
+            ]),
+          ),
+        ),
+      );
+
+      const resultado = await obterDesempenho();
+      expect(resultado.colaboradores).toEqual([
+        expect.objectContaining({ idUsuarioEmbalador: "893689787", pedidos: 487, tempoFormatado: "7h 08min", pedidosPorHora: 68 }),
+        expect.objectContaining({ idUsuarioEmbalador: "893706113", pedidos: 221, tempoFormatado: "7h 08min", pedidosPorHora: 31 }),
+        expect.objectContaining({ idUsuarioEmbalador: "893709362", pedidos: 213, tempoFormatado: "7h 08min", pedidosPorHora: 30 }),
+        expect.objectContaining({ idUsuarioEmbalador: "893692197", pedidos: 132, tempoFormatado: "7h 08min", pedidosPorHora: 19 }),
       ]);
     });
 

@@ -323,6 +323,11 @@ function montarRelatorio(
 ): DesempenhoEmbalagem {
   const pedidosPorHora = pedidosPorHoraPadrao();
   const agora = Date.now();
+  const horarioAtual = horarioLocalEmSaoPaulo(agora);
+  // Ajuste manual apenas para 13/10/2026: foi confirmado que todas as bancadas começaram às 7h20.
+  const inicioManualHoje = contarTempoReal && horarioAtual?.data === "2026-10-13"
+    ? Date.parse("2026-10-13T07:20:00-03:00")
+    : undefined;
   const nomePorId = new Map(colaboradoresCadastrados.map((c) => [c.idUsuarioEmbalador, c.nome]));
 
   const pedidosPorColaborador = new Map<string, number>();
@@ -375,8 +380,11 @@ function montarRelatorio(
   const colaboradores: DesempenhoColaborador[] = [...pedidosPorColaborador.entries()]
     .map(([idUsuarioEmbalador, pedidos]) => {
       const inicio = inicioPorColaborador.get(idUsuarioEmbalador);
-      const horas = contarTempoReal ? (inicio === undefined ? 0 : horasTrabalhadasDesde(inicio, agora)) : pedidos / pedidosPorHora;
-      const pedidosParaRitmo = contarTempoReal ? (pedidosComHorarioPorColaborador.get(idUsuarioEmbalador) ?? 0) : pedidos;
+      const inicioContagem = inicioManualHoje ?? inicio;
+      const horas = contarTempoReal ? (inicioContagem === undefined ? 0 : horasTrabalhadasDesde(inicioContagem, agora)) : pedidos / pedidosPorHora;
+      const pedidosParaRitmo = contarTempoReal && inicioManualHoje === undefined
+        ? (pedidosComHorarioPorColaborador.get(idUsuarioEmbalador) ?? 0)
+        : pedidos;
       const ritmoPorHora = horas > 0 && pedidosParaRitmo > 0 ? Math.max(1, Math.round(pedidosParaRitmo / horas)) : 0;
       return {
         idUsuarioEmbalador,
@@ -426,13 +434,13 @@ function horarioLocalEmSaoPaulo(timestamp: number): { data: string; minuto: numb
   };
 }
 
-/** Minutos de trabalho desde a primeira detecção, até 16h, descontando o almoço (12h–13h12). */
+/** Minutos de trabalho desde a primeira detecção, até 17h, descontando o almoço (12h–13h12). */
 function horasTrabalhadasDesde(inicio: number, agora: number): number {
   const horarioInicio = horarioLocalEmSaoPaulo(inicio);
   const horarioAgora = horarioLocalEmSaoPaulo(agora);
   if (!horarioInicio || !horarioAgora || horarioInicio.data !== horarioAgora.data) return -1;
 
-  const fim = Math.min(horarioAgora.minuto, 16 * 60);
+  const fim = Math.min(horarioAgora.minuto, 17 * 60);
   if (fim <= horarioInicio.minuto) return 0;
 
   const minutosTotais = fim - horarioInicio.minuto;
