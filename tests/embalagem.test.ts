@@ -289,7 +289,7 @@ describe("embalagem", () => {
 
   describe("obterDesempenho(hoje) — nunca chama o Tiny direto, só lê o que sincronizarEmbalagemHoje já deixou em cache", () => {
     it("calcula o tempo desde o primeiro pedido detectado e atualiza o ritmo por hora", async () => {
-      vi.setSystemTime(new Date("2026-10-13T12:00:00-03:00"));
+      vi.setSystemTime(new Date("2026-10-13T10:00:00-03:00"));
       const dia = todayInSaoPaulo();
       let ids = ["1"];
       vi.mocked(fetch).mockImplementation(async (input) => {
@@ -309,38 +309,61 @@ describe("embalagem", () => {
 
       const { obterDesempenho, sincronizarEmbalagemHoje } = await freshEmbalagem();
       await sincronizarEmbalagemHoje();
-      vi.setSystemTime(new Date("2026-10-13T12:10:00-03:00"));
+      vi.setSystemTime(new Date("2026-10-13T13:30:00-03:00"));
       ids = ["1", "2"];
       await sincronizarEmbalagemHoje();
 
       const resultado = await obterDesempenho();
-      expect(resultado.totalTempoFormatado).toBe("0h 11min");
+      expect(resultado.totalTempoFormatado).toBe("2h 18min");
       expect(resultado.colaboradores).toEqual([
-        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 1, tempoFormatado: "0h 10min", pedidosPorHora: 1 }),
-        expect.objectContaining({ idUsuarioEmbalador: "222", pedidos: 1, tempoFormatado: "0h 01min", pedidosPorHora: 1 }),
+        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 1, tempoFormatado: "2h 18min", pedidosPorHora: 1 }),
+        expect.objectContaining({ idUsuarioEmbalador: "222", pedidos: 1, tempoFormatado: "0h 00min", pedidosPorHora: 0 }),
       ]);
     });
 
-    it("limita pedidos por hora ao total bipado e não exibe duração zerada logo após a primeira detecção", async () => {
-      vi.setSystemTime(new Date("2026-10-13T12:00:10-03:00"));
+    it("ignora horários antigos e encerra a contagem às 16h", async () => {
+      vi.setSystemTime(new Date("2026-10-13T17:00:00-03:00"));
       const dia = todayInSaoPaulo();
       const { obterDesempenho } = await freshEmbalagem();
       const store = await import("../lib/store");
       const resumos = Array.from({ length: 487 }, (_, index) => ({ id: String(index + 1), dataCheckout: dia }));
-      const detectadoEm = new Date("2026-10-13T12:00:00-03:00").toISOString();
+      const detectadoEm = new Date("2026-10-13T10:00:00-03:00").toISOString();
       await store.set("embalagem:resumosHoje", { dia, resumos });
       await store.set(
         "embalagem:resolucoesPorSeparacao",
         Object.fromEntries(
-          resumos.map(({ id }) => [id, { idUsuarioEmbalador: "111", dataCheckout: dia, detectadoEm }]),
+          resumos.map(({ id }) => [id, { idUsuarioEmbalador: "111", dataCheckout: dia, primeiraDeteccaoEm: detectadoEm }]),
         ),
       );
 
       const resultado = await obterDesempenho();
       expect(resultado.colaboradores).toEqual([
-        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 487, pedidosPorHora: 487, tempoFormatado: "0h 01min" }),
+        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 487, pedidosPorHora: 101, tempoFormatado: "4h 48min" }),
       ]);
-      expect(resultado.totalTempoFormatado).toBe("0h 01min");
+      expect(resultado.totalTempoFormatado).toBe("4h 48min");
+    });
+
+    it("desconta o almoço e ignora timestamps inválidos", async () => {
+      vi.setSystemTime(new Date("2026-10-13T12:45:00-03:00"));
+      const dia = todayInSaoPaulo();
+      const { obterDesempenho } = await freshEmbalagem();
+      const store = await import("../lib/store");
+      const resumos = [{ id: "1", dataCheckout: dia }, { id: "2", dataCheckout: dia }];
+      await store.set("embalagem:resumosHoje", { dia, resumos });
+      await store.set("embalagem:resolucoesPorSeparacao", {
+        "1": {
+          idUsuarioEmbalador: "111",
+          dataCheckout: dia,
+          primeiraDeteccaoEm: new Date("2026-10-13T11:00:00-03:00").toISOString(),
+        },
+        "2": { idUsuarioEmbalador: "222", dataCheckout: dia, primeiraDeteccaoEm: "horário inválido" },
+      });
+
+      const resultado = await obterDesempenho();
+      expect(resultado.colaboradores).toEqual([
+        expect.objectContaining({ idUsuarioEmbalador: "111", tempoFormatado: "1h 00min", pedidosPorHora: 1 }),
+        expect.objectContaining({ idUsuarioEmbalador: "222", tempoFormatado: "0h 00min", pedidosPorHora: 0 }),
+      ]);
     });
 
     it("sem nenhuma sincronização ainda (boot): relatório vazio com completo:false, sem nenhuma chamada ao Tiny", async () => {

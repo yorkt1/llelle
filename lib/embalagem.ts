@@ -195,7 +195,10 @@ async function buscarResumosEmbaladosNoDia(dia: string): Promise<SeparacaoResumo
   return encontrados;
 }
 
-type ResolucoesPorSeparacao = Record<string, { idUsuarioEmbalador: string | null; dataCheckout: string; detectadoEm?: string }>;
+type ResolucoesPorSeparacao = Record<
+  string,
+  { idUsuarioEmbalador: string | null; dataCheckout: string; primeiraDeteccaoEm?: string }
+>;
 
 async function resolverEmbaladores(
   resumos: SeparacaoResumo[],
@@ -218,7 +221,7 @@ async function resolverEmbaladores(
       novasResolucoes[resumo.id] = {
         idUsuarioEmbalador: retorno.separacao?.idUsuarioEmbalador ?? null,
         dataCheckout: resumo.dataCheckout ?? "",
-        detectadoEm: new Date().toISOString(),
+        primeiraDeteccaoEm: new Date().toISOString(),
       };
     }
     await sleep(RATE_LIMIT_DELAY_MS);
@@ -323,6 +326,7 @@ function montarRelatorio(
   const nomePorId = new Map(colaboradoresCadastrados.map((c) => [c.idUsuarioEmbalador, c.nome]));
 
   const pedidosPorColaborador = new Map<string, number>();
+  const pedidosComHorarioPorColaborador = new Map<string, number>();
   const inicioPorColaborador = new Map<string, number>();
   let naoIdentificados = 0;
 
@@ -339,10 +343,30 @@ function montarRelatorio(
     }
     pedidosPorColaborador.set(idUsuarioEmbalador, (pedidosPorColaborador.get(idUsuarioEmbalador) ?? 0) + 1);
 
-    if (contarTempoReal && resolucao.detectadoEm) {
-      const detectadoEm = Date.parse(resolucao.detectadoEm);
+    if (contarTempoReal && resolucao.primeiraDeteccaoEm) {
+      const detectadoEm = Date.parse(resolucao.primeiraDeteccaoEm);
+      const horarioDeteccao = Number.isFinite(detectadoEm) ? horarioLocalEmSaoPaulo(detectadoEm) : null;
+      const horarioAtual = horarioLocalEmSaoPaulo(agora);
       const inicioAtual = inicioPorColaborador.get(idUsuarioEmbalador);
-      if (Number.isFinite(detectadoEm) && detectadoEm <= agora && (inicioAtual === undefined || detectadoEm < inicioAtual)) {
+      if (
+        Number.isFinite(detectadoEm) &&
+        horarioDeteccao &&
+        horarioAtual &&
+        horarioDeteccao.data === horarioAtual.data &&
+        detectadoEm <= agora
+      ) {
+        pedidosComHorarioPorColaborador.set(
+          idUsuarioEmbalador,
+          (pedidosComHorarioPorColaborador.get(idUsuarioEmbalador) ?? 0) + 1,
+        );
+      }
+      if (
+        Number.isFinite(detectadoEm) &&
+        horarioDeteccao?.data === horarioAtual?.data &&
+        detectadoEm <= agora &&
+        horasTrabalhadasDesde(detectadoEm, agora) >= 0 &&
+        (inicioAtual === undefined || detectadoEm < inicioAtual)
+      ) {
         inicioPorColaborador.set(idUsuarioEmbalador, detectadoEm);
       }
     }
@@ -351,9 +375,9 @@ function montarRelatorio(
   const colaboradores: DesempenhoColaborador[] = [...pedidosPorColaborador.entries()]
     .map(([idUsuarioEmbalador, pedidos]) => {
       const inicio = inicioPorColaborador.get(idUsuarioEmbalador);
-      const horas = inicio === undefined ? pedidos / pedidosPorHora : Math.max(1 / 60, (agora - inicio) / 3_600_000);
-      const ritmoPorHora =
-        inicio === undefined ? pedidosPorHora : Math.min(pedidos, Math.max(1, Math.round(pedidos / horas)));
+      const horas = contarTempoReal ? (inicio === undefined ? 0 : horasTrabalhadasDesde(inicio, agora)) : pedidos / pedidosPorHora;
+      const pedidosParaRitmo = contarTempoReal ? (pedidosComHorarioPorColaborador.get(idUsuarioEmbalador) ?? 0) : pedidos;
+      const ritmoPorHora = horas > 0 && pedidosParaRitmo > 0 ? Math.max(1, Math.round(pedidosParaRitmo / horas)) : 0;
       return {
         idUsuarioEmbalador,
         nome: nomePorId.get(idUsuarioEmbalador) ?? `ID ${idUsuarioEmbalador} (sem nome cadastrado)`,
@@ -382,6 +406,40 @@ function montarRelatorio(
   };
 }
 
+function horarioLocalEmSaoPaulo(timestamp: number): { data: string; minuto: number } | null {
+  const partes = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(timestamp);
+  const valor = (tipo: Intl.DateTimeFormatPartTypes) => Number(partes.find((parte) => parte.type === tipo)?.value);
+  const [ano, mes, dia] = [valor("year"), valor("month"), valor("day")];
+  if (![ano, mes, dia].every(Number.isFinite)) return null;
+  return {
+    data: `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`,
+    minuto: valor("hour") * 60 + valor("minute") + valor("second") / 60,
+  };
+}
+
+/** Minutos de trabalho desde a primeira detecção, até 16h, descontando o almoço (12h–13h12). */
+function horasTrabalhadasDesde(inicio: number, agora: number): number {
+  const horarioInicio = horarioLocalEmSaoPaulo(inicio);
+  const horarioAgora = horarioLocalEmSaoPaulo(agora);
+  if (!horarioInicio || !horarioAgora || horarioInicio.data !== horarioAgora.data) return -1;
+
+  const fim = Math.min(horarioAgora.minuto, 16 * 60);
+  if (fim <= horarioInicio.minuto) return 0;
+
+  const minutosTotais = fim - horarioInicio.minuto;
+  const sobreposicaoAlmoco = Math.max(0, Math.min(fim, 13 * 60 + 12) - Math.max(horarioInicio.minuto, 12 * 60));
+  return (minutosTotais - sobreposicaoAlmoco) / 60;
+}
+
 type SnapshotResumosHoje = { dia: string; resumos: SeparacaoResumo[] };
 
 /**
@@ -395,29 +453,6 @@ export async function sincronizarEmbalagemHoje(): Promise<void> {
   const resumos = await buscarResumosEmbaladosNoDia(dia);
   await store.set(CHAVE_RESUMOS_HOJE, { dia, resumos } satisfies SnapshotResumosHoje);
   await resolverEmbaladores(resumos);
-
-  // Cache criado antes do início real não tem o horário da primeira detecção. Usa a primeira
-  // sincronização desta versão como referência, sem sobrescrever horários já registrados.
-  const resolucoes = (await store.get<ResolucoesPorSeparacao>(CHAVE_RESOLUCOES)) ?? {};
-  if (
-    resumos.some((resumo) => {
-      const resolucao = resolucoes[resumo.id];
-      return resolucao?.idUsuarioEmbalador && !resolucao.detectadoEm;
-    })
-  ) {
-    const detectadoEm = new Date().toISOString();
-    const idsDoDia = new Set(resumos.map((resumo) => resumo.id));
-    await store.update<ResolucoesPorSeparacao>(CHAVE_RESOLUCOES, (atual) => {
-      const atualizado = { ...(atual ?? {}) };
-      for (const id of idsDoDia) {
-        const resolucao = atualizado[id];
-        if (resolucao?.idUsuarioEmbalador && !resolucao.detectadoEm) {
-          atualizado[id] = { ...resolucao, detectadoEm };
-        }
-      }
-      return atualizado;
-    });
-  }
 }
 
 export async function obterDesempenho(diaBr?: string): Promise<DesempenhoEmbalagem> {

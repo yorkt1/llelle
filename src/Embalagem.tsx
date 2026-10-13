@@ -355,8 +355,8 @@ export function Embalagem() {
           </p>
           {desempenho.dia === hojeBr() && (
             <p className="nota-info">
-              Hoje, o tempo é contado desde a primeira detecção de pedido pelo sistema, e Pedidos/Hora é calculado pelos bipados nesse período.
-              Pode haver atraso entre o bipado e a sincronização do Tiny.
+              Hoje, o tempo começa quando o sistema detecta o primeiro pedido embalado, para às 16h e desconta o almoço (12h–13h12).
+              Pode haver atraso entre a bipagem e a sincronização do Tiny.
             </p>
           )}
 
