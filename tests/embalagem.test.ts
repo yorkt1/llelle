@@ -314,11 +314,33 @@ describe("embalagem", () => {
       await sincronizarEmbalagemHoje();
 
       const resultado = await obterDesempenho();
-      expect(resultado.totalTempoFormatado).toBe("0h 10min");
+      expect(resultado.totalTempoFormatado).toBe("0h 11min");
       expect(resultado.colaboradores).toEqual([
-        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 1, tempoFormatado: "0h 10min", pedidosPorHora: 6 }),
-        expect.objectContaining({ idUsuarioEmbalador: "222", pedidos: 1, tempoFormatado: "0h 00min", pedidosPorHora: 60 }),
+        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 1, tempoFormatado: "0h 10min", pedidosPorHora: 1 }),
+        expect.objectContaining({ idUsuarioEmbalador: "222", pedidos: 1, tempoFormatado: "0h 01min", pedidosPorHora: 1 }),
       ]);
+    });
+
+    it("limita pedidos por hora ao total bipado e não exibe duração zerada logo após a primeira detecção", async () => {
+      vi.setSystemTime(new Date("2026-10-13T12:00:10-03:00"));
+      const dia = todayInSaoPaulo();
+      const { obterDesempenho } = await freshEmbalagem();
+      const store = await import("../lib/store");
+      const resumos = Array.from({ length: 487 }, (_, index) => ({ id: String(index + 1), dataCheckout: dia }));
+      const detectadoEm = new Date("2026-10-13T12:00:00-03:00").toISOString();
+      await store.set("embalagem:resumosHoje", { dia, resumos });
+      await store.set(
+        "embalagem:resolucoesPorSeparacao",
+        Object.fromEntries(
+          resumos.map(({ id }) => [id, { idUsuarioEmbalador: "111", dataCheckout: dia, detectadoEm }]),
+        ),
+      );
+
+      const resultado = await obterDesempenho();
+      expect(resultado.colaboradores).toEqual([
+        expect.objectContaining({ idUsuarioEmbalador: "111", pedidos: 487, pedidosPorHora: 487, tempoFormatado: "0h 01min" }),
+      ]);
+      expect(resultado.totalTempoFormatado).toBe("0h 01min");
     });
 
     it("sem nenhuma sincronização ainda (boot): relatório vazio com completo:false, sem nenhuma chamada ao Tiny", async () => {

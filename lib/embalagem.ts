@@ -342,7 +342,7 @@ function montarRelatorio(
     if (contarTempoReal && resolucao.detectadoEm) {
       const detectadoEm = Date.parse(resolucao.detectadoEm);
       const inicioAtual = inicioPorColaborador.get(idUsuarioEmbalador);
-      if (Number.isFinite(detectadoEm) && (inicioAtual === undefined || detectadoEm < inicioAtual)) {
+      if (Number.isFinite(detectadoEm) && detectadoEm <= agora && (inicioAtual === undefined || detectadoEm < inicioAtual)) {
         inicioPorColaborador.set(idUsuarioEmbalador, detectadoEm);
       }
     }
@@ -351,8 +351,9 @@ function montarRelatorio(
   const colaboradores: DesempenhoColaborador[] = [...pedidosPorColaborador.entries()]
     .map(([idUsuarioEmbalador, pedidos]) => {
       const inicio = inicioPorColaborador.get(idUsuarioEmbalador);
-      const horas = inicio === undefined ? pedidos / pedidosPorHora : Math.max(0, (agora - inicio) / 3_600_000);
-      const ritmoPorHora = inicio === undefined ? pedidosPorHora : Math.round(pedidos / Math.max(horas, 1 / 60));
+      const horas = inicio === undefined ? pedidos / pedidosPorHora : Math.max(1 / 60, (agora - inicio) / 3_600_000);
+      const ritmoPorHora =
+        inicio === undefined ? pedidosPorHora : Math.min(pedidos, Math.max(1, Math.round(pedidos / horas)));
       return {
         idUsuarioEmbalador,
         nome: nomePorId.get(idUsuarioEmbalador) ?? `ID ${idUsuarioEmbalador} (sem nome cadastrado)`,
