@@ -19,3 +19,16 @@ export function nomeProdutoComVoltagemUnica(nome: string): { nome: string; volta
 
   return { nome: `${base} ${voltagem}`.trim(), voltagem };
 }
+
+/** Chave tolerante a acentos, separadores e ao "ou" residual de nomes antigos do estoque. */
+export function chaveComparacaoProduto(nome: string): string {
+  const canonico = nomeProdutoComVoltagemUnica(nome)?.nome ?? nome;
+  return canonico
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\bou\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}

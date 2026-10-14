@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PageHeader } from "@/PageHeader";
 import { calcularQuantidadeContada } from "../lib/contagemEstoque";
-import { nomeProdutoComVoltagemUnica } from "../lib/nomeProduto";
+import { chaveComparacaoProduto, nomeProdutoComVoltagemUnica } from "../lib/nomeProduto";
 
 interface RegistroContagem {
   id: string;
@@ -998,7 +998,7 @@ function ModalProdutos({
   const [progressoFotos, setProgressoFotos] = useState<{ atual: number; total: number; aguardando?: boolean } | null>(null);
   const [textoColado, setTextoColado] = useState("");
   const [avisoLote, setAvisoLote] = useState<string | null>(null);
-  const noCatalogo = useMemo(() => new Set(produtos.map((p) => (nomeProdutoComVoltagemUnica(p)?.nome ?? p).toLowerCase())), [produtos]);
+  const noCatalogo = useMemo(() => new Set(produtos.map(chaveComparacaoProduto)), [produtos]);
   const fotosPendentes = produtos.filter((nome) => !info[chaveDoProduto(nome)]?.fotoUrl);
 
   const buscarFotosFaltantes = useCallback(async () => {
@@ -1068,7 +1068,7 @@ function ModalProdutos({
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui buscar no Tiny.");
       const lista: ProdutoTiny[] = json.produtos ?? [];
       setResultadosTiny(lista);
-      setSelecionados(new Set(lista.map((p) => p.sugestao).filter((nome) => !noCatalogo.has(nome.toLowerCase()))));
+      setSelecionados(new Set(lista.map((p) => p.sugestao).filter((nome) => !noCatalogo.has(chaveComparacaoProduto(nome)))));
     } catch (error) {
       setErroProdutos(error instanceof Error ? error.message : "Não consegui buscar no Tiny.");
     } finally {
@@ -1211,7 +1211,7 @@ function ModalProdutos({
               </p>
               <div className="lote-acoes">
                 <span className="field-value--muted">
-                  {SUGESTOES_PRODUTOS.flatMap((grupo) => grupo.itens).filter((item) => !noCatalogo.has(item.nome.toLowerCase())).length} disponível(is) ·{" "}
+                  {SUGESTOES_PRODUTOS.flatMap((grupo) => grupo.itens).filter((item) => !noCatalogo.has(chaveComparacaoProduto(item.nome))).length} disponível(is) ·{" "}
                   {sugestoesSelecionadas.size} selecionado(s)
                 </span>
                 <button
@@ -1224,7 +1224,7 @@ function ModalProdutos({
                         : new Set(
                             SUGESTOES_PRODUTOS.flatMap((grupo) => grupo.itens)
                               .map((item) => item.nome)
-                              .filter((nome) => !noCatalogo.has(nome.toLowerCase())),
+                              .filter((nome) => !noCatalogo.has(chaveComparacaoProduto(nome))),
                           ),
                     )
                   }
@@ -1237,7 +1237,7 @@ function ModalProdutos({
                   <p className="field-label">{grupo.categoria}</p>
                   <ul className="lote-lista">
                     {grupo.itens.map((item) => {
-                      const jaTem = noCatalogo.has(item.nome.toLowerCase());
+                      const jaTem = noCatalogo.has(chaveComparacaoProduto(item.nome));
                       return (
                         <li key={item.nome}>
                           <label className={`lote-item${jaTem ? " lote-item--desabilitado" : ""}`}>
@@ -1313,7 +1313,7 @@ function ModalProdutos({
                         className="refresh-btn"
                         onClick={() =>
                           setSelecionados(
-                            selecionados.size > 0 ? new Set() : new Set(resultadosTiny.map((p) => p.sugestao).filter((n) => !noCatalogo.has(n.toLowerCase()))),
+                            selecionados.size > 0 ? new Set() : new Set(resultadosTiny.map((p) => p.sugestao).filter((n) => !noCatalogo.has(chaveComparacaoProduto(n)))),
                           )
                         }
                       >
@@ -1322,7 +1322,7 @@ function ModalProdutos({
                     </div>
                     <ul className="lote-lista">
                       {resultadosTiny.map((p) => {
-                        const jaTem = noCatalogo.has(p.sugestao.toLowerCase());
+                        const jaTem = noCatalogo.has(chaveComparacaoProduto(p.sugestao));
                         return (
                           <li key={p.sugestao}>
                             <label className={`lote-item${jaTem ? " lote-item--desabilitado" : ""}`}>
@@ -1469,12 +1469,48 @@ interface GrupoProduto {
 type Ordem = "nome" | "unidades";
 type VisaoEstoque = "produtos" | "longarinas";
 
+interface FiltrosEstoque {
+  busca: string;
+  filtroVoltagem: string;
+  ordem: Ordem;
+  soComEstoque: boolean;
+  visaoEstoque: VisaoEstoque;
+}
+
+function lerFiltrosEstoqueDaUrl(): FiltrosEstoque {
+  const params = new URLSearchParams(window.location.search);
+  const ordem = params.get("estoqueOrdem");
+  const voltagem = VOLTAGENS.find((item) => item === params.get("estoqueVoltagem"));
+  return {
+    busca: params.get("estoqueBusca") ?? "",
+    filtroVoltagem: voltagem ?? "",
+    ordem: ordem === "unidades" ? "unidades" : "nome",
+    soComEstoque: params.get("estoqueSoComEstoque") === "1",
+    visaoEstoque: params.get("estoqueVisao") === "longarinas" ? "longarinas" : "produtos",
+  };
+}
+
 function chaveDoProduto(nome: string): string {
   return nome.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function normalizar(texto: string): string {
   return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+function escaparRegex(texto: string): string {
+  return texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function termoBateTexto(termo: string, texto: string): boolean {
+  const valor = normalizar(texto);
+  const busca = normalizar(termo).trim();
+  if (!busca) return true;
+  if (/[a-z]/i.test(busca) && /\d/.test(busca)) {
+    const padrao = new RegExp(`(?:^|[^a-z0-9])${escaparRegex(busca)}(?:$|[^a-z0-9])`, "i");
+    return padrao.test(valor);
+  }
+  return valor.includes(busca);
 }
 
 function ordenarGavetas(a: PosicaoResumo, b: PosicaoResumo): number {
@@ -2009,18 +2045,19 @@ export function Estoque() {
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  const [filtrosIniciais] = useState(lerFiltrosEstoqueDaUrl);
   const [mostrarModalProdutos, setMostrarModalProdutos] = useState(false);
   const [mostrarRuas, setMostrarRuas] = useState(false);
   const [mostrarConfiguracaoAlerta, setMostrarConfiguracaoAlerta] = useState(false);
   const [limiteEstoqueBaixo, setLimiteEstoqueBaixo] = useState<number | null>(null);
   const [erroConfiguracaoAlerta, setErroConfiguracaoAlerta] = useState<string | null>(null);
   const [produtoAberto, setProdutoAberto] = useState<string | null>(null);
-  const [visaoEstoque, setVisaoEstoque] = useState<VisaoEstoque>("produtos");
+  const [visaoEstoque, setVisaoEstoque] = useState<VisaoEstoque>(filtrosIniciais.visaoEstoque);
 
-  const [busca, setBusca] = useState("");
-  const [filtroVoltagem, setFiltroVoltagem] = useState("");
-  const [ordem, setOrdem] = useState<Ordem>("nome");
-  const [soComEstoque, setSoComEstoque] = useState(false);
+  const [busca, setBusca] = useState(filtrosIniciais.busca);
+  const [filtroVoltagem, setFiltroVoltagem] = useState(filtrosIniciais.filtroVoltagem);
+  const [ordem, setOrdem] = useState<Ordem>(filtrosIniciais.ordem);
+  const [soComEstoque, setSoComEstoque] = useState(filtrosIniciais.soComEstoque);
   // "Separar por voltagem" aberto: um produto (do detalhe) ou todos os que estão nessa situação.
   const [separando, setSeparando] = useState<{ grupos: GrupoProduto[]; todos: boolean } | null>(null);
 
@@ -2043,10 +2080,45 @@ export function Estoque() {
       setRuas(json.ruas ?? []);
       setErroCarregamento(null);
     } catch (error) {
-      setErroCarregamento(error instanceof Error ? error.message : "Não consegui carregar o estoque.");
+      const mensagem =
+        error instanceof TypeError && /failed to fetch|networkerror|load failed/i.test(error.message)
+          ? "Não foi possível carregar o estoque. Verifique sua conexão e tente novamente."
+          : error instanceof Error
+            ? error.message
+            : "Não consegui carregar o estoque.";
+      setErroCarregamento(mensagem);
     } finally {
       setCarregou(true);
     }
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const definirParametro = (chave: string, valor: string, padrao: string) => {
+      if (valor === padrao) params.delete(chave);
+      else params.set(chave, valor);
+    };
+    definirParametro("estoqueBusca", busca, "");
+    definirParametro("estoqueVoltagem", filtroVoltagem, "");
+    definirParametro("estoqueOrdem", ordem, "nome");
+    definirParametro("estoqueSoComEstoque", soComEstoque ? "1" : "", "");
+    definirParametro("estoqueVisao", visaoEstoque, "produtos");
+    const query = params.toString();
+    const url = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+    window.history.replaceState(window.history.state, "", url);
+  }, [busca, filtroVoltagem, ordem, soComEstoque, visaoEstoque]);
+
+  useEffect(() => {
+    const restaurarFiltros = () => {
+      const filtros = lerFiltrosEstoqueDaUrl();
+      setBusca(filtros.busca);
+      setFiltroVoltagem(filtros.filtroVoltagem);
+      setOrdem(filtros.ordem);
+      setSoComEstoque(filtros.soComEstoque);
+      setVisaoEstoque(filtros.visaoEstoque);
+    };
+    window.addEventListener("popstate", restaurarFiltros);
+    return () => window.removeEventListener("popstate", restaurarFiltros);
   }, []);
 
   const criarLongarina = useCallback(
@@ -2201,28 +2273,24 @@ export function Estoque() {
   }, [produtos, todasAsGavetas, info]);
 
   const termo = normalizar(busca.trim());
+  const termosBusca = termo.split(/\s+/).filter(Boolean);
+  const bateTermos = (texto: string) => termosBusca.every((termoAtual) => termoBateTexto(termoAtual, texto));
+
   const gruposExibidos = grupos
     .filter((g) => !soComEstoque || g.total > 0)
-    .filter((g) => !filtroVoltagem || g.gavetas.some((l) => l.voltagem === filtroVoltagem))
-    .filter(
-      (g) =>
-        !termo ||
-        normalizar(g.nome).includes(termo) ||
-        g.gavetas.some((l) => normalizar(`${l.codigo} rua ${l.rua} ${l.rua}${l.codigo}`).includes(termo)),
-    )
+    .filter((g) => !filtroVoltagem || g.gavetas.some((l) => l.voltagem === filtroVoltagem || (l.produto && voltagemDoNome(l.produto) === filtroVoltagem)))
+    .filter((g) => !termo || bateTermos(g.nome) || g.gavetas.some((l) => bateTermos(`${l.codigo} rua ${l.rua} ${l.rua}${l.codigo}`)))
     .sort((a, b) => (ordem === "unidades" ? b.total - a.total : 0) || a.nome.localeCompare(b.nome, "pt-BR"));
 
   const longarinasExibidas = ruas
     .map((rua) => {
-      const termoBateRua = Boolean(termo && normalizar(`rua ${rua.rua}`).includes(termo));
+      const termoBateRua = Boolean(termo && bateTermos(`rua ${rua.rua}`));
       const posicoes = rua.posicoes
         .filter(
           (posicao) =>
             (!soComEstoque || posicao.ultima.quantidade > 0) &&
-            (!filtroVoltagem || posicao.voltagem === filtroVoltagem) &&
-            (!termo ||
-              termoBateRua ||
-              normalizar(`${posicao.codigo} ${posicao.produto ?? ""} rua ${posicao.rua}`).includes(termo)),
+            (!filtroVoltagem || posicao.voltagem === filtroVoltagem || (posicao.produto && voltagemDoNome(posicao.produto) === filtroVoltagem)) &&
+            (!termo || termoBateRua || bateTermos(`${posicao.codigo} ${posicao.produto ?? ""} rua ${posicao.rua}`)),
         )
         .sort(ordenarGavetas);
       return { ...rua, posicoes };
@@ -2320,7 +2388,14 @@ export function Estoque() {
         </button>
       </PageHeader>
 
-      {erroCarregamento && <p className="error-banner">{erroCarregamento}</p>}
+      {erroCarregamento && (
+        <div role="alert">
+          <p className="error-banner">{erroCarregamento}</p>
+          <button type="button" className="refresh-btn" onClick={() => void carregar()}>
+            Tentar de novo
+          </button>
+        </div>
+      )}
       {erroConfiguracaoAlerta && <p className="error-banner" role="alert">{erroConfiguracaoAlerta}</p>}
       {erroUnidadesPorCaixa && <p className="error-banner" role="alert">{erroUnidadesPorCaixa} A contagem por caixa pode não estar disponível.</p>}
 

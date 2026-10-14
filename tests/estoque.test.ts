@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { nomeProdutoComVoltagemUnica } from "../lib/nomeProduto";
+import { chaveComparacaoProduto, nomeProdutoComVoltagemUnica } from "../lib/nomeProduto";
 
 // PNG 1x1 real (não precisa ser uma foto de verdade, só um data URI válido).
 const FOTO_1X1 =
@@ -56,6 +56,12 @@ describe("estoque", () => {
       voltagem: "110V",
     });
     expect(nomeProdutoComVoltagemUnica("Chaleira Koti 220V")).toBeNull();
+  });
+
+  it("reconhece nomes legados com 'ou' e separadores diferentes como o mesmo produto", () => {
+    expect(
+      chaveComparacaoProduto("Chaleira Elétrica Koti 1,5L Modern Inox Preta - ou- Preta 220V"),
+    ).toBe(chaveComparacaoProduto("Chaleira Elétrica Koti 1,5L Modern Inox Preta - Preta 220V"));
   });
 
   it("lista vazio quando nunca teve nenhuma contagem", async () => {
