@@ -103,9 +103,11 @@ function IconeAviso({ className }: { className?: string }) {
 export function Embalagem({
   configAberta,
   onConfigToggle,
+  mostrarTempo = true,
 }: {
   configAberta?: boolean;
   onConfigToggle?: (aberto: boolean) => void;
+  mostrarTempo?: boolean;
 } = {}) {
   const [dia] = useState(hojeBr());
   const [desempenho, setDesempenho] = useState<DesempenhoEmbalagem | null>(null);
@@ -113,7 +115,8 @@ export function Embalagem({
   const [carregando, setCarregando] = useState(true);
 
   const [colaboradores, setColaboradores] = useState<ColaboradorEmbalagem[]>([]);
-  const [mostrarConfig, setMostrarConfig] = useState(Boolean(configAberta));
+  const [mostrarConfigLocal, setMostrarConfigLocal] = useState(false);
+  const mostrarConfig = configAberta ?? mostrarConfigLocal;
   const [mostrarSaibaMais, setMostrarSaibaMais] = useState(false);
   const [novoId, setNovoId] = useState("");
   const [novoNome, setNovoNome] = useState("");
@@ -125,6 +128,11 @@ export function Embalagem({
   // o ID de ANTES da edição porque, se a pessoa também trocar o ID no formulário, precisa remover
   // o registro antigo depois de salvar o novo — o Tiny não tem conceito de "renomear uma chave".
   const [editandoIdOriginal, setEditandoIdOriginal] = useState<string | null>(null);
+
+  const definirMostrarConfig = useCallback((aberto: boolean) => {
+    setMostrarConfigLocal(aberto);
+    onConfigToggle?.(aberto);
+  }, [onConfigToggle]);
 
   const colaboradorPorId = useMemo(() => new Map(colaboradores.map((c) => [c.idUsuarioEmbalador, c])), [colaboradores]);
 
@@ -187,12 +195,6 @@ export function Embalagem({
   }, []);
 
   useEffect(() => {
-    if (configAberta !== undefined) {
-      setMostrarConfig(configAberta);
-    }
-  }, [configAberta]);
-
-  useEffect(() => {
     const kickoff = setTimeout(() => void carregarColaboradores(), 0);
     return () => clearTimeout(kickoff);
   }, [carregarColaboradores]);
@@ -225,13 +227,13 @@ export function Embalagem({
 
   /** Clique no badge "Cadastrar" de um card sem nome — abre o painel já com o ID preenchido. */
   const abrirCadastroComId = useCallback((idUsuarioEmbalador: string) => {
-    setMostrarConfig(true);
+    definirMostrarConfig(true);
     setEditandoIdOriginal(null);
     setNovoId(idUsuarioEmbalador);
     setNovoNome("");
     setNovaBancada("");
     setErroConfig(null);
-  }, []);
+  }, [definirMostrarConfig]);
 
   const salvarColaborador = useCallback(
     async (event: FormEvent) => {
@@ -319,7 +321,7 @@ export function Embalagem({
         <button
           type="button"
           className="refresh-btn refresh-btn--icone"
-          onClick={() => setMostrarConfig((atual) => !atual)}
+          onClick={() => definirMostrarConfig(!mostrarConfig)}
         >
           <IconeConfig className="btn-icone" />
           {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
@@ -333,7 +335,7 @@ export function Embalagem({
               <p className="estado-vazio-titulo">Nenhuma bancada cadastrada ainda.</p>
               <p className="field-value--muted">Preencha o campo Bancada de quem embala no cadastro de colaboradores.</p>
               {!mostrarConfig && (
-                <button type="button" className="btn-primario" onClick={() => setMostrarConfig(true)}>
+                <button type="button" className="btn-primario" onClick={() => definirMostrarConfig(true)}>
                   Cadastrar bancadas
                 </button>
               )}
@@ -356,10 +358,12 @@ export function Embalagem({
                         <span className="bancada-card-valor">{dados?.pedidosPorHora ?? 0}</span>
                         <span className="bancada-card-label">Pedidos Hora</span>
                       </div>
-                      <div className="bancada-card-stat">
-                        <span className="bancada-card-valor">{dados?.tempoFormatado ?? "0h 00min"}</span>
-                        <span className="bancada-card-label">Tempo</span>
-                      </div>
+                      {mostrarTempo && (
+                        <div className="bancada-card-stat">
+                          <span className="bancada-card-valor">{dados?.tempoFormatado ?? "0h 00min"}</span>
+                          <span className="bancada-card-label">Tempo</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -449,7 +453,12 @@ export function Embalagem({
       {mostrarConfig && (
         <div className="colab-painel">
           <div className="colab-painel-info">
-            <p className="estoque-vazio-titulo">Colaboradores cadastrados</p>
+            <div className="colab-painel-topo">
+              <p className="estoque-vazio-titulo">Colaboradores cadastrados</p>
+              <button type="button" className="refresh-btn" onClick={() => definirMostrarConfig(false)}>
+                Fechar configuração
+              </button>
+            </div>
             <p className="field-value--muted">
               O Tiny identifica quem embalou por um ID numérico, não pelo nome.
               {mostrarSaibaMais && (

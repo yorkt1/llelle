@@ -29,6 +29,15 @@ const STAGES: { key: StageKey; label: string }[] = [
 // "Embaladas" é aproximado (ver lib/olist.ts) e fica opt-in.
 const DEFAULT_VISIBLE_STAGES: StageKey[] = ["aguardandoSeparacao", "emSeparacao", "separadas"];
 const VISIBLE_STAGES_STORAGE_KEY = "painel:visibleStages";
+const MOSTRAR_TEMPO_EMBALAGEM_KEY = "painel:mostrarTempoEmbalagem";
+
+function readMostrarTempoEmbalagem(): boolean {
+  try {
+    return localStorage.getItem(MOSTRAR_TEMPO_EMBALAGEM_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
 
 type StageColors = Record<StageKey, string>;
 
@@ -226,6 +235,8 @@ function SettingsPanel({
   onToggleFullscreen,
   onClose,
   onOpenColaboradores,
+  mostrarTempoEmbalagem,
+  onMostrarTempoEmbalagemChange,
 }: {
   visible: Set<StageKey>;
   onToggleStage: (key: StageKey) => void;
@@ -236,38 +247,65 @@ function SettingsPanel({
   onToggleFullscreen: () => void;
   onClose: () => void;
   onOpenColaboradores?: () => void;
+  mostrarTempoEmbalagem: boolean;
+  onMostrarTempoEmbalagemChange: (mostrar: boolean) => void;
 }) {
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
-        <button className="settings-close" onClick={onClose} aria-label="Fechar configurações">
-          ×
-        </button>
-        <h2 className="settings-title">Configurar este painel</h2>
-        <p className="settings-hint">
-          A escolha fica só neste aparelho — outras telas não são afetadas.
-        </p>
-        <div className="settings-options">
-          {STAGES.map((stage) => (
-            <div key={stage.key} className="settings-option">
-              <label className="settings-option-label">
-                <input type="checkbox" checked={visible.has(stage.key)} onChange={() => onToggleStage(stage.key)} />
-                {stage.label}
-              </label>
-              <input
-                type="color"
-                className="settings-color"
-                value={colors[stage.key]}
-                onChange={(event) => onColorChange(stage.key, event.target.value)}
-                aria-label={`Cor de ${stage.label}`}
-              />
+      <div
+        className="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="painel-configuracao-titulo"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="settings-panel-header">
+          <button className="settings-close" onClick={onClose} aria-label="Fechar configurações">
+            ×
+          </button>
+          <h2 className="settings-title" id="painel-configuracao-titulo">Configurar este painel</h2>
+          <p className="settings-hint">As opções ficam salvas só neste aparelho.</p>
+        </header>
+        <div className="settings-panel-body">
+          <section className="settings-section" aria-labelledby="settings-etapas-titulo">
+            <h3 className="settings-section-title" id="settings-etapas-titulo">Etapas da separação</h3>
+            <div className="settings-options">
+              {STAGES.map((stage) => (
+                <div key={stage.key} className="settings-option">
+                  <label className="settings-option-label">
+                    <input type="checkbox" checked={visible.has(stage.key)} onChange={() => onToggleStage(stage.key)} />
+                    {stage.label}
+                  </label>
+                  <input
+                    type="color"
+                    className="settings-color"
+                    value={colors[stage.key]}
+                    onChange={(event) => onColorChange(stage.key, event.target.value)}
+                    aria-label={`Cor de ${stage.label}`}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
+          </section>
+          <section className="settings-section" aria-labelledby="settings-embalagem-titulo">
+            <h3 className="settings-section-title" id="settings-embalagem-titulo">Embalagem</h3>
+            <label className="settings-preferencia">
+              <input
+                type="checkbox"
+                checked={mostrarTempoEmbalagem}
+                onChange={(event) => onMostrarTempoEmbalagemChange(event.target.checked)}
+              />
+              <span>
+                <strong>Tempo de embalagem</strong>
+                <small>Exibir o tempo nos cards das bancadas.</small>
+              </span>
+            </label>
+          </section>
         </div>
-        <div className="settings-actions">
+        <footer className="settings-panel-footer">
           {onOpenColaboradores && (
             <button
-              className="refresh-btn"
+              className="btn-primario"
               onClick={() => {
                 onClose();
                 onOpenColaboradores();
@@ -276,13 +314,15 @@ function SettingsPanel({
               Configurar colaboradores
             </button>
           )}
-          <button className="refresh-btn" onClick={onToggleFullscreen}>
-            {isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
-          </button>
-          <button className="settings-reset" onClick={onResetColors}>
-            Restaurar cores padrão
-          </button>
-        </div>
+          <div className="settings-actions">
+            <button className="refresh-btn" onClick={onToggleFullscreen}>
+              {isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+            </button>
+            <button className="settings-reset" onClick={onResetColors}>
+              Restaurar cores
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );
@@ -305,6 +345,7 @@ export function App() {
   const clock = useClock();
   const [visibleStages, toggleStage] = useVisibleStages();
   const [stageColors, setStageColor, resetStageColors] = useStageColors();
+  const [mostrarTempoEmbalagem, setMostrarTempoEmbalagem] = useState(readMostrarTempoEmbalagem);
   const [isFullscreen, toggleFullscreen] = useFullscreen();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [embalagemConfigAberta, setEmbalagemConfigAberta] = useState(false);
@@ -376,6 +417,15 @@ export function App() {
 
   const stages = STAGES.filter((stage) => visibleStages.has(stage.key));
 
+  const alterarMostrarTempoEmbalagem = (mostrar: boolean) => {
+    setMostrarTempoEmbalagem(mostrar);
+    try {
+      localStorage.setItem(MOSTRAR_TEMPO_EMBALAGEM_KEY, mostrar ? "1" : "0");
+    } catch {
+      // A escolha continua valendo nesta tela mesmo se o navegador bloquear o armazenamento local.
+    }
+  };
+
   return (
     <div className="page painel-tv">
       <PageHeader titulo="Painel">
@@ -411,6 +461,8 @@ export function App() {
             setSettingsOpen(false);
           }}
           onClose={() => setSettingsOpen(false)}
+          mostrarTempoEmbalagem={mostrarTempoEmbalagem}
+          onMostrarTempoEmbalagemChange={alterarMostrarTempoEmbalagem}
           onOpenColaboradores={() => {
             setEmbalagemConfigAberta(true);
             setSettingsOpen(false);
@@ -418,7 +470,11 @@ export function App() {
         />
       )}
 
-      <Embalagem configAberta={embalagemConfigAberta} onConfigToggle={setEmbalagemConfigAberta} />
+      <Embalagem
+        configAberta={embalagemConfigAberta}
+        onConfigToggle={setEmbalagemConfigAberta}
+        mostrarTempo={mostrarTempoEmbalagem}
+      />
     </div>
   );
 }

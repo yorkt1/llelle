@@ -126,6 +126,52 @@ describe("Embalagem — CRUD de colaboradores", () => {
     expect(container.querySelectorAll(".bancada-card--skeleton")).toHaveLength(4);
   });
 
+  it("mantém Tempo de embalagem ligado por padrão e salva a escolha de ocultá-lo neste aparelho", async () => {
+    localStorage.removeItem("painel:mostrarTempoEmbalagem");
+    vi.stubGlobal("fetch", vi.fn((input: unknown) => {
+      const url = String(input);
+      if (url.includes("/api/separacao")) {
+        return jsonResponse({
+          connected: true,
+          counts: { aguardandoSeparacao: 1, emSeparacao: 2, separadas: 3, embaladas: 4 },
+          syncedAt: null,
+        });
+      }
+      if (url.includes("/api/embalagem/colaboradores")) {
+        return jsonResponse({ colaboradores: [{ idUsuarioEmbalador: "123", nome: "Ana", bancada: "1" }] });
+      }
+      if (url.includes("/api/embalagem?")) {
+        return jsonResponse({
+          ...desempenhoVazio,
+          colaboradores: [{ idUsuarioEmbalador: "123", nome: "Ana", pedidos: 5, pedidosPorHora: 2, horas: 2, tempoFormatado: "1h 30min" }],
+        });
+      }
+      throw new Error(`fetch inesperado: ${url}`);
+    }));
+
+    const primeiraRenderizacao = render(<App />);
+    expect(await screen.findByText("Tempo")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Configurar painel" }));
+    expect(screen.getByRole("heading", { name: "Etapas da separação" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Embalagem" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Configurar colaboradores" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tela cheia" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restaurar cores" })).toBeInTheDocument();
+    const opcaoTempo = screen.getByRole("checkbox", { name: /tempo de embalagem/i });
+    expect(opcaoTempo).toBeChecked();
+    await userEvent.click(opcaoTempo);
+    expect(opcaoTempo).not.toBeChecked();
+    expect(localStorage.getItem("painel:mostrarTempoEmbalagem")).toBe("0");
+    primeiraRenderizacao.unmount();
+
+    render(<App />);
+    await screen.findByText("Bipados");
+    await userEvent.click(screen.getByRole("button", { name: "Configurar painel" }));
+    expect(screen.getByRole("checkbox", { name: /tempo de embalagem/i })).not.toBeChecked();
+    expect(screen.queryByText("Tempo")).not.toBeInTheDocument();
+    localStorage.removeItem("painel:mostrarTempoEmbalagem");
+  });
+
   it("Create: cadastra um colaborador novo e ele aparece na tabela", async () => {
     mockarFetch();
     render(<Embalagem />);

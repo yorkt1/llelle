@@ -339,7 +339,7 @@ body {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 1rem;
-  width: min(24rem, 90vw);
+  width: min(28rem, calc(100vw - 2rem));
   /* Sem isso, um formulário mais longo que a tela (celular em paisagem, teclado aberto, ou
      mensagem de erro empurrando o conteúdo) simplesmente cortava o topo/rodapé sem rolar —
      o botão Salvar podia ficar inacessível. */
@@ -351,7 +351,8 @@ body {
 }
 
 .settings-panel-header {
-  padding: 2rem 2rem 1rem;
+  flex-shrink: 0;
+  padding: 1.5rem 1.5rem 1rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -360,10 +361,10 @@ body {
 .settings-panel-body {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 1.25rem 2rem;
+  padding: 1.1rem 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.35rem;
   /* Fina e escura, do tema — Firefox (propriedade padrão) e Chrome/Safari (pseudo-elementos). */
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
@@ -388,11 +389,15 @@ body {
 
 .settings-panel-footer {
   flex-shrink: 0;
-  padding: 1rem 2rem 1.5rem;
+  padding: 1rem 1.5rem 1.25rem;
   border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.settings-panel-footer > .btn-primario {
+  width: 100%;
 }
 
 .settings-close {
@@ -416,6 +421,7 @@ body {
   margin: 0;
   font-family: var(--font-display);
   font-size: 1.1rem;
+  padding-right: 1.5rem;
 }
 
 .settings-hint {
@@ -427,14 +433,31 @@ body {
 .settings-options {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.35rem;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.settings-section-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .settings-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  min-height: 2.6rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--line);
   font-size: 0.95rem;
 }
 
@@ -462,9 +485,9 @@ body {
 }
 
 .settings-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
 }
 
@@ -476,6 +499,42 @@ body {
   cursor: pointer;
   text-decoration: underline;
   padding: 0;
+  white-space: nowrap;
+}
+
+.settings-preferencia {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.settings-preferencia > input {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  margin: 0.12rem 0 0;
+  accent-color: var(--brand);
+}
+
+.settings-preferencia span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.settings-preferencia strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.settings-preferencia small {
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .settings-reset:hover {
@@ -522,10 +581,8 @@ body {
     row-gap: 6vh;
   }
 
-  .settings-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
+  .settings-actions { grid-template-columns: 1fr; }
+  .settings-reset { justify-self: start; }
 }
 
 @media (min-width: 1024px) {
