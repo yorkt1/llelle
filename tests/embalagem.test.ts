@@ -38,6 +38,21 @@ describe("embalagem", () => {
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
+  it("oculta e restaura IDs do painel, e remove a ocultação ao cadastrar o colaborador", async () => {
+    const { ignorarIdEmbalador, listarIdsIgnorados, restaurarIdIgnorado, salvarColaborador } = await freshEmbalagem();
+    expect(await listarIdsIgnorados()).toEqual([]);
+
+    await ignorarIdEmbalador("8309");
+    await ignorarIdEmbalador("8309");
+    expect(await listarIdsIgnorados()).toEqual(["8309"]);
+
+    await salvarColaborador("8309", "Ana", "1");
+    expect(await listarIdsIgnorados()).toEqual([]);
+
+    await ignorarIdEmbalador("8309");
+    expect(await restaurarIdIgnorado("8309")).toEqual([]);
+  });
+
   describe("obterDesempenho", () => {
     it("agrupa por idUsuarioEmbalador, usa o nome cadastrado quando existe, e calcula pedidos/hora", async () => {
       const fetchMock = vi.mocked(fetch);

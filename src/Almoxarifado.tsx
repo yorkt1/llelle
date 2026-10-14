@@ -378,18 +378,6 @@ export function Almoxarifado() {
         <button type="button" className="refresh-btn" onClick={exportar} disabled={!estado}>
           Exportar CSV
         </button>
-        <button
-          type="button"
-          className="refresh-btn"
-          onClick={() => {
-            if (window.confirm("Restaurar os itens originais e apagar todo o histórico? Essa ação não pode ser desfeita.")) {
-              void solicitar("/restaurar", { method: "POST", body: "{}" });
-            }
-          }}
-          disabled={salvando}
-        >
-          Restaurar original
-        </button>
       </div>
 
       {formNovo && (

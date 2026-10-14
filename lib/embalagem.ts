@@ -61,6 +61,7 @@ const TENTATIVAS_LIMITE_TAXA = 4;
 
 const CHAVE_RESOLUCOES = "embalagem:resolucoesPorSeparacao";
 const CHAVE_COLABORADORES = "embalagem:colaboradores";
+const CHAVE_IDS_IGNORADOS = "embalagem:ids-ignorados";
 // Snapshot da última busca de resumos "hoje" — o que o job de fundo encontrou da última vez que
 // consultou o Tiny. `obterDesempenho` pro dia de hoje monta o relatório só a partir disso, nunca
 // busca ao vivo (ver aviso no topo do arquivo).
@@ -258,6 +259,21 @@ export async function listarColaboradores(): Promise<ColaboradorEmbalagem[]> {
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
+export async function listarIdsIgnorados(): Promise<string[]> {
+  return (await store.get<string[]>(CHAVE_IDS_IGNORADOS)) ?? [];
+}
+
+export async function ignorarIdEmbalador(idUsuarioEmbalador: string): Promise<string[]> {
+  const id = idUsuarioEmbalador.trim();
+  if (!id) throw new Error("Informe o ID do usuário no Tiny.");
+  return store.update<string[]>(CHAVE_IDS_IGNORADOS, (atuais) => [...new Set([...(atuais ?? []), id])]);
+}
+
+export async function restaurarIdIgnorado(idUsuarioEmbalador: string): Promise<string[]> {
+  const id = idUsuarioEmbalador.trim();
+  return store.update<string[]>(CHAVE_IDS_IGNORADOS, (atuais) => (atuais ?? []).filter((item) => item !== id));
+}
+
 export async function salvarColaborador(idUsuarioEmbalador: string, nome: string, bancada?: string): Promise<ColaboradorEmbalagem> {
   const id = idUsuarioEmbalador.trim();
   const nomeLimpo = nome.trim();
@@ -267,6 +283,7 @@ export async function salvarColaborador(idUsuarioEmbalador: string, nome: string
 
   const registro: RegistroColaborador = bancadaLimpa ? { nome: nomeLimpo, bancada: bancadaLimpa } : { nome: nomeLimpo };
   await store.update<Record<string, RegistroColaboradorOuAntigo>>(CHAVE_COLABORADORES, (atual) => ({ ...(atual ?? {}), [id]: registro }));
+  await restaurarIdIgnorado(id);
   return { idUsuarioEmbalador: id, ...registro };
 }
 

@@ -4,9 +4,12 @@ import { OlistConfigError } from "../../lib/olist";
 import ExcelJS from "exceljs";
 import {
   listarColaboradores,
+  listarIdsIgnorados,
+  ignorarIdEmbalador,
   obterDesempenho,
   relatorioMensal,
   removerColaborador,
+  restaurarIdIgnorado,
   salvarColaborador,
   salvarMetaMensal,
   type RelatorioMensalEmbalagem,
@@ -32,10 +35,36 @@ embalagemRouter.get("/", async (req, res) => {
 
 embalagemRouter.get("/colaboradores", async (_req, res) => {
   try {
-    const colaboradores = await listarColaboradores();
-    res.status(200).json({ colaboradores });
+    const [colaboradores, idsIgnorados] = await Promise.all([listarColaboradores(), listarIdsIgnorados()]);
+    res.status(200).json({ colaboradores, idsIgnorados });
   } catch (error) {
     res.status(500).json({ erro: error instanceof Error ? error.message : "Erro inesperado ao listar colaboradores." });
+  }
+});
+
+embalagemRouter.put("/colaboradores/ignorados/:idUsuarioEmbalador", async (req, res) => {
+  try {
+    const idsIgnorados = await ignorarIdEmbalador(String(req.params.idUsuarioEmbalador));
+    res.status(200).json({ idsIgnorados });
+  } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ erro: error.message });
+      return;
+    }
+    res.status(400).json({ erro: error instanceof Error ? error.message : "Erro inesperado ao ocultar o ID." });
+  }
+});
+
+embalagemRouter.delete("/colaboradores/ignorados/:idUsuarioEmbalador", async (req, res) => {
+  try {
+    const idsIgnorados = await restaurarIdIgnorado(String(req.params.idUsuarioEmbalador));
+    res.status(200).json({ idsIgnorados });
+  } catch (error) {
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ erro: error.message });
+      return;
+    }
+    res.status(500).json({ erro: error instanceof Error ? error.message : "Erro inesperado ao restaurar o ID." });
   }
 });
 

@@ -115,6 +115,7 @@ export function Embalagem({
   const [carregando, setCarregando] = useState(true);
 
   const [colaboradores, setColaboradores] = useState<ColaboradorEmbalagem[]>([]);
+  const [idsIgnorados, setIdsIgnorados] = useState<string[]>([]);
   const [mostrarConfigLocal, setMostrarConfigLocal] = useState(false);
   const mostrarConfig = configAberta ?? mostrarConfigLocal;
   const [mostrarSaibaMais, setMostrarSaibaMais] = useState(false);
@@ -163,9 +164,9 @@ export function Embalagem({
     if (!desempenho) return [];
     return desempenho.colaboradores.filter((d) => {
       const registrado = colaboradorPorId.get(d.idUsuarioEmbalador);
-      return !registrado?.bancada;
+      return !registrado?.bancada && !idsIgnorados.includes(d.idUsuarioEmbalador);
     });
-  }, [desempenho, colaboradorPorId]);
+  }, [desempenho, colaboradorPorId, idsIgnorados]);
 
   const carregarDesempenho = useCallback(async (diaConsultado: string) => {
     setCarregando(true);
@@ -188,9 +189,28 @@ export function Embalagem({
     try {
       const response = await fetch(`${API_URL}/api/embalagem/colaboradores`, { cache: "no-store" });
       const json = await response.json();
-      if (response.ok) setColaboradores(json.colaboradores ?? []);
+      if (response.ok) {
+        setColaboradores(json.colaboradores ?? []);
+        setIdsIgnorados(json.idsIgnorados ?? []);
+      }
     } catch {
       // Lista de colaboradores é só pra tela de configuração — uma falha aqui não trava o relatório.
+    }
+  }, []);
+
+  const definirIdIgnorado = useCallback(async (idUsuarioEmbalador: string, ignorar: boolean) => {
+    try {
+      const acao = ignorar ? "PUT" : "DELETE";
+      const response = await fetch(
+        `${API_URL}/api/embalagem/colaboradores/ignorados/${encodeURIComponent(idUsuarioEmbalador)}`,
+        { method: acao, headers: { "Content-Type": "application/json" } },
+      );
+      const json = await response.json();
+      if (!response.ok) throw new Error(extrairErro(json, "Não consegui atualizar os IDs ocultos."));
+      setIdsIgnorados(json.idsIgnorados ?? []);
+      setErro(null);
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Não consegui atualizar os IDs ocultos.");
     }
   }, []);
 
@@ -407,6 +427,17 @@ export function Embalagem({
                         >
                           Cadastrar · ID {abreviarId(colaborador.idUsuarioEmbalador)}
                         </button>
+                        <button
+                          type="button"
+                          className="embalagem-card-remover"
+                          onClick={() => {
+                            if (window.confirm("Ocultar este ID do painel? Os pedidos e o histórico do Tiny serão preservados.")) {
+                              void definirIdIgnorado(colaborador.idUsuarioEmbalador, true);
+                            }
+                          }}
+                        >
+                          Excluir do painel
+                        </button>
                       </>
                     )}
                     <div className="embalagem-card-stats">
@@ -520,6 +551,19 @@ export function Embalagem({
                 </tbody>
               </table>
             </div>
+            {idsIgnorados.length > 0 && (
+              <section className="colab-ids-ignorados" aria-label="IDs ocultos do painel">
+                <h3>IDs ocultos do painel</h3>
+                {idsIgnorados.map((id) => (
+                  <div className="colab-id-ignorado" key={id}>
+                    <span>ID {id}</span>
+                    <button type="button" className="refresh-btn" onClick={() => void definirIdIgnorado(id, false)}>
+                      Restaurar
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
           </div>
 
           <div className="colab-painel-form-card">

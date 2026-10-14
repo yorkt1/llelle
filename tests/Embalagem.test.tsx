@@ -126,6 +126,45 @@ describe("Embalagem — CRUD de colaboradores", () => {
     expect(container.querySelectorAll(".bancada-card--skeleton")).toHaveLength(4);
   });
 
+  it("permite ocultar um ID sem nome e restaurá-lo em Configurar colaboradores", async () => {
+    let idsIgnorados: string[] = [];
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    vi.stubGlobal("fetch", vi.fn((input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/colaboradores/ignorados/")) {
+        const id = decodeURIComponent(url.split("/").pop()!);
+        idsIgnorados = init?.method === "PUT" ? [...idsIgnorados, id] : idsIgnorados.filter((atual) => atual !== id);
+        return jsonResponse({ idsIgnorados });
+      }
+      if (url.includes("/api/embalagem/colaboradores")) return jsonResponse({ colaboradores: [], idsIgnorados });
+      if (url.includes("/api/embalagem?")) {
+        return jsonResponse({
+          ...desempenhoVazio,
+          totalPedidos: 1,
+          colaboradores: [{
+            idUsuarioEmbalador: "8309",
+            nome: "ID 8309 (sem nome cadastrado)",
+            pedidos: 1,
+            pedidosPorHora: 1,
+            horas: 1,
+            tempoFormatado: "1h 00min",
+          }],
+        });
+      }
+      throw new Error(`fetch inesperado: ${url}`);
+    }));
+
+    render(<Embalagem />);
+    expect(await screen.findByText("Sem nome")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Excluir do painel" }));
+    await waitFor(() => expect(screen.queryByText("Sem nome")).not.toBeInTheDocument());
+    expect(idsIgnorados).toEqual(["8309"]);
+
+    await abrirPainelDeColaboradores();
+    await userEvent.click(screen.getByRole("button", { name: "Restaurar" }));
+    await waitFor(() => expect(idsIgnorados).toEqual([]));
+  });
+
   it("mantém Tempo de embalagem ligado por padrão e salva a escolha de ocultá-lo neste aparelho", async () => {
     localStorage.removeItem("painel:mostrarTempoEmbalagem");
     vi.stubGlobal("fetch", vi.fn((input: unknown) => {

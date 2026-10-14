@@ -33,6 +33,7 @@ describe("Almoxarifado", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Almoxarifado />);
+    expect(screen.queryByRole("button", { name: /restaurar original/i })).not.toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: /registrar movimentação/i }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Item para movimentar" }), "saco");
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Tipo de movimento" }), "entrada");
