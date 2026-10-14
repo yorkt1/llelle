@@ -11,6 +11,7 @@ import { estoqueRouter } from "./routes/estoque";
 import { embalagemRouter } from "./routes/embalagem";
 import { comprasRouter } from "./routes/compras";
 import { pedidosRouter } from "./routes/pedidos";
+import { almoxarifadoRouter } from "./routes/almoxarifado";
 import { tickVendas } from "../lib/vendasSync";
 import { fetchCoreCountsLive, fetchEmbaladasCountLive, isConfigured, OlistConfigError } from "../lib/olist";
 import { sincronizarEmbalagemHoje, verificarDiaPassado } from "../lib/embalagem";
@@ -59,6 +60,7 @@ app.use("/api/estoque", estoqueRouter);
 app.use("/api/embalagem", embalagemRouter);
 app.use("/api/compras", comprasRouter);
 app.use("/api/pedidos", pedidosRouter);
+app.use("/api/almoxarifado", almoxarifadoRouter);
 
 // Quando existe um build do Vite (dist/), o backend tambem serve o front — assim "npm start" sobe tudo.
 const staticDir = path.resolve(__dirname, "../dist");

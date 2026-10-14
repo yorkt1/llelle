@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { App } from "@/App";
 import { Devolucoes } from "@/Devolucoes";
 import { Estoque } from "@/Estoque";
+import { Almoxarifado } from "@/Almoxarifado";
 import { Relatorios } from "@/Relatorios";
 import { Suporte } from "@/Suporte";
 import { Compras } from "@/Compras";
@@ -14,6 +15,7 @@ import {
   IconeCrm,
   IconeDevolucoes,
   IconeEstoque,
+  IconeEmbalagem,
   IconeFotoIa,
   IconeGargalos,
   IconePainel,
@@ -110,6 +112,7 @@ export const MODULOS: Modulo[] = [
   { key: "pedidos", label: "Controle de Pedidos", hash: "pedidos", Icone: IconePedidos, Tela: ControlePedidos },
   { key: "devolucoes", label: "Devoluções", hash: "devolucoes", Icone: IconeDevolucoes, Tela: Devolucoes },
   { key: "estoque", label: "Estoque", hash: "estoque", Icone: IconeEstoque, Tela: Estoque },
+  { key: "almoxarifado", label: "Almoxarifado", hash: "almoxarifado", Icone: IconeEmbalagem, Tela: Almoxarifado },
   { key: "compras", label: "Compras", hash: "compras", Icone: IconeCompras, Tela: Compras },
   { key: "relatorios", label: "Relatórios", hash: "relatorios", Icone: IconeRelatorios, Tela: Relatorios },
   { key: "crm", label: "CRM B2B", hash: "crm", Icone: IconeCrm, ideia: IDEIA_CRM },

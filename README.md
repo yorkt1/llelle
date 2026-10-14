@@ -32,6 +32,7 @@ diferentes acompanharem etapas diferentes sem afetar o que aparece em outra TV.
 - `server/routes/separacao.ts` — `GET /api/separacao` (cache, rápido) e `POST /api/separacao/sync` (força uma sincronização completa sob demanda).
 - `lib/controlePedidos.ts` / `server/routes/pedidos.ts` — CRUD manual do Controle diário de pedidos (`GET`/`PUT`/`DELETE` por data), persistido na chave `controle-pedidos:dias` do mesmo `kv_store`; `GET /api/pedidos/planilha.xlsx` exporta todo o histórico. O campo interno `doTiago` é derivado do responsável do turno e não é devolvido ao navegador nem incluído na planilha.
 - `src/ControlePedidos.tsx` — tela Controle de Pedidos, acessível em `#pedidos`, com salvamento automático, exclusão confirmada e histórico compartilhado entre dispositivos.
+- `lib/almoxarifado.ts` / `server/routes/almoxarifado.ts` / `src/Almoxarifado.tsx` — aba Almoxarifado (`#almoxarifado`), com estoque inicial de Embalagens/Etiquetas/Variados, entradas/saídas, mínimos e histórico persistidos na chave `almoxarifado:estado` do mesmo `kv_store` do Supabase.
 - `src/Relatorios.tsx` — acesso ao download Excel do Controle de Pedidos, no lugar do relatório de vendas por produto/período.
 - `server/index.ts` — sobe o Express e agenda **dois** `setInterval` — um pra Aguardando/Em
   separação/Separadas (30s, padrão) e outro pra Embaladas (10min, padrão) — como o

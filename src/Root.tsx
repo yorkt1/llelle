@@ -4,7 +4,7 @@ import { EmBreve } from "@/EmBreve";
 
 const SIDEBAR_STORAGE_KEY = "shell:sidebarRecolhida";
 /** Quantos módulos cabem direto na barra inferior do celular — o resto vai pro "Mais". */
-const ATALHOS_BARRA_INFERIOR = 4;
+const ATALHOS_BARRA_INFERIOR = 5;
 
 function moduloFromHash(): Modulo {
   return MODULOS.find((item) => item.hash !== "" && window.location.hash === `#${item.hash}`) ?? MODULOS[0];
