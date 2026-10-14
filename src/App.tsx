@@ -225,6 +225,7 @@ function SettingsPanel({
   isFullscreen,
   onToggleFullscreen,
   onClose,
+  onOpenColaboradores,
 }: {
   visible: Set<StageKey>;
   onToggleStage: (key: StageKey) => void;
@@ -234,6 +235,7 @@ function SettingsPanel({
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onClose: () => void;
+  onOpenColaboradores?: () => void;
 }) {
   return (
     <div className="settings-overlay" onClick={onClose}>
@@ -263,6 +265,17 @@ function SettingsPanel({
           ))}
         </div>
         <div className="settings-actions">
+          {onOpenColaboradores && (
+            <button
+              className="refresh-btn"
+              onClick={() => {
+                onClose();
+                onOpenColaboradores();
+              }}
+            >
+              Configurar colaboradores
+            </button>
+          )}
           <button className="refresh-btn" onClick={onToggleFullscreen}>
             {isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
           </button>
@@ -294,6 +307,7 @@ export function App() {
   const [stageColors, setStageColor, resetStageColors] = useStageColors();
   const [isFullscreen, toggleFullscreen] = useFullscreen();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [embalagemConfigAberta, setEmbalagemConfigAberta] = useState(false);
 
   const [data, setData] = useState<SeparacaoResponse | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -400,10 +414,14 @@ export function App() {
             setSettingsOpen(false);
           }}
           onClose={() => setSettingsOpen(false)}
+          onOpenColaboradores={() => {
+            setEmbalagemConfigAberta(true);
+            setSettingsOpen(false);
+          }}
         />
       )}
 
-      <Embalagem />
+      <Embalagem configAberta={embalagemConfigAberta} onConfigToggle={setEmbalagemConfigAberta} />
     </div>
   );
 }

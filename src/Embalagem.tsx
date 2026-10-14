@@ -100,14 +100,20 @@ function IconeAviso({ className }: { className?: string }) {
   );
 }
 
-export function Embalagem() {
+export function Embalagem({
+  configAberta,
+  onConfigToggle,
+}: {
+  configAberta?: boolean;
+  onConfigToggle?: (aberto: boolean) => void;
+} = {}) {
   const [dia, setDia] = useState(hojeBr());
   const [desempenho, setDesempenho] = useState<DesempenhoEmbalagem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
   const [colaboradores, setColaboradores] = useState<ColaboradorEmbalagem[]>([]);
-  const [mostrarConfig, setMostrarConfig] = useState(false);
+  const [mostrarConfig, setMostrarConfig] = useState(Boolean(configAberta));
   const [mostrarSaibaMais, setMostrarSaibaMais] = useState(false);
   const [novoId, setNovoId] = useState("");
   const [novoNome, setNovoNome] = useState("");
@@ -179,6 +185,12 @@ export function Embalagem() {
       // Lista de colaboradores é só pra tela de configuração — uma falha aqui não trava o relatório.
     }
   }, []);
+
+  useEffect(() => {
+    if (configAberta !== undefined) {
+      setMostrarConfig(configAberta);
+    }
+  }, [configAberta]);
 
   useEffect(() => {
     const kickoff = setTimeout(() => void carregarColaboradores(), 0);
@@ -319,10 +331,16 @@ export function Embalagem() {
         <button className="btn-primario" type="button" onClick={() => void carregarDesempenho(dia)} disabled={carregando}>
           {carregando ? "Atualizando..." : "Atualizar"}
         </button>
-        <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => setMostrarConfig((atual) => !atual)}>
-          <IconeConfig className="btn-icone" />
-          {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
-        </button>
+        {!onConfigToggle && (
+          <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => {
+            const proximo = !mostrarConfig;
+            setMostrarConfig(proximo);
+            onConfigToggle?.(proximo);
+          }}>
+            <IconeConfig className="btn-icone" />
+            {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
+          </button>
+        )}
       </form>
 
       {erro && <p className="error-banner">{erro}</p>}
