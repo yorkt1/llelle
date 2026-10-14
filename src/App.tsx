@@ -335,7 +335,7 @@ export function App() {
     return (
       <div className="page">
         <div className="connect">
-          <h1 className="title">Painel de Separação</h1>
+          <h1 className="title">Painel</h1>
           <p className="error-banner">{bootError}</p>
           <button className="refresh-btn" onClick={() => setAttempt((n) => n + 1)}>
             Tentar de novo
@@ -350,7 +350,7 @@ export function App() {
     return (
       <div className="page">
         <div className="connect">
-          <h1 className="title">Painel de Separação</h1>
+          <h1 className="title">Painel</h1>
           <p className="error-banner">
             O servidor ainda não tem o token do Olist configurado (OLIST_API_TOKEN). Preencha o
             .env.local (ou as variáveis de ambiente, em produção) e reinicie o servidor.
@@ -364,7 +364,7 @@ export function App() {
 
   return (
     <div className="page">
-      <PageHeader titulo="Painel de Separação">
+      <PageHeader titulo="Painel">
         <span className="clock tabular">{clock}</span>
       </PageHeader>
 

@@ -94,7 +94,7 @@ describe("Embalagem — CRUD de colaboradores", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /painel de separação/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^painel$/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /controle de tempo de embalagem/i })).toBeInTheDocument();
   });
 
