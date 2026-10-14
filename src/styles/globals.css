@@ -292,25 +292,36 @@ body {
 /* Discreto de propósito — o painel é pra ser limpo, não uma tela de app com botões por todo lado. */
 .settings-trigger {
   position: fixed;
-  /* Acima da barra inferior no celular; no desktop (sem barra) a variável é zerada abaixo. */
-  bottom: calc(1.5rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
-  right: 1.5rem;
-  width: 2.25rem;
-  height: 2.25rem;
+  left: 50%;
+  bottom: calc(0.8rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: 2.6rem;
+  height: 2.6rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: none;
-  border: none;
-  color: var(--muted);
-  opacity: 0.25;
+  padding: 0;
+  background: rgba(20, 22, 26, 0.82);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  color: var(--fg-secondary);
+  opacity: 1;
   cursor: pointer;
-  transition: opacity 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  z-index: 18;
+}
+
+.settings-trigger svg {
+  width: 0.96rem;
+  height: 0.96rem;
 }
 
 .settings-trigger:hover,
 .settings-trigger:focus-visible {
-  opacity: 1;
+  transform: translateX(-50%) scale(1.03);
+  border-color: var(--brand);
+  background: rgba(20, 22, 26, 0.96);
 }
 
 .settings-overlay {
@@ -509,6 +520,25 @@ body {
   .grid {
     grid-template-columns: 1fr;
     row-gap: 6vh;
+  }
+
+  .settings-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (min-width: 1024px) {
+  .settings-trigger {
+    left: auto;
+    right: 1.25rem;
+    transform: none;
+    bottom: 1.5rem;
+  }
+
+  .settings-trigger:hover,
+  .settings-trigger:focus-visible {
+    transform: scale(1.03);
   }
 }
 
