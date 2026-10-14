@@ -29,6 +29,7 @@ import {
   listarInfoProdutos,
   normalizarInfoProdutos,
   registrarInfoProdutos,
+  importarFotosFaltantesTiny,
 } from "../../lib/fotosProdutos";
 
 export const estoqueRouter = Router();
@@ -246,6 +247,27 @@ estoqueRouter.post("/produtos/fotos/trocar", async (req, res) => {
       return;
     }
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao trocar a foto." });
+  }
+});
+
+estoqueRouter.post("/produtos/fotos/importar-faltantes", async (req, res) => {
+  const nomes = Array.isArray(req.body?.nomes)
+    ? req.body.nomes.filter((nome: unknown): nome is string => typeof nome === "string").map((nome: string) => nome.trim()).filter(Boolean)
+    : [];
+  if (nomes.length === 0 || nomes.length > 5) {
+    res.status(400).json({ error: "Envie de 1 a 5 produtos por lote." });
+    return;
+  }
+  try {
+    const resultados = await importarFotosFaltantesTiny(nomes);
+    const info = await listarInfoProdutos();
+    res.status(200).json({ resultados, info });
+  } catch (error) {
+    if (error instanceof OlistConfigError || error instanceof CloudinaryConfigError || error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao buscar fotos no Tiny." });
   }
 });
 

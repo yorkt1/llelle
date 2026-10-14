@@ -1,5 +1,9 @@
 import * as store from "./store";
-import { salvarImagemRemota } from "./estoque";
+import { CloudinaryConfigError, listarProdutos, salvarImagemRemota } from "./estoque";
+import { buscarProdutosTiny, nomeSemVoltagem } from "./catalogoTiny";
+import { tinyGet } from "./tinyClient";
+import { OlistConfigError } from "./olist";
+import { StoreConfigError } from "./store";
 
 /**
  * Fotos manuais do catálogo do Estoque, guardadas no Cloudinary.
@@ -121,6 +125,146 @@ export async function definirFotoManual(nome: string, fotoDataUri: string): Prom
     return mapa;
   });
   return resultado;
+}
+
+interface ProdutoDetalheTiny {
+  retorno?: {
+    status?: string;
+    erros?: { erro?: string }[];
+    produto?: {
+      anexos?: { anexo?: string | { url?: string } }[];
+      imagens_externas?: { imagem_externa?: { url?: string } }[];
+    };
+  };
+}
+
+export interface ResultadoImportacaoFoto {
+  nome: string;
+  status: "importada" | "ja-tinha-foto" | "sem-vinculo" | "sem-imagem" | "erro";
+  mensagem?: string;
+}
+
+function normalizarNomeParaBusca(nome: string): string {
+  return nomeSemVoltagem(nome)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function urlImagensProduto(produto: NonNullable<ProdutoDetalheTiny["retorno"]>["produto"]): string[] {
+  if (!produto) return [];
+  const anexos = (produto.anexos ?? []).map(({ anexo }) => typeof anexo === "string" ? anexo : anexo?.url);
+  const externas = (produto.imagens_externas ?? []).map(({ imagem_externa }) => imagem_externa?.url);
+  return [...new Set([...externas, ...anexos].filter((url): url is string => typeof url === "string" && /^https?:\/\//i.test(url)))];
+}
+
+async function gravarResultadoFoto(
+  nome: string,
+  dados: { idsTiny: string[]; codigos: string[]; fotoStatus: StatusFoto; fotoUrl?: string; fotoErro?: string; fotoOrigem?: "tiny" },
+): Promise<void> {
+  const chave = chaveProduto(nome);
+  await store.update<Record<string, InfoProduto>>(CHAVE_INFO, (atual) => {
+    const mapa = { ...(atual ?? {}) };
+    const existente = mapa[chave];
+    if (existente?.fotoStatus === "ok" && existente.fotoUrl) return mapa;
+    mapa[chave] = {
+      nome: existente?.nome ?? nome.trim(),
+      idsTiny: [...new Set([...(existente?.idsTiny ?? []), ...dados.idsTiny])],
+      codigos: [...new Set([...(existente?.codigos ?? []), ...dados.codigos])],
+      fotoStatus: dados.fotoStatus,
+      ...(dados.fotoUrl ? { fotoUrl: dados.fotoUrl } : {}),
+      ...(dados.fotoErro ? { fotoErro: dados.fotoErro } : {}),
+      ...(dados.fotoOrigem ? { fotoOrigem: dados.fotoOrigem } : {}),
+      ...(dados.fotoUrl ? { fotoAtualizadaEm: new Date().toISOString() } : {}),
+    };
+    return mapa;
+  });
+}
+
+/** Importa imagens de um lote pequeno de produtos sem foto; foto manual ou já importada nunca é substituída. */
+export async function importarFotosFaltantesTiny(nomes: string[]): Promise<ResultadoImportacaoFoto[]> {
+  if (nomes.length === 0 || nomes.length > 5) throw new Error("Envie de 1 a 5 produtos por lote.");
+  const catalogo = await listarProdutos();
+  const mapa = await listarInfoProdutos();
+  const semVinculo = nomes.filter((nomeRecebido) => {
+    const nome = catalogo.find((produto) => chaveProduto(produto) === chaveProduto(nomeRecebido));
+    const info = nome ? mapa[chaveProduto(nome)] : undefined;
+    return Boolean(nome && !info?.fotoUrl && !info?.idsTiny?.length);
+  });
+  if (semVinculo.length > 1) throw new Error("Para proteger o limite do Tiny, envie apenas um produto sem ID por lote.");
+  const resultados: ResultadoImportacaoFoto[] = [];
+
+  for (const nomeRecebido of nomes) {
+    const nome = catalogo.find((produto) => chaveProduto(produto) === chaveProduto(nomeRecebido));
+    if (!nome) {
+      resultados.push({ nome: nomeRecebido, status: "erro", mensagem: "Produto não está no catálogo do Estoque." });
+      continue;
+    }
+
+    const atual = mapa[chaveProduto(nome)];
+    if (atual?.fotoStatus === "ok" && atual.fotoUrl) {
+      resultados.push({ nome, status: "ja-tinha-foto" });
+      continue;
+    }
+
+    let idsTiny = atual?.idsTiny ?? [];
+    let codigos = atual?.codigos ?? [];
+    try {
+      if (idsTiny.length === 0) {
+        const correspondencias = (await buscarProdutosTiny(nome, 2)).filter(
+          (produto) => normalizarNomeParaBusca(produto.sugestao) === normalizarNomeParaBusca(nome),
+        );
+        idsTiny = [...new Set(correspondencias.flatMap((produto) => produto.idsTiny))];
+        codigos = [...new Set(correspondencias.flatMap((produto) => produto.codigos))];
+        if (idsTiny.length === 0) {
+          const mensagem = "Não encontrei um produto com nome correspondente no Tiny.";
+          await gravarResultadoFoto(nome, { idsTiny, codigos, fotoStatus: "nao-encontrado", fotoErro: mensagem });
+          resultados.push({ nome, status: "sem-vinculo", mensagem });
+          continue;
+        }
+      }
+
+      let fotoUrl: string | undefined;
+      for (const id of idsTiny) {
+        const detalhe = await tinyGet<ProdutoDetalheTiny>("produto.obter.php", { id });
+        const produto = detalhe.retorno?.produto;
+        if (detalhe.retorno?.status !== "OK" || !produto) {
+          const motivo = detalhe.retorno?.erros?.map((item) => item.erro).filter(Boolean).join("; ");
+          throw new Error(motivo || "O Tiny não conseguiu abrir os dados deste produto.");
+        }
+        for (const url of urlImagensProduto(produto)) {
+          try {
+            fotoUrl = await salvarImagemRemota(url, PASTA_CLOUDINARY, `${slug(nome)}-tiny`);
+            break;
+          } catch (error) {
+            if (error instanceof CloudinaryConfigError) throw error;
+            // Um anexo pode ser documento ou estar indisponível; tenta a próxima imagem do produto.
+          }
+        }
+        if (fotoUrl) break;
+      }
+
+      if (!fotoUrl) {
+        const mensagem = "O Tiny não retornou uma imagem acessível para este produto.";
+        await gravarResultadoFoto(nome, { idsTiny, codigos, fotoStatus: "sem-foto", fotoErro: mensagem });
+        resultados.push({ nome, status: "sem-imagem", mensagem });
+        continue;
+      }
+
+      await gravarResultadoFoto(nome, { idsTiny, codigos, fotoStatus: "ok", fotoUrl, fotoOrigem: "tiny" });
+      resultados.push({ nome, status: "importada" });
+    } catch (error) {
+      if (error instanceof OlistConfigError || error instanceof CloudinaryConfigError || error instanceof StoreConfigError) throw error;
+      const mensagem = error instanceof Error ? error.message : "Falha ao consultar o Tiny.";
+      await gravarResultadoFoto(nome, { idsTiny, codigos, fotoStatus: "erro", fotoErro: mensagem });
+      resultados.push({ nome, status: "erro", mensagem });
+    }
+  }
+
+  return resultados;
 }
 
 /**

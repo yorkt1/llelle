@@ -94,9 +94,10 @@ export function agruparProdutosTiny(brutos: ProdutoBruto[]): ProdutoTiny[] {
   return [...porSugestao.values()].sort((a, b) => a.sugestao.localeCompare(b.sugestao, "pt-BR"));
 }
 
-export async function buscarProdutosTiny(termo: string): Promise<ProdutoTiny[]> {
+export async function buscarProdutosTiny(termo: string, maxPaginas = MAX_PAGINAS): Promise<ProdutoTiny[]> {
   const pesquisa = termo.trim();
   if (!pesquisa) throw new Error("Informe uma palavra pra buscar no Tiny (ex.: koti).");
+  const limitePaginas = Math.max(1, Math.min(MAX_PAGINAS, Math.floor(maxPaginas)));
 
   const brutos: ProdutoBruto[] = [];
   let pagina = 1;
@@ -112,7 +113,7 @@ export async function buscarProdutosTiny(termo: string): Promise<ProdutoTiny[]> 
       if (!nome) continue;
       brutos.push({ id: produto.id ? String(produto.id) : "", nome, codigo: produto.codigo, tipoVariacao: produto.tipoVariacao });
     }
-    totalPaginas = Math.min(retorno.numero_paginas ?? 1, MAX_PAGINAS);
+    totalPaginas = Math.min(retorno.numero_paginas ?? 1, limitePaginas);
     pagina++;
   } while (pagina <= totalPaginas);
 

@@ -22,11 +22,13 @@ describe("fotos manuais dos produtos", () => {
     process.env.CLOUDINARY_CLOUD_NAME = "t";
     process.env.CLOUDINARY_API_KEY = "t";
     process.env.CLOUDINARY_API_SECRET = "t";
+    process.env.OLIST_API_TOKEN = "token-teste";
     uploadMock.mockClear();
   });
 
   afterEach(async () => {
-    for (const variable of ["DATA_DIR", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"]) {
+    vi.unstubAllGlobals();
+    for (const variable of ["DATA_DIR", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET", "OLIST_API_TOKEN"]) {
       delete process.env[variable];
     }
     await fs.rm(dataDir, { recursive: true, force: true });
@@ -79,5 +81,91 @@ describe("fotos manuais dos produtos", () => {
     });
     expect((await listarInfoProdutos())["air fryer koti 4l"]).toMatchObject({ fotoOrigem: "manual" });
     expect(uploadMock).toHaveBeenCalledOnce();
+  });
+
+  it("puxa anexo do Tiny por ID, salva no Cloudinary e preserva o vínculo", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      retorno: {
+        status: "OK",
+        produto: { anexos: [{ anexo: "https://tiny.test/produto.jpg" }] },
+      },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { adicionarProduto, registrarInfoProdutos, importarFotosFaltantesTiny, listarInfoProdutos } = await fresh();
+    await adicionarProduto("Air Fryer Koti 4L");
+    await registrarInfoProdutos([{ nome: "Air Fryer Koti 4L", idsTiny: ["77"], codigos: ["AF-4L"] }]);
+
+    const resultados = await importarFotosFaltantesTiny(["Air Fryer Koti 4L"]);
+    const info = (await listarInfoProdutos())["air fryer koti 4l"];
+
+    expect(resultados).toEqual([{ nome: "Air Fryer Koti 4L", status: "importada" }]);
+    expect(info).toMatchObject({
+      idsTiny: ["77"],
+      codigos: ["AF-4L"],
+      fotoStatus: "ok",
+      fotoOrigem: "tiny",
+      fotoUrl: "https://res.cloudinary.com/t/llelle-produtos/air-fryer-koti-4l-tiny.jpg",
+    });
+    expect(uploadMock).toHaveBeenCalledWith("https://tiny.test/produto.jpg", expect.objectContaining({ folder: "llelle-produtos" }));
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("localiza o ID exato pelo nome para produto manual e usa imagem externa", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/produtos.pesquisa.php")) {
+        return new Response(JSON.stringify({
+          retorno: {
+            status: "OK",
+            numero_paginas: 1,
+            produtos: [{ produto: { id: 99, nome: "Air Fryer Koti 4L 220V", codigo: "AF-4L-220", tipoVariacao: "N" } }],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        retorno: {
+          status: "OK",
+          produto: { imagens_externas: [{ imagem_externa: { url: "https://tiny.test/externa.png" } }] },
+        },
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { adicionarProduto, importarFotosFaltantesTiny, listarInfoProdutos } = await fresh();
+    await adicionarProduto("Air Fryer Koti 4L");
+
+    const resultados = await importarFotosFaltantesTiny(["Air Fryer Koti 4L"]);
+    const info = (await listarInfoProdutos())["air fryer koti 4l"];
+
+    expect(resultados).toEqual([{ nome: "Air Fryer Koti 4L", status: "importada" }]);
+    expect(info).toMatchObject({ idsTiny: ["99"], codigos: ["AF-4L-220"], fotoStatus: "ok", fotoOrigem: "tiny" });
+    expect(uploadMock).toHaveBeenCalledWith("https://tiny.test/externa.png", expect.objectContaining({ folder: "llelle-produtos" }));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("não sobrescreve uma foto manual ao buscar imagens faltantes", async () => {
+    const fotoManual = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { adicionarProduto, definirFotoManual, importarFotosFaltantesTiny, listarInfoProdutos } = await fresh();
+    await adicionarProduto("Air Fryer Koti 4L");
+    await definirFotoManual("Air Fryer Koti 4L", fotoManual);
+
+    const resultados = await importarFotosFaltantesTiny(["Air Fryer Koti 4L"]);
+    const info = (await listarInfoProdutos())["air fryer koti 4l"];
+
+    expect(resultados).toEqual([{ nome: "Air Fryer Koti 4L", status: "ja-tinha-foto" }]);
+    expect(info.fotoOrigem).toBe("manual");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(uploadMock).toHaveBeenCalledOnce();
+  });
+
+  it("não pesquisa vários produtos sem ID juntos para respeitar o limite do Tiny", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { adicionarProdutos, importarFotosFaltantesTiny } = await fresh();
+    await adicionarProdutos(["Produto Manual A", "Produto Manual B"]);
+
+    await expect(importarFotosFaltantesTiny(["Produto Manual A", "Produto Manual B"])).rejects.toThrow(/apenas um produto sem ID/i);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

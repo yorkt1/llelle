@@ -964,6 +964,7 @@ function ModalProdutos({
   unidadesPorCaixa,
   onFechar,
   onAlterado,
+  onFotosAtualizadas,
   onSalvarUnidadesPorCaixa,
 }: {
   produtos: string[];
@@ -971,6 +972,7 @@ function ModalProdutos({
   unidadesPorCaixa: Record<string, number>;
   onFechar: () => void;
   onAlterado: (produtos: string[]) => void;
+  onFotosAtualizadas: (info: Record<string, InfoProduto>) => void;
   onSalvarUnidadesPorCaixa: (produto: string, unidades: number | null) => Promise<void>;
 }) {
   const [novoProduto, setNovoProduto] = useState("");
@@ -992,9 +994,70 @@ function ModalProdutos({
       ),
   );
   const [buscandoTiny, setBuscandoTiny] = useState(false);
+  const [buscandoFotos, setBuscandoFotos] = useState(false);
+  const [progressoFotos, setProgressoFotos] = useState<{ atual: number; total: number; aguardando?: boolean } | null>(null);
   const [textoColado, setTextoColado] = useState("");
   const [avisoLote, setAvisoLote] = useState<string | null>(null);
   const noCatalogo = useMemo(() => new Set(produtos.map((p) => (nomeProdutoComVoltagemUnica(p)?.nome ?? p).toLowerCase())), [produtos]);
+  const fotosPendentes = produtos.filter((nome) => !info[chaveDoProduto(nome)]?.fotoUrl);
+
+  const buscarFotosFaltantes = useCallback(async () => {
+    if (buscandoFotos || fotosPendentes.length === 0) return;
+    setBuscandoFotos(true);
+    setErroProdutos(null);
+    setAvisoLote(null);
+    setProgressoFotos({ atual: 0, total: fotosPendentes.length });
+    let importadas = 0;
+    let semVinculo = 0;
+    let semImagem = 0;
+    let falhas = 0;
+    const detalhes = new Set<string>();
+    const comId = fotosPendentes.filter((nome) => (info[chaveDoProduto(nome)]?.idsTiny?.length ?? 0) > 0);
+    const semId = fotosPendentes.filter((nome) => (info[chaveDoProduto(nome)]?.idsTiny?.length ?? 0) === 0);
+    const lotes: string[][] = [];
+    for (let inicio = 0; inicio < comId.length; inicio += 5) lotes.push(comId.slice(inicio, inicio + 5));
+    for (const nome of semId) lotes.push([nome]);
+    let processados = 0;
+    try {
+      for (let indiceLote = 0; indiceLote < lotes.length; indiceLote++) {
+        const lote = lotes[indiceLote];
+        setProgressoFotos({ atual: processados, total: fotosPendentes.length });
+        const resposta = await fetch(`${API_URL}/api/estoque/produtos/fotos/importar-faltantes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nomes: lote }),
+        });
+        const json = await resposta.json();
+        if (!resposta.ok) throw new Error(json.error ?? "Não consegui buscar as fotos no Tiny.");
+        const resultados: { nome: string; status: string; mensagem?: string }[] = json.resultados ?? [];
+        importadas += resultados.filter((resultado) => resultado.status === "importada").length;
+        semVinculo += resultados.filter((resultado) => resultado.status === "sem-vinculo").length;
+        semImagem += resultados.filter((resultado) => resultado.status === "sem-imagem").length;
+        falhas += resultados.filter((resultado) => resultado.status === "erro").length;
+        for (const resultado of resultados) {
+          if (["sem-vinculo", "sem-imagem", "erro"].includes(resultado.status)) {
+            if (resultado.mensagem) detalhes.add(`${resultado.nome}: ${resultado.mensagem}`);
+          }
+        }
+        onFotosAtualizadas(json.info ?? {});
+        processados += lote.length;
+        setProgressoFotos({ atual: processados, total: fotosPendentes.length });
+        if (indiceLote < lotes.length - 1) {
+          setProgressoFotos({ atual: processados, total: fotosPendentes.length, aguardando: true });
+          await new Promise((resolve) => window.setTimeout(resolve, 20_000));
+        }
+      }
+      setAvisoLote(
+        `${importadas} foto(s) importada(s) · ${semVinculo} sem vínculo no Tiny · ${semImagem} sem imagem no Tiny · ${falhas} falha(s).`,
+      );
+      if (detalhes.size > 0) setErroProdutos([...detalhes].slice(0, 4).join(" · "));
+    } catch (error) {
+      setErroProdutos(error instanceof Error ? error.message : "Não consegui buscar as fotos no Tiny.");
+    } finally {
+      setBuscandoFotos(false);
+      setProgressoFotos(null);
+    }
+  }, [buscandoFotos, fotosPendentes, info, onFotosAtualizadas]);
 
   const buscarNoTiny = useCallback(async () => {
     setBuscandoTiny(true);
@@ -1122,6 +1185,24 @@ function ModalProdutos({
           </div>
 
           {avisoLote && <p className="aviso-sucesso">{avisoLote}</p>}
+
+          {modo === "lista" && produtos.length > 0 && (
+            <div className="catalogo-fotos-faltantes">
+              <button
+                type="button"
+                className="refresh-btn"
+                onClick={() => void buscarFotosFaltantes()}
+                disabled={buscandoFotos || fotosPendentes.length === 0}
+              >
+                {buscandoFotos && progressoFotos
+                  ? progressoFotos.aguardando
+                    ? `Pausa para limite do Tiny · ${progressoFotos.atual}/${progressoFotos.total}`
+                    : `Buscando fotos ${progressoFotos.atual}/${progressoFotos.total}…`
+                  : `Buscar fotos faltantes (${fotosPendentes.length})`}
+              </button>
+              <span className="field-value--muted">As fotos existentes não serão substituídas.</span>
+            </div>
+          )}
 
           {modo === "sugestoes" && (
             <>
@@ -1366,6 +1447,8 @@ function ModalProdutos({
 }
 
 interface InfoProduto {
+  idsTiny?: string[];
+  codigos?: string[];
   fotoUrl?: string;
   fotoStatus?: "pendente" | "ok" | "sem-foto" | "nao-encontrado" | "erro";
   fotoOrigem?: "tiny" | "manual";
@@ -2556,6 +2639,7 @@ export function Estoque() {
             setProdutos(lista);
             void carregarProdutos();
           }}
+          onFotosAtualizadas={setInfo}
           onSalvarUnidadesPorCaixa={salvarUnidadesPorCaixa}
         />
       )}
