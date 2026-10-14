@@ -395,7 +395,10 @@ export function App() {
           onColorChange={setStageColor}
           onResetColors={resetStageColors}
           isFullscreen={isFullscreen}
-          onToggleFullscreen={toggleFullscreen}
+          onToggleFullscreen={() => {
+            toggleFullscreen();
+            setSettingsOpen(false);
+          }}
           onClose={() => setSettingsOpen(false)}
         />
       )}

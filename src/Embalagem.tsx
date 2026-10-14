@@ -329,21 +329,6 @@ export function Embalagem() {
 
       {desempenho && (
         <>
-          <p className="nota-info nota-info--aviso">
-            {!desempenho.completo && <IconeAviso className="nota-info-icone" />}
-            Atualizado às {new Date(desempenho.atualizadoEm).toLocaleTimeString("pt-BR")}
-            {!desempenho.completo ? " — ainda sincronizando com o Tiny, os números vão completar nas próximas atualizações." : ""}
-            {desempenho.naoIdentificados > 0
-              ? ` · ${desempenho.naoIdentificados} pedido(s) embalado(s) sem identificação de quem embalou (campo não veio do Tiny).`
-              : ""}
-          </p>
-          {desempenho.dia === hojeBr() && (
-            <p className="nota-info">
-              Hoje, o tempo começa às 7h20, para às 17h e desconta o almoço (12h–13h12).
-              Pode haver atraso entre a bipagem e a sincronização do Tiny.
-            </p>
-          )}
-
           {bancadas.length === 0 ? (
             <div className="estado-vazio">
               <p className="estado-vazio-titulo">Nenhuma bancada cadastrada ainda.</p>
@@ -387,6 +372,21 @@ export function Embalagem() {
             total: {desempenho.totalPedidos} pedidos · {desempenho.dia === hojeBr() ? "tempo acumulado " : ""}
             {desempenho.totalTempoFormatado}
           </p>
+
+          <p className="nota-info nota-info--aviso">
+            {!desempenho.completo && <IconeAviso className="nota-info-icone" />}
+            Atualizado às {new Date(desempenho.atualizadoEm).toLocaleTimeString("pt-BR")}
+            {!desempenho.completo ? " — ainda sincronizando com o Tiny, os números vão completar nas próximas atualizações." : ""}
+            {desempenho.naoIdentificados > 0
+              ? ` · ${desempenho.naoIdentificados} pedido(s) embalado(s) sem identificação de quem embalou (campo não veio do Tiny).`
+              : ""}
+          </p>
+          {desempenho.dia === hojeBr() && (
+            <p className="nota-info">
+              Hoje, o tempo começa às 7h20, para às 17h e desconta o almoço (12h–13h12).
+              Pode haver atraso entre a bipagem e a sincronização do Tiny.
+            </p>
+          )}
 
           {desempenhoSemBancada.length > 0 && (
             <div className="embalagem-grid embalagem-grid--secundario">
