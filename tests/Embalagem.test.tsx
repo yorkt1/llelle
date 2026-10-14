@@ -118,6 +118,14 @@ describe("Embalagem — CRUD de colaboradores", () => {
     vi.unstubAllGlobals();
   });
 
+  it("mostra skeletons das bancadas enquanto os dados iniciais carregam", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    const { container } = render(<Embalagem />);
+
+    expect(screen.getByRole("status", { name: /carregando desempenho de embalagem/i })).toHaveAttribute("aria-busy", "true");
+    expect(container.querySelectorAll(".bancada-card--skeleton")).toHaveLength(4);
+  });
+
   it("Create: cadastra um colaborador novo e ele aparece na tabela", async () => {
     mockarFetch();
     render(<Embalagem />);

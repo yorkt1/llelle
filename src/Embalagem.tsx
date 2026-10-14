@@ -110,7 +110,7 @@ export function Embalagem({
   const [dia] = useState(hojeBr());
   const [desempenho, setDesempenho] = useState<DesempenhoEmbalagem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [carregando, setCarregando] = useState(false);
+  const [carregando, setCarregando] = useState(true);
 
   const [colaboradores, setColaboradores] = useState<ColaboradorEmbalagem[]>([]);
   const [mostrarConfig, setMostrarConfig] = useState(Boolean(configAberta));
@@ -425,6 +425,25 @@ export function Embalagem({
             </div>
           )}
         </>
+      )}
+
+      {!desempenho && carregando && (
+        <div className="bancada-grid bancada-grid--carregando" role="status" aria-label="Carregando desempenho de embalagem" aria-busy="true">
+          {["01", "02", "03", "04"].map((bancada) => (
+            <div key={bancada} className="bancada-card bancada-card--skeleton" aria-hidden="true">
+              <span className="skeleton bancada-skeleton-titulo" />
+              <span className="skeleton bancada-skeleton-nome" />
+              <div className="bancada-card-stats">
+                {["bipados", "hora", "tempo"].map((stat) => (
+                  <div key={stat} className="bancada-card-stat">
+                    <span className="skeleton bancada-skeleton-valor" />
+                    <span className="skeleton bancada-skeleton-legenda" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {mostrarConfig && (

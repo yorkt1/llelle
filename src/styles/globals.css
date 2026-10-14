@@ -568,7 +568,7 @@ body {
   min-height: 0;
   flex: 0 0 auto;
   gap: 0.75rem;
-  padding: 0 var(--space-page-x);
+  padding: 0;
 }
 
 .painel-tv .bancada-grid {
@@ -582,6 +582,15 @@ body {
 .painel-tv .bancada-card-nome {
   margin-bottom: 0.75rem;
 }
+
+.bancada-card--skeleton {
+  gap: 0.65rem;
+}
+
+.bancada-skeleton-titulo { width: 38%; height: 1.35rem; }
+.bancada-skeleton-nome { width: 52%; height: 1.8rem; }
+.bancada-skeleton-valor { width: 3.5rem; height: 2.5rem; }
+.bancada-skeleton-legenda { width: 5rem; height: 1rem; }
 
 /* Formulário avulso (ex.: Relatórios) vira um cartão — um formulário de 3 campos esticado em
    1400px de largura fica ilegível; o cartão tem largura de leitura e fica alinhado à esquerda. */
