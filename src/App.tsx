@@ -377,7 +377,7 @@ export function App() {
   const stages = STAGES.filter((stage) => visibleStages.has(stage.key));
 
   return (
-    <div className="page">
+    <div className="page painel-tv">
       <PageHeader titulo="Painel">
         <span className="clock tabular">{clock}</span>
       </PageHeader>

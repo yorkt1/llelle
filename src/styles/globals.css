@@ -549,6 +549,40 @@ body {
   gap: 1.5rem;
 }
 
+.page.painel-tv {
+  justify-content: flex-start;
+  gap: 0.75rem;
+  padding-block: 0.75rem;
+}
+
+.painel-tv > .page-header {
+  padding-bottom: 0.5rem;
+}
+
+.painel-tv > .grid .stage {
+  gap: 0.6rem;
+  padding-top: 0.75rem;
+}
+
+.painel-tv > .page.pagina-formulario {
+  min-height: 0;
+  flex: 0 0 auto;
+  gap: 0.75rem;
+  padding: 0 var(--space-page-x);
+}
+
+.painel-tv .bancada-grid {
+  gap: 0.75rem;
+}
+
+.painel-tv .bancada-card {
+  padding: 1rem 1.25rem;
+}
+
+.painel-tv .bancada-card-nome {
+  margin-bottom: 0.75rem;
+}
+
 /* Formulário avulso (ex.: Relatórios) vira um cartão — um formulário de 3 campos esticado em
    1400px de largura fica ilegível; o cartão tem largura de leitura e fica alinhado à esquerda. */
 .formulario {
