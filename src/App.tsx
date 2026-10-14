@@ -395,9 +395,6 @@ export function App() {
         <GhostGrid stages={stages} colors={stageColors} />
       )}
 
-      {data?.syncedAt && (
-        <p className="nota-info">Última sincronização com o Tiny: {new Date(data.syncedAt).toLocaleTimeString("pt-BR")}</p>
-      )}
       {syncError && <p className="error-banner">{syncError}</p>}
 
       <SettingsButton onClick={() => setSettingsOpen(true)} />

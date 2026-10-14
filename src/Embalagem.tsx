@@ -107,7 +107,7 @@ export function Embalagem({
   configAberta?: boolean;
   onConfigToggle?: (aberto: boolean) => void;
 } = {}) {
-  const [dia, setDia] = useState(hojeBr());
+  const [dia] = useState(hojeBr());
   const [desempenho, setDesempenho] = useState<DesempenhoEmbalagem | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -197,9 +197,7 @@ export function Embalagem({
     return () => clearTimeout(kickoff);
   }, [carregarColaboradores]);
 
-  // Reconsulta ao trocar o dia, e continua atualizando em intervalo — seguro agora que o GET só
-  // lê cache no servidor (ver comentário em POLL_MS). O botão "Atualizar" ao lado cobre quem quer
-  // forçar uma olhada na hora, sem esperar o próximo tick.
+  // Consulta ao carregar e continua atualizando em intervalo; o GET só lê cache no servidor.
   useEffect(() => {
     const kickoff = setTimeout(() => void carregarDesempenho(dia), 0);
     const id = setInterval(() => void carregarDesempenho(dia), POLL_MS);
@@ -316,34 +314,17 @@ export function Embalagem({
 
   return (
     <div className="page pagina-formulario">
-      <div className="embalagem-secao-header">
-        <h2 className="title">Controle de Tempo de Embalagem</h2>
-      </div>
-
-      <form className="busca-linha busca-linha--alinhada" onSubmit={(event) => event.preventDefault()}>
-        <label className="field">
-          <span className="field-label">Dia</span>
-          <input className="field-input" value={dia} onChange={(event) => setDia(event.target.value)} placeholder="dd/mm/aaaa" />
-        </label>
-        <button className="refresh-btn" type="button" onClick={() => setDia(hojeBr())}>
-          Hoje
-        </button>
-        <button className="btn-primario" type="button" onClick={() => void carregarDesempenho(dia)} disabled={carregando}>
-          {carregando ? "Atualizando..." : "Atualizar"}
-        </button>
-        {!onConfigToggle && (
-          <button type="button" className="refresh-btn refresh-btn--icone" onClick={() => {
-            const proximo = !mostrarConfig;
-            setMostrarConfig(proximo);
-            onConfigToggle?.(proximo);
-          }}>
-            <IconeConfig className="btn-icone" />
-            {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
-          </button>
-        )}
-      </form>
-
       {erro && <p className="error-banner">{erro}</p>}
+      {!onConfigToggle && (
+        <button
+          type="button"
+          className="refresh-btn refresh-btn--icone"
+          onClick={() => setMostrarConfig((atual) => !atual)}
+        >
+          <IconeConfig className="btn-icone" />
+          {mostrarConfig ? "Esconder colaboradores" : "Configurar colaboradores"}
+        </button>
+      )}
 
       {desempenho && (
         <>
@@ -391,18 +372,13 @@ export function Embalagem({
             {desempenho.totalTempoFormatado}
           </p>
 
-          <p className="nota-info nota-info--aviso">
-            {!desempenho.completo && <IconeAviso className="nota-info-icone" />}
-            Atualizado às {new Date(desempenho.atualizadoEm).toLocaleTimeString("pt-BR")}
-            {!desempenho.completo ? " — ainda sincronizando com o Tiny, os números vão completar nas próximas atualizações." : ""}
-            {desempenho.naoIdentificados > 0
-              ? ` · ${desempenho.naoIdentificados} pedido(s) embalado(s) sem identificação de quem embalou (campo não veio do Tiny).`
-              : ""}
-          </p>
-          {desempenho.dia === hojeBr() && (
-            <p className="nota-info">
-              Hoje, o tempo começa às 7h20, para às 17h e desconta o almoço (12h–13h12).
-              Pode haver atraso entre a bipagem e a sincronização do Tiny.
+          {(!desempenho.completo || desempenho.naoIdentificados > 0) && (
+            <p className="nota-info nota-info--aviso">
+              {!desempenho.completo && <IconeAviso className="nota-info-icone" />}
+              {!desempenho.completo ? "Ainda sincronizando com o Tiny, os números vão completar nas próximas atualizações." : ""}
+              {desempenho.naoIdentificados > 0
+                ? `${!desempenho.completo ? " · " : ""}${desempenho.naoIdentificados} pedido(s) embalado(s) sem identificação de quem embalou (campo não veio do Tiny).`
+                : ""}
             </p>
           )}
 

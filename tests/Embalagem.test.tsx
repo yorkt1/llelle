@@ -95,7 +95,10 @@ describe("Embalagem — CRUD de colaboradores", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /^painel$/i })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: /controle de tempo de embalagem/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /controle de tempo de embalagem/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^dia$/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^hoje$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^atualizar$/i })).not.toBeInTheDocument();
   });
 
   it("não mostra o relatório dentro da tela de embalagem, que fica só no painel da TV", async () => {
@@ -103,7 +106,7 @@ describe("Embalagem — CRUD de colaboradores", () => {
     render(<Embalagem />);
 
     expect(screen.queryByRole("button", { name: /relatório/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /controle de tempo de embalagem/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /controle de tempo de embalagem/i })).not.toBeInTheDocument();
   });
 
   beforeEach(() => {
