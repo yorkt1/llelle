@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { Embalagem } from "@/Embalagem";
 import { PageHeader } from "@/PageHeader";
 
 interface SeparacaoCounts {
@@ -398,6 +399,8 @@ export function App() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      <Embalagem />
     </div>
   );
 }

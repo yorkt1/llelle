@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { App } from "../src/App";
 import { Embalagem } from "../src/Embalagem";
 
 function jsonResponse(body: unknown, status = 200) {
@@ -60,6 +61,51 @@ async function abrirPainelDeColaboradores() {
 }
 
 describe("Embalagem — CRUD de colaboradores", () => {
+  it("fica abaixo do painel principal, em vez de ser um módulo independente", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown) => {
+        const url = String(input);
+        if (url.includes("/api/separacao")) {
+          return jsonResponse({
+            connected: true,
+            counts: { aguardandoSeparacao: 1, emSeparacao: 2, separadas: 3, embaladas: 4 },
+            syncedAt: new Date().toISOString(),
+          });
+        }
+        if (url.includes("/api/embalagem?")) {
+          return jsonResponse({
+            dia: "14/10/2026",
+            colaboradores: [],
+            totalPedidos: 0,
+            totalHoras: 0,
+            totalTempoFormatado: "0h 00min",
+            naoIdentificados: 0,
+            completo: true,
+            atualizadoEm: new Date().toISOString(),
+          });
+        }
+        if (url.includes("/api/embalagem/colaboradores")) {
+          return jsonResponse({ colaboradores: [] });
+        }
+        throw new Error(`fetch inesperado: ${url}`);
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /painel de separação/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /controle de tempo de embalagem/i })).toBeInTheDocument();
+  });
+
+  it("não mostra o relatório dentro da tela de embalagem, que fica só no painel da TV", async () => {
+    mockarFetch();
+    render(<Embalagem />);
+
+    expect(screen.queryByRole("button", { name: /relatório/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /controle de tempo de embalagem/i })).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     vi.useRealTimers();
   });
