@@ -429,7 +429,11 @@ contagens e movimentações.
   palavras e código exato de gaveta; filtro por voltagem, ordem e opção
   “Só com estoque” ligada por padrão. Busca, filtros e visão são refletidos
   na URL. Cards exibem SKU, voltagem, todas as gavetas e a data da última
-  contagem. A visão de produtos pode ser exportada para CSV.
+  contagem. A ação principal “Nova contagem” permite escolher uma gaveta
+  existente ou criar uma nova; cadastro e configurações ficam em “Mais ações”.
+  No celular, o formulário ocupa a tela, usa alvos de toque maiores e mantém
+  Salvar acessível enquanto o conteúdo rola. A visão de produtos pode ser
+  exportada para CSV.
 
 Ainda não há conciliação automática com o saldo do Tiny, etiquetas QR ou uma
 rota móvel dedicada para contagem. A câmera usa `capture="environment"`, mas

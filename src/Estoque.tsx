@@ -750,7 +750,7 @@ function FormularioContagem({
     <div className="settings-overlay" onClick={solicitarFechamento}>
       <div
         ref={painelRef}
-        className="settings-panel"
+        className="settings-panel estoque-contagem-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="estoque-contagem-titulo"
@@ -768,7 +768,7 @@ function FormularioContagem({
           </h2>
         </div>
 
-        <div className="settings-panel-body">
+        <div className="settings-panel-body estoque-contagem-corpo">
           {modal.modo === "nova" && (
             <div className="estoque-rua-gaveta">
               <label className="field">
@@ -965,7 +965,7 @@ function FormularioContagem({
             <button
               ref={fotoBotaoRef}
               type="button"
-              className="refresh-btn"
+              className="refresh-btn estoque-foto-acao"
               onClick={() => {
                 tocar("foto");
                 inputFotoRef.current?.click();
@@ -2553,6 +2553,81 @@ function ModalConfiguracaoAlerta({
   );
 }
 
+function ModalEscolherContagem({
+  posicoes,
+  onEscolher,
+  onNovaGaveta,
+  onFechar,
+}: {
+  posicoes: PosicaoResumo[];
+  onEscolher: (posicao: PosicaoResumo) => void;
+  onNovaGaveta: () => void;
+  onFechar: () => void;
+}) {
+  const [buscaLocal, setBuscaLocal] = useState("");
+  const painelRef = useDialogAccessibility(onFechar);
+  const buscaNormalizada = normalizar(buscaLocal.trim());
+  const posicoesFiltradas = [...posicoes]
+    .filter((posicao) =>
+      !buscaNormalizada ||
+      normalizar(`${posicao.rua} ${posicao.codigo} ${posicao.produto ?? ""} ${posicao.voltagem ?? ""}`).includes(buscaNormalizada),
+    )
+    .sort(ordenarGavetas);
+
+  return (
+    <div className="settings-overlay" onClick={onFechar}>
+      <div
+        ref={painelRef}
+        className="settings-panel estoque-escolher-contagem"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="estoque-escolher-contagem-titulo"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="settings-panel-header">
+          <button className="settings-close" onClick={onFechar} aria-label="Fechar">×</button>
+          <h2 id="estoque-escolher-contagem-titulo" className="settings-title">Nova contagem</h2>
+          <p className="settings-hint">Escolha uma gaveta para recontar ou crie uma nova.</p>
+        </div>
+        <div className="settings-panel-body">
+          <label className="field">
+            <span className="field-label">Buscar gaveta, produto ou longarina</span>
+            <input
+              className="field-input"
+              type="search"
+              placeholder="Ex.: F3 ou chaleira"
+              value={buscaLocal}
+              onChange={(event) => setBuscaLocal(event.target.value)}
+              autoFocus
+            />
+          </label>
+          {posicoesFiltradas.length > 0 ? (
+            <ul className="estoque-escolher-contagem-lista">
+              {posicoesFiltradas.map((posicao) => (
+                <li key={`${posicao.rua}::${posicao.codigo}`}>
+                  <button type="button" className="estoque-escolher-contagem-item" onClick={() => onEscolher(posicao)}>
+                    <strong>{posicao.codigo}</strong>
+                    <span>{posicao.produto ?? "Gaveta sem produto"}{posicao.voltagem ? ` · ${posicao.voltagem}` : ""}</span>
+                    <span className="tabular">{posicao.ultima.quantidade} un.</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="estado-vazio-titulo">
+              {posicoes.length === 0 ? "Ainda não há gavetas cadastradas." : "Nenhuma gaveta corresponde à busca."}
+            </p>
+          )}
+        </div>
+        <div className="settings-panel-footer">
+          <button type="button" className="btn-primario" onClick={onNovaGaveta}>Criar gaveta nova</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Estoque() {
   const [ruas, setRuas] = useState<RuaResumo[]>([]);
   const [produtos, setProdutos] = useState<string[]>([]);
@@ -2561,6 +2636,7 @@ export function Estoque() {
   const [erroUnidadesPorCaixa, setErroUnidadesPorCaixa] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [movimentacao, setMovimentacao] = useState<PosicaoResumo | null>(null);
+  const [mostrarEscolhaContagem, setMostrarEscolhaContagem] = useState(false);
   const [carregou, setCarregou] = useState(false);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [responsaveisCadastrados, setResponsaveisCadastrados] = useState<string[]>([]);
@@ -2956,24 +3032,25 @@ export function Estoque() {
   const filtroAtivo = termo !== "" || filtroVoltagem !== "" || soComEstoque;
 
   return (
-    <div className="page pagina-formulario">
+    <div className="page pagina-formulario estoque-pagina">
       <PageHeader titulo="Estoque" subtitulo="Onde está cada produto no galpão — rua e gaveta">
-        <button type="button" className="refresh-btn" onClick={() => setMostrarModalProdutos(true)}>
-          + Produto
-        </button>
-        <button
-          type="button"
-          className="refresh-btn"
-          onClick={() => setMostrarConfiguracaoAlerta(true)}
-          disabled={limiteEstoqueBaixo === null}
-        >
-          Configuração geral
-        </button>
-        <button type="button" className="refresh-btn" onClick={() => setMostrarRuas(true)}>
-          Gerenciar longarinas
-        </button>
-        <button type="button" className="btn-primario" onClick={() => abrirNovaGaveta()}>
-          + Gaveta
+        <details className="estoque-mais-acoes">
+          <summary className="refresh-btn">Mais ações</summary>
+          <div className="estoque-mais-acoes-menu">
+            <button type="button" className="refresh-btn" onClick={() => setMostrarModalProdutos(true)}>Produtos</button>
+            <button
+              type="button"
+              className="refresh-btn"
+              onClick={() => setMostrarConfiguracaoAlerta(true)}
+              disabled={limiteEstoqueBaixo === null}
+            >
+              Configuração geral
+            </button>
+            <button type="button" className="refresh-btn" onClick={() => setMostrarRuas(true)}>Gerenciar longarinas</button>
+          </div>
+        </details>
+        <button type="button" className="btn-primario estoque-nova-contagem-cta" onClick={() => setMostrarEscolhaContagem(true)}>
+          Nova contagem
         </button>
       </PageHeader>
 
@@ -3364,6 +3441,21 @@ export function Estoque() {
           }}
           onFotosAtualizadas={setInfo}
           onSalvarUnidadesPorCaixa={salvarUnidadesPorCaixa}
+        />
+      )}
+
+      {mostrarEscolhaContagem && (
+        <ModalEscolherContagem
+          posicoes={todasAsGavetas}
+          onEscolher={(posicao) => {
+            setMostrarEscolhaContagem(false);
+            window.setTimeout(() => abrirGaveta(posicao), 0);
+          }}
+          onNovaGaveta={() => {
+            setMostrarEscolhaContagem(false);
+            window.setTimeout(() => abrirNovaGaveta(), 0);
+          }}
+          onFechar={() => setMostrarEscolhaContagem(false)}
         />
       )}
 

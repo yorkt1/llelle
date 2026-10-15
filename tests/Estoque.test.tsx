@@ -31,8 +31,9 @@ describe("Estoque", () => {
     const user = userEvent.setup();
     render(<Estoque />);
 
-    const abrir = await screen.findByRole("button", { name: "+ Gaveta" });
+    const abrir = await screen.findByRole("button", { name: "Nova contagem" });
     await user.click(abrir);
+    await user.click(screen.getByRole("button", { name: "Criar gaveta nova" }));
     const dialog = screen.getByRole("dialog", { name: /nova gaveta/i });
     const fechar = within(dialog).getByRole("button", { name: "Fechar" });
     const botoes = within(dialog).getAllByRole("button");
@@ -51,6 +52,42 @@ describe("Estoque", () => {
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(abrir).toHaveFocus();
+  });
+
+  it("permite iniciar recontagem de gaveta existente ou criar uma nova pela ação principal", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: unknown) => {
+      const url = String(input);
+      if (url.endsWith("/api/estoque")) {
+        return jsonResponse({
+          ruas: [{
+            rua: "A",
+            posicoes: [{
+              rua: "A",
+              codigo: "A1",
+              produto: "Liquidificador 220V",
+              voltagem: "220V",
+              ultima: { id: "atual", quantidade: 8, responsavel: "Ana", fotoUrl: "foto", criadoEm: "2026-10-15T12:00:00.000Z" },
+            }],
+          }],
+        });
+      }
+      if (url.endsWith("/api/estoque/produtos")) return jsonResponse({ produtos: ["Liquidificador 220V"], info: {}, unidadesPorCaixa: {} });
+      if (url.endsWith("/api/estoque/configuracao-alerta")) return jsonResponse({ limiteEstoqueBaixo: 5 });
+      if (url.endsWith("/api/embalagem/colaboradores")) return jsonResponse({ colaboradores: [{ nome: "Ana" }] });
+      return jsonResponse({});
+    }));
+    const user = userEvent.setup();
+    render(<Estoque />);
+
+    await user.click(await screen.findByRole("button", { name: "Nova contagem" }));
+    const escolher = screen.getByRole("dialog", { name: "Nova contagem" });
+    await user.click(within(escolher).getByRole("button", { name: /A1.*8 un\./ }));
+    expect(await screen.findByRole("dialog", { name: /A1/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+
+    await user.click(screen.getByRole("button", { name: "Nova contagem" }));
+    await user.click(screen.getByRole("button", { name: "Criar gaveta nova" }));
+    expect(await screen.findByRole("dialog", { name: /nova gaveta/i })).toBeInTheDocument();
   });
 
   it("mostra erro de rede em português e permite tentar carregar novamente", async () => {
