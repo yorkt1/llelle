@@ -426,9 +426,10 @@ contagens e movimentações.
   posições existentes e podem ser mesclados em outro produto: gavetas,
   contagens e vínculos do Tiny são mantidos.
 - `src/Estoque.tsx` — visões Por produtos e Por longarinas; busca por várias
-  palavras e código exato de gaveta; filtro por voltagem, ordem e opção
-  “Só com estoque” ligada por padrão. Busca, filtros e visão são refletidos
-  na URL. Cards exibem SKU, voltagem, todas as gavetas e a data da última
+  palavras e código exato de gaveta; filtros por voltagem, disponibilidade
+  (com estoque, sem estoque ou todos) e ordem, iniciando em “Com estoque”.
+  Busca, filtros e visão são refletidos na URL. Cards exibem SKU, voltagem,
+  todas as gavetas e a data da última
   contagem. A ação principal “Nova contagem” permite escolher uma gaveta
   existente ou criar uma nova; cadastro e configurações ficam em “Mais ações”.
   No celular, o formulário ocupa a tela, usa alvos de toque maiores e mantém

@@ -112,7 +112,7 @@ describe("Estoque", () => {
     expect(within(dialog).queryByLabelText("Novo produto")).not.toBeInTheDocument();
   });
 
-  it("filtra por estoque por padrão e registra no endereço quando a pessoa inclui zerados", async () => {
+  it("permite filtrar produtos com ou sem estoque e registra a opção no endereço", async () => {
     vi.stubGlobal("fetch", vi.fn((input: unknown) => {
       const url = String(input);
       if (url.endsWith("/api/estoque")) {
@@ -141,9 +141,16 @@ describe("Estoque", () => {
 
     expect(await screen.findByText("Liquidificador 220V")).toBeInTheDocument();
     expect(screen.queryByText("Chaleira 110V")).not.toBeInTheDocument();
-    await user.click(screen.getByLabelText("Só com estoque"));
+    const filtroEstoque = screen.getByLabelText("Filtrar por disponibilidade de estoque");
+    expect(filtroEstoque).toHaveValue("com");
+    await user.selectOptions(filtroEstoque, "sem");
     expect(await screen.findByText("Chaleira 110V")).toBeInTheDocument();
-    await waitFor(() => expect(window.location.search).toContain("estoqueSoComEstoque=0"));
+    expect(screen.queryByText("Liquidificador 220V")).not.toBeInTheDocument();
+    await waitFor(() => expect(window.location.search).toContain("estoqueDisponibilidade=sem"));
+
+    await user.selectOptions(filtroEstoque, "todos");
+    expect(await screen.findByText("Liquidificador 220V")).toBeInTheDocument();
+    expect(screen.getByText("Chaleira 110V")).toBeInTheDocument();
   });
 
   it("filtro de voltagem inclui produtos zerados", async () => {
@@ -160,9 +167,9 @@ describe("Estoque", () => {
     const user = userEvent.setup();
     render(<Estoque />);
 
-    expect(await screen.findByRole("checkbox", { name: "Só com estoque" })).toBeChecked();
+    expect(await screen.findByLabelText("Filtrar por disponibilidade de estoque")).toHaveValue("com");
     await user.selectOptions(screen.getByLabelText("Filtrar por voltagem"), "110V");
-    expect(screen.getByRole("checkbox", { name: "Só com estoque" })).not.toBeChecked();
+    expect(screen.getByLabelText("Filtrar por disponibilidade de estoque")).toHaveValue("todos");
     expect(await screen.findByText("Chaleira Koti 110V")).toBeInTheDocument();
     expect(screen.queryByText("Chaleira Koti 220V")).not.toBeInTheDocument();
   });

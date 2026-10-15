@@ -1921,12 +1921,13 @@ interface GrupoProduto {
 
 type Ordem = "nome" | "unidades";
 type VisaoEstoque = "produtos" | "longarinas";
+type FiltroDisponibilidadeEstoque = "com" | "sem" | "todos";
 
 interface FiltrosEstoque {
   busca: string;
   filtroVoltagem: string;
   ordem: Ordem;
-  soComEstoque: boolean;
+  disponibilidade: FiltroDisponibilidadeEstoque;
   visaoEstoque: VisaoEstoque;
 }
 
@@ -1934,11 +1935,18 @@ function lerFiltrosEstoqueDaUrl(): FiltrosEstoque {
   const params = new URLSearchParams(window.location.search);
   const ordem = params.get("estoqueOrdem");
   const voltagem = VOLTAGENS.find((item) => item === params.get("estoqueVoltagem"));
+  const disponibilidade = params.get("estoqueDisponibilidade");
+  const estoqueLegado = params.get("estoqueSoComEstoque");
   return {
     busca: params.get("estoqueBusca") ?? "",
     filtroVoltagem: voltagem ?? "",
     ordem: ordem === "unidades" ? "unidades" : "nome",
-    soComEstoque: params.get("estoqueSoComEstoque") !== "0",
+    disponibilidade:
+      disponibilidade === "sem" || disponibilidade === "todos"
+        ? disponibilidade
+        : estoqueLegado === "0"
+          ? "todos"
+          : "com",
     visaoEstoque: params.get("estoqueVisao") === "longarinas" ? "longarinas" : "produtos",
   };
 }
@@ -2657,7 +2665,7 @@ export function Estoque() {
   const [busca, setBusca] = useState(filtrosIniciais.busca);
   const [filtroVoltagem, setFiltroVoltagem] = useState(filtrosIniciais.filtroVoltagem);
   const [ordem, setOrdem] = useState<Ordem>(filtrosIniciais.ordem);
-  const [soComEstoque, setSoComEstoque] = useState(filtrosIniciais.soComEstoque);
+  const [disponibilidade, setDisponibilidade] = useState<FiltroDisponibilidadeEstoque>(filtrosIniciais.disponibilidade);
   // "Separar por voltagem" aberto: um produto (do detalhe) ou todos os que estão nessa situação.
   const [separando, setSeparando] = useState<{ grupos: GrupoProduto[]; todos: boolean } | null>(null);
 
@@ -2717,12 +2725,13 @@ export function Estoque() {
     definirParametro("estoqueBusca", busca, "");
     definirParametro("estoqueVoltagem", filtroVoltagem, "");
     definirParametro("estoqueOrdem", ordem, "nome");
-    definirParametro("estoqueSoComEstoque", soComEstoque ? "1" : "0", "1");
+    params.delete("estoqueSoComEstoque");
+    definirParametro("estoqueDisponibilidade", disponibilidade, "com");
     definirParametro("estoqueVisao", visaoEstoque, "produtos");
     const query = params.toString();
     const url = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
     window.history.replaceState(window.history.state, "", url);
-  }, [busca, filtroVoltagem, ordem, soComEstoque, visaoEstoque]);
+  }, [busca, filtroVoltagem, ordem, disponibilidade, visaoEstoque]);
 
   useEffect(() => {
     const restaurarFiltros = () => {
@@ -2730,7 +2739,7 @@ export function Estoque() {
       setBusca(filtros.busca);
       setFiltroVoltagem(filtros.filtroVoltagem);
       setOrdem(filtros.ordem);
-      setSoComEstoque(filtros.soComEstoque);
+      setDisponibilidade(filtros.disponibilidade);
       setVisaoEstoque(filtros.visaoEstoque);
     };
     window.addEventListener("popstate", restaurarFiltros);
@@ -2901,7 +2910,7 @@ export function Estoque() {
   const bateTermos = (texto: string) => termosBusca.every((termoAtual) => termoBateTexto(termoAtual, texto));
 
   const gruposExibidos = grupos
-    .filter((g) => !soComEstoque || g.total > 0)
+    .filter((g) => disponibilidade === "todos" || (disponibilidade === "com" ? g.total > 0 : g.total === 0))
     .filter((g) => !filtroVoltagem || voltagemDoNome(g.nome) === filtroVoltagem || g.gavetas.some((l) => l.voltagem === filtroVoltagem || (l.produto && voltagemDoNome(l.produto) === filtroVoltagem)))
     .filter((g) => !termo || bateTermos(g.nome) || g.gavetas.some((l) => bateTermos(`${l.codigo} rua ${l.rua} ${l.rua}${l.codigo}`)))
     .sort((a, b) => (ordem === "unidades" ? b.total - a.total : 0) || a.nome.localeCompare(b.nome, "pt-BR"));
@@ -2912,7 +2921,8 @@ export function Estoque() {
       const posicoes = rua.posicoes
         .filter(
           (posicao) =>
-            (!soComEstoque || posicao.ultima.quantidade > 0) &&
+            (disponibilidade === "todos" ||
+              (disponibilidade === "com" ? posicao.ultima.quantidade > 0 : posicao.ultima.quantidade === 0)) &&
             (!filtroVoltagem || posicao.voltagem === filtroVoltagem || (posicao.produto && voltagemDoNome(posicao.produto) === filtroVoltagem)) &&
             (!termo || termoBateRua || bateTermos(`${posicao.codigo} ${posicao.produto ?? ""} rua ${posicao.rua}`)),
         )
@@ -3029,7 +3039,7 @@ export function Estoque() {
     setConfirmacaoRua("");
   }, [confirmacaoRua]);
 
-  const filtroAtivo = termo !== "" || filtroVoltagem !== "" || soComEstoque;
+  const filtroAtivo = termo !== "" || filtroVoltagem !== "" || disponibilidade !== "todos";
 
   return (
     <div className="page pagina-formulario estoque-pagina">
@@ -3111,7 +3121,7 @@ export function Estoque() {
           value={filtroVoltagem}
           onChange={(event) => {
             setFiltroVoltagem(event.target.value);
-            if (event.target.value) setSoComEstoque(false);
+            if (event.target.value && disponibilidade === "com") setDisponibilidade("todos");
           }}
         >
           <option value="">Todas as voltagens</option>
@@ -3125,10 +3135,16 @@ export function Estoque() {
           <option value="nome">{visaoEstoque === "produtos" ? "Ordem: nome" : "Ordem: longarina"}</option>
           <option value="unidades">Ordem: mais unidades</option>
         </select>
-        <label className="filtro-check">
-          <input type="checkbox" checked={soComEstoque} onChange={(event) => setSoComEstoque(event.target.checked)} />
-          Só com estoque
-        </label>
+        <select
+          className="field-input"
+          aria-label="Filtrar por disponibilidade de estoque"
+          value={disponibilidade}
+          onChange={(event) => setDisponibilidade(event.target.value as FiltroDisponibilidadeEstoque)}
+        >
+          <option value="com">Com estoque</option>
+          <option value="sem">Sem estoque</option>
+          <option value="todos">Todos</option>
+        </select>
         {visaoEstoque === "produtos" && (
           <button
             type="button"
@@ -3185,7 +3201,7 @@ export function Estoque() {
               onClick={() => {
                 setBusca("");
                 setFiltroVoltagem("");
-                setSoComEstoque(false);
+                setDisponibilidade("todos");
               }}
             >
               Limpar filtros
@@ -3206,7 +3222,7 @@ export function Estoque() {
               onClick={() => {
                 setBusca("");
                 setFiltroVoltagem("");
-                setSoComEstoque(false);
+                setDisponibilidade("todos");
               }}
             >
               Limpar filtros
