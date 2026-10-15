@@ -43,8 +43,8 @@ describe("catálogo e exclusão no estoque", () => {
     expect(produtos).toEqual(["Air Fryer Koti 4L", "Cafeteira Koti", "Chaleira Koti Modern Preta"]);
   });
 
-  it("cria longarina vazia, renomeia preservando gavetas e histórico, e exclui arquivando dados", async () => {
-    const { adicionarProduto, criarLongarina, listarEstoque, obterHistorico, obterMetadados, registrarContagem, removerRua, renomearLongarina, store } = await fresh();
+  it("cria e renomeia longarina, bloqueia a exclusão com gavetas e remove após arquivá-las individualmente", async () => {
+    const { adicionarProduto, criarLongarina, listarEstoque, obterHistorico, obterMetadados, registrarContagem, removerPosicao, removerRua, renomearLongarina, store } = await fresh();
     await expect(criarLongarina("f")).resolves.toBe("F");
     expect(await listarEstoque()).toEqual([{ rua: "F", posicoes: [] }]);
     await expect(criarLongarina("F")).rejects.toThrow(/já existe/);
@@ -71,18 +71,25 @@ describe("catálogo e exclusão no estoque", () => {
     expect(await obterHistorico("F", "F3")).toEqual([]);
     expect(await obterMetadados("G", "G3")).toEqual({ produto: "Chaleira Koti", voltagem: "110V" });
 
-    expect(await removerRua("G")).toBe(1);
+    await expect(removerRua("G")).rejects.toThrow(/ainda tenha gavetas/);
+    expect((await listarEstoque())[0].posicoes).toHaveLength(1);
+    await removerPosicao("G", "G3");
+    expect(await removerRua("G")).toBe(0);
     expect(await listarEstoque()).toEqual([]);
     const excluidos = await store.get<{ rua: string; codigo: string; historico: unknown[] }[]>("estoque:excluidos");
     expect(excluidos).toMatchObject([{ rua: "G", codigo: "G3", historico: [{ quantidade: 4 }] }]);
   });
 
-  it("exclui a rua inteira, mas guarda tudo no arquivo de excluídos", async () => {
-    const { registrarContagem, removerRua, listarEstoque, store } = await fresh();
+  it("bloqueia excluir uma longarina ocupada e preserva o histórico ao remover as gavetas", async () => {
+    const { registrarContagem, removerPosicao, removerRua, listarEstoque, store } = await fresh();
     for (const codigo of ["D1", "D2"]) await registrarContagem({ rua: "D", codigo, quantidade: 0, responsavel: "Ana", fotoDataUri: FOTO_1X1 });
     await registrarContagem({ rua: "E", codigo: "E1", quantidade: 0, responsavel: "Ana", fotoDataUri: FOTO_1X1 });
 
-    expect(await removerRua("d")).toBe(2);
+    await expect(removerRua("d")).rejects.toThrow(/ainda tenha gavetas/);
+    expect((await listarEstoque()).map((r) => r.rua)).toEqual(["D", "E"]);
+    await removerPosicao("D", "D1");
+    await removerPosicao("D", "D2");
+    expect(await removerRua("d")).toBe(0);
     expect((await listarEstoque()).map((r) => r.rua)).toEqual(["E"]);
 
     const excluidos = await store.get<{ rua: string; codigo: string; historico: unknown[] }[]>("estoque:excluidos");

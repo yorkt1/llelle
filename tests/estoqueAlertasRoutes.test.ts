@@ -60,6 +60,218 @@ describe("configuração do alerta de estoque baixo", () => {
     }
   }, 15_000);
 
+  it("rejeita quantidade fracionária no cadastro de contagem", async () => {
+    const api = await iniciarApiEstoque();
+    try {
+      const resposta = await fetch(`${api.url}/A/A1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantidade: 4.5, responsavel: "Ana", fotoDataUri: "data:image/jpeg;base64,AA==", expectedUltimaId: null }),
+      });
+      expect(resposta.status).toBe(400);
+      expect(await resposta.json()).toEqual({ error: "Quantidade precisa ser um número inteiro maior ou igual a zero." });
+    } finally {
+      await api.fechar();
+    }
+  }, 15_000);
+
+  it("exige vínculo com SKU do Tiny para cadastrar produtos no catálogo", async () => {
+    const api = await iniciarApiEstoque();
+    try {
+      const textoLivre = await fetch(`${api.url}/produtos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: "Produto inventado" }),
+      });
+      expect(textoLivre.status).toBe(400);
+      expect(await textoLivre.json()).toEqual({
+        error: "Cadastre novos produtos pela busca do Tiny, vinculando o SKU.",
+      });
+
+      const semSku = await fetch(`${api.url}/produtos/lote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nomes: ["Produto sem SKU"] }),
+      });
+      expect(semSku.status).toBe(400);
+      expect(await semSku.json()).toEqual({
+        error: "Cada produto precisa ser selecionado no Tiny e ter SKU vinculado.",
+      });
+
+      const doTiny = await fetch(`${api.url}/produtos/lote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nomes: ["Produto cadastrado no Tiny"],
+          itens: [{ nome: "Produto cadastrado no Tiny", idsTiny: ["tiny-123"], codigos: ["SKU-123"] }],
+        }),
+      });
+      expect(doTiny.status).toBe(201);
+      expect((await doTiny.json()).produtos).toContain("Produto cadastrado no Tiny");
+
+      const store = await import("../lib/store");
+      expect(await store.get("estoque:produtosInfo")).toMatchObject({
+        "produto cadastrado no tiny": { idsTiny: ["tiny-123"], codigos: ["SKU-123"] },
+      });
+    } finally {
+      await api.fechar();
+    }
+  }, 15_000);
+
+  it("mescla produtos sem alterar o histórico e combina os vínculos do Tiny", async () => {
+    const api = await iniciarApiEstoque();
+    try {
+      const store = await import("../lib/store");
+      await store.set("estoque:produtos", ["Nome antigo", "Produto correto"]);
+      await store.set("estoque:metadados", {
+        "A::A1": { produto: "Nome antigo", voltagem: "110V" },
+        "A::A2": { produto: "Produto correto", voltagem: "220V" },
+      });
+      await store.set("estoque", {
+        "A::A1": [{ id: "contagem-antiga", quantidade: 4, responsavel: "Ana", fotoUrl: "foto-antiga", criadoEm: "2026-10-13T12:00:00.000Z" }],
+      });
+      await store.set("estoque:produtosInfo", {
+        "nome antigo": { nome: "Nome antigo", idsTiny: ["tiny-a"], codigos: ["SKU-A"], fotoStatus: "sem-foto" },
+        "produto correto": {
+          nome: "Produto correto",
+          idsTiny: ["tiny-b"],
+          codigos: ["SKU-B"],
+          fotoUrl: "https://example.com/foto.jpg",
+          fotoStatus: "ok",
+        },
+      });
+
+      const resposta = await fetch(`${api.url}/produtos/mesclar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ origem: "Nome antigo", destino: "Produto correto" }),
+      });
+      expect(resposta.status).toBe(200);
+      expect(await resposta.json()).toMatchObject({
+        produtos: ["Produto correto"],
+        posicoesAtualizadas: 1,
+      });
+      expect(await store.get("estoque:metadados")).toMatchObject({
+        "A::A1": { produto: "Produto correto", voltagem: "110V" },
+        "A::A2": { produto: "Produto correto", voltagem: "220V" },
+      });
+      expect(await store.get("estoque")).toMatchObject({
+        "A::A1": [{ id: "contagem-antiga", quantidade: 4, fotoUrl: "foto-antiga" }],
+      });
+      expect(await store.get("estoque:produtosInfo")).toMatchObject({
+        "produto correto": {
+          idsTiny: ["tiny-b", "tiny-a"],
+          codigos: ["SKU-B", "SKU-A"],
+          fotoUrl: "https://example.com/foto.jpg",
+        },
+      });
+      expect(await store.get("estoque:produtosInfo")).not.toHaveProperty("nome antigo");
+    } finally {
+      await api.fechar();
+    }
+  }, 15_000);
+
+  it("bloqueia excluir uma longarina ocupada pela API", async () => {
+    const api = await iniciarApiEstoque();
+    try {
+      const store = await import("../lib/store");
+      await store.set("estoque:longarinas", ["A"]);
+      await store.set("estoque", {
+        "A::A1": [{ id: "contagem-1", quantidade: 2, responsavel: "Ana", fotoUrl: "foto", criadoEm: "2026-10-15T12:00:00.000Z" }],
+      });
+      await store.set("estoque:metadados", { "A::A1": { produto: "Liquidificador", voltagem: "220V" } });
+
+      const resposta = await fetch(`${api.url}/longarinas/A`, { method: "DELETE" });
+      expect(resposta.status).toBe(409);
+      expect(await resposta.json()).toEqual({
+        error: "Não é possível excluir uma longarina que ainda tenha gavetas. Remova ou mova as gavetas antes.",
+      });
+      expect(await store.get("estoque:longarinas")).toEqual(["A"]);
+      expect(await store.get("estoque")).toHaveProperty("A::A1");
+    } finally {
+      await api.fechar();
+    }
+  }, 15_000);
+
+  it("aplica movimentação pela API e exige motivo", async () => {
+    const api = await iniciarApiEstoque();
+    try {
+      const store = await import("../lib/store");
+      await store.set("embalagem:colaboradores", { "123": { nome: "Ana" } });
+      await store.set("estoque:produtos", ["Liquidificador"]);
+      await store.set("estoque:metadados", { "A::A1": { produto: "Liquidificador", voltagem: "220V" } });
+      await store.set("estoque", {
+        "A::A1": [{ id: "contagem-1", quantidade: 5, responsavel: "Ana", fotoUrl: "https://example.com/foto.jpg", criadoEm: "2026-10-15T12:00:00.000Z" }],
+      });
+
+      const invalida = await fetch(`${api.url}/A/A1/movimentos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: "entrada", quantidade: 2, responsavel: "Ana", expectedUltimaId: "contagem-1" }),
+      });
+      expect(invalida.status).toBe(400);
+
+      const pessoaLivre = await fetch(`${api.url}/A/A1/movimentos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: "entrada",
+          quantidade: 2,
+          motivo: "Reposição",
+          responsavel: "Pessoa não cadastrada",
+          expectedUltimaId: "contagem-1",
+        }),
+      });
+      expect(pessoaLivre.status).toBe(400);
+      expect(await pessoaLivre.json()).toEqual({
+        error: "Selecione uma pessoa cadastrada no módulo Embalagem.",
+      });
+
+      const salva = await fetch(`${api.url}/A/A1/movimentos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: "entrada",
+          quantidade: 2,
+          motivo: "Reposição",
+          responsavel: "Ana",
+          expectedUltimaId: "contagem-1",
+        }),
+      });
+      expect(salva.status).toBe(201);
+      expect(await salva.json()).toMatchObject({ eventos: [expect.objectContaining({ tipo: "entrada", quantidade: 7, motivo: "Reposição" })] });
+
+      const estoque = await fetch(`${api.url}`);
+      expect(await estoque.json()).toMatchObject({ ruas: [{ posicoes: [expect.objectContaining({ ultima: expect.objectContaining({ quantidade: 7 }) })] }] });
+    } finally {
+      await api.fechar();
+    }
+  }, 15_000);
+
+  it("bloqueia contagem com responsável que não está cadastrado", async () => {
+    const api = await iniciarApiEstoque();
+    try {
+      const store = await import("../lib/store");
+      await store.set("embalagem:colaboradores", { "123": { nome: "Ana" } });
+      const resposta = await fetch(`${api.url}/A/A1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quantidade: 3,
+          responsavel: "Pessoa não cadastrada",
+          fotoDataUri: "data:image/jpeg;base64,AA==",
+          expectedUltimaId: null,
+        }),
+      });
+      expect(resposta.status).toBe(400);
+      expect(await resposta.json()).toEqual({
+        error: "Selecione uma pessoa cadastrada no módulo Embalagem.",
+      });
+    } finally {
+      await api.fechar();
+    }
+  }, 15_000);
+
   it("salva quantidade por caixa por produto e permite remover a configuração", async () => {
     const api = await iniciarApiEstoque();
     try {

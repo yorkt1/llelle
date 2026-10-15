@@ -404,74 +404,36 @@ Pontos de atenção pra quem for usar em volume alto:
 
 ## Estoque
 
-Aba (`#estoque`): registro visual e manual do galpão, organizado pela
-estrutura física real — Rua (letra) > Posição/longarina (código, ex.: "A5").
-Substitui controle informal (mensagem, planilha solta) por um card por
-posição com foto, quantidade contada e quem contou.
+Aba (`#estoque`): registro visual do galpão por produto, longarina e gaveta.
+Cada contagem física exige uma foto nova e quantidade inteira não negativa;
+se o saldo mudar, também exige o motivo. Fotos são comprimidas no navegador e
+salvas no Cloudinary. A lista atualiza periodicamente e o histórico mantém as
+contagens e movimentações.
 
-**100% manual de propósito nesta fase** — sem nenhuma lógica de visão
-computacional. O formulário mostra uma nota fixa avisando que uma etapa
-futura vai usar IA pra sugerir a contagem pela foto, sempre com confirmação
-humana antes de salvar — por enquanto é só a nota, nenhuma função real por
-trás.
+- `lib/estoque.ts` — guarda metadados por gaveta e eventos de contagem,
+  entrada, saída, transferência e ajuste. Gravações usam a versão esperada do
+  último evento para detectar conflitos de contagens simultâneas. Transferir
+  atualiza origem e destino em conjunto e só permite gavetas do mesmo produto
+  e voltagem.
+- `server/routes/estoque.ts` — API de consulta, contagem, histórico e
+  movimentação. Todas as movimentações exigem motivo e responsável; contagens
+  e movimentos só aceitam pessoas cadastradas no módulo Embalagem. A exclusão
+  de uma gaveta mantém seu histórico arquivado; uma longarina só pode ser
+  removida quando não tiver gavetas.
+- **Cadastro de produtos** — novos produtos só entram pela busca de itens
+  ativos no Tiny e precisam ter ID e SKU. O endpoint não aceita cadastro por
+  texto livre. Produtos antigos continuam no catálogo para preservar as
+  posições existentes e podem ser mesclados em outro produto: gavetas,
+  contagens e vínculos do Tiny são mantidos.
+- `src/Estoque.tsx` — visões Por produtos e Por longarinas; busca por várias
+  palavras e código exato de gaveta; filtro por voltagem, ordem e opção
+  “Só com estoque” ligada por padrão. Busca, filtros e visão são refletidos
+  na URL. Cards exibem SKU, voltagem, todas as gavetas e a data da última
+  contagem. A visão de produtos pode ser exportada para CSV.
 
-- `lib/estoque.ts` — modelo de dados: cada posição guarda um **histórico**
-  de contagens (nunca sobrescreve, só acrescenta — mais recente primeiro),
-  persistido via `lib/store.ts` (Supabase em produção, ver seção de
-  Arquitetura acima — isso inclui também o catálogo de produtos e o
-  produto/voltagem de cada posição). Foto sobe pro **Cloudinary** (storage
-  externo) — só a URL pública fica guardada
-  no registro, nunca um arquivo local. Isso existe porque o servidor roda
-  num plano sem disco persistente (ver seção de hospedagem): um arquivo
-  salvo localmente desaparecia a cada deploy/"acordar" do serviço. Precisa
-  de `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` e `CLOUDINARY_API_SECRET`
-  no ambiente (conta grátis em cloudinary.com) — sem isso, salvar uma
-  contagem falha com um erro claro (`CloudinaryConfigError`, HTTP 503) em
-  vez de uma falha genérica do SDK. **Foto é obrigatória em toda contagem,
-  mesmo recontagem** — o ponto do sistema é um registro visual auditável
-  por evento, não um número solto ou uma foto velha reaproveitada.
-- `lib/store.ts` ganhou `update()` — leitura+modificação+escrita atômica
-  (dentro da mesma fila do `set`/`get` já existentes), necessário porque
-  `set()` sozinho tem uma janela onde duas contagens em posições diferentes,
-  quase simultâneas, podiam se atropelar (uma sobrescrevendo o resultado da
-  outra, já que as duas partiam do mesmo estado lido antes).
-- `server/routes/estoque.ts` — `GET /api/estoque` (tudo agrupado por rua,
-  só a contagem mais recente de cada posição), `GET /api/estoque/:rua/:codigo/historico`
-  (histórico completo de uma posição), `POST /api/estoque/:rua/:codigo`
-  (registra uma contagem — cria a rua/posição na hora, se não existir
-  ainda). Não existe mais rota pra servir foto — o navegador busca a URL do
-  Cloudinary direto, sem passar pelo nosso backend.
-- `src/Estoque.tsx` — abas por rua (com "+ Nova rua", cria na hora — não
-  tem lista fixa de ruas/posições no código, já que isso é a organização
-  física real do galpão de cada um); grid de cards por posição, cada um
-  clicável abrindo um formulário: tirar/escolher foto (`capture="environment"`,
-  usa a câmera no celular), quantidade, quem contou. Foto é comprimida no
-  navegador antes de enviar (`comprimirFoto`, reduz pra até 1600px de lado
-  maior, JPEG) — foto de celular sai de 3-8MB, pesado demais pra mandar sem
-  isso. Atualiza a lista a cada 30s (mesmo padrão "quase tempo real" do
-  painel de separação).
-- **Produto + Voltagem** — fixos da posição, não da contagem: definidos uma
-  vez ao criar a posição (`POST /api/estoque/:rua/:codigo` exige os dois só
-  nesse momento — `lib/estoque.ts` checa se já existe metadado pra decidir
-  se é posição nova) e herdados automaticamente em toda recontagem seguinte,
-  sem perguntar de novo. Voltagem é uma lista fixa (`110V`/`220V`/`Bivolt`).
-  Produto vem de um catálogo próprio (`GET/POST /api/estoque/produtos`,
-  `DELETE /api/estoque/produtos/:nome`) gerenciado em "Configurar produtos"
-  na própria tela — remover um produto do catálogo não afeta posições que já
-  usam ele, só tira da lista pra novas posições. Pra corrigir produto/voltagem
-  de uma posição já existente (sem contar nada), tem um "Editar" dentro do
-  próprio card da posição, que chama `PUT /api/estoque/:rua/:codigo/metadados`.
-- **Filtro/relatório** — dois selects (produto, voltagem) acima da grade:
-  com qualquer um dos dois preenchido, a grade troca de "só a rua ativa" pra
-  "todas as ruas que combinam com o filtro" (com o código mostrando a rua
-  junto, já que mistura ruas) e aparece um total de posições + unidades
-  combinando. É uma visão/filtro só na própria tela — sem exportação.
-
-**Não implementado nesta fase** (fora do escopo pedido): nenhuma integração
-com o Tiny pra pré-preencher produtos esperados por posição — seria um
-facilitador puramente opcional, e a contagem continuaria sendo sempre manual
-mesmo com isso. Exportação do relatório (CSV/planilha) também não — por
-enquanto é só a visão filtrada na tela.
+Ainda não há conciliação automática com o saldo do Tiny, etiquetas QR ou uma
+rota móvel dedicada para contagem. A câmera usa `capture="environment"`, mas
+a validação final em celular e no app publicado é manual e continua pendente.
 
 ## Embalagem
 

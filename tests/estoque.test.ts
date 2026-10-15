@@ -125,6 +125,14 @@ describe("estoque", () => {
     expect(cloudinaryUploadMock).not.toHaveBeenCalled();
   });
 
+  it.each([1.5, -1, Number.MAX_SAFE_INTEGER + 1])("rejeita contagem inválida %s antes de chamar o Cloudinary", async (quantidade) => {
+    const { registrarContagem } = await freshEstoque();
+    await expect(
+      registrarContagem({ rua: "B", codigo: "A5", quantidade, responsavel: "Ana", fotoDataUri: FOTO_1X1 }),
+    ).rejects.toThrow(/número inteiro maior ou igual a zero/i);
+    expect(cloudinaryUploadMock).not.toHaveBeenCalled();
+  });
+
   it("posição vazia: sem produto/voltagem é aceita com 0 un. e aparece sem produto", async () => {
     const { registrarContagem, listarEstoque } = await freshEstoque();
     await registrarContagem({ rua: "B", codigo: "B7", quantidade: 0, responsavel: "Ana", fotoDataUri: FOTO_1X1 });
@@ -184,7 +192,7 @@ describe("estoque", () => {
       voltagem: "220V",
     });
     // Recontagem sem produto/voltagem — não é posição nova, não precisa.
-    await registrarContagem({ rua: "B", codigo: "A5", quantidade: 8, responsavel: "Bruno", fotoDataUri: FOTO_1X1 });
+    await registrarContagem({ rua: "B", codigo: "A5", quantidade: 8, responsavel: "Bruno", fotoDataUri: FOTO_1X1, motivo: "Conferência física" });
 
     const ruas = await listarEstoque();
     expect(ruas[0].posicoes[0]).toMatchObject({ produto: "Liquidificador", voltagem: "220V" });
@@ -270,7 +278,7 @@ describe("estoque", () => {
       produto: "Liquidificador",
       voltagem: "220V",
     });
-    await registrarContagem({ rua: "B", codigo: "A5", quantidade: 8, responsavel: "Bruno", fotoDataUri: FOTO_1X1 });
+    await registrarContagem({ rua: "B", codigo: "A5", quantidade: 8, responsavel: "Bruno", fotoDataUri: FOTO_1X1, motivo: "Conferência física" });
 
     const historico = await obterHistorico("B", "A5");
     expect(historico).toHaveLength(2);
@@ -293,7 +301,7 @@ describe("estoque", () => {
       produto: "Liquidificador",
       voltagem: "220V",
     });
-    await registrarContagem({ rua: "B", codigo: "A5", quantidade: 8, responsavel: "Bruno", fotoDataUri: FOTO_1X1 });
+    await registrarContagem({ rua: "B", codigo: "A5", quantidade: 8, responsavel: "Bruno", fotoDataUri: FOTO_1X1, motivo: "Conferência física" });
 
     const ruas = await listarEstoque();
     expect(ruas[0].posicoes[0].ultima).toMatchObject({ quantidade: 8, responsavel: "Bruno" });
@@ -333,6 +341,121 @@ describe("estoque", () => {
     const ruas = await listarEstoque();
     const totalPosicoes = ruas.reduce((soma, rua) => soma + rua.posicoes.length, 0);
     expect(totalPosicoes).toBe(4);
+  });
+
+  it("rejeita uma segunda contagem simultânea da mesma gaveta com base desatualizada", async () => {
+    const { registrarContagem, adicionarProduto } = await freshEstoque();
+    await adicionarProduto("Liquidificador");
+    const inicial = await registrarContagem({
+      rua: "B",
+      codigo: "A5",
+      quantidade: 10,
+      responsavel: "Ana",
+      fotoDataUri: FOTO_1X1,
+      produto: "Liquidificador",
+      voltagem: "220V",
+    });
+    const tentativas = await Promise.allSettled([
+      registrarContagem({ rua: "B", codigo: "A5", quantidade: 8, responsavel: "Bruno", fotoDataUri: FOTO_1X1, expectedUltimaId: inicial.id, motivo: "Conferência física" }),
+      registrarContagem({ rua: "B", codigo: "A5", quantidade: 7, responsavel: "Carla", fotoDataUri: FOTO_1X1, expectedUltimaId: inicial.id, motivo: "Conferência física" }),
+    ]);
+
+    expect(tentativas.filter((resultado) => resultado.status === "fulfilled")).toHaveLength(1);
+    expect(tentativas.filter((resultado) => resultado.status === "rejected")).toHaveLength(1);
+    const rejeitada = tentativas.find((resultado) => resultado.status === "rejected");
+    expect(rejeitada).toMatchObject({ reason: expect.objectContaining({ name: "ContagemConflitoError" }) });
+  });
+
+  it("exige motivo quando uma recontagem altera o saldo", async () => {
+    const { registrarContagem, adicionarProduto } = await freshEstoque();
+    await adicionarProduto("Liquidificador");
+    const inicial = await registrarContagem({
+      rua: "B",
+      codigo: "A5",
+      quantidade: 10,
+      responsavel: "Ana",
+      fotoDataUri: FOTO_1X1,
+      produto: "Liquidificador",
+      voltagem: "220V",
+    });
+    await expect(
+      registrarContagem({ rua: "B", codigo: "A5", quantidade: 8, responsavel: "Bruno", fotoDataUri: FOTO_1X1, expectedUltimaId: inicial.id }),
+    ).rejects.toThrow(/motivo da diferença/i);
+  });
+
+  it("registra entrada, saída e ajuste com motivos e saldo atualizado", async () => {
+    const { adicionarProduto, registrarContagem, registrarMovimentacao, obterHistorico } = await freshEstoque();
+    await adicionarProduto("Liquidificador");
+    const inicial = await registrarContagem({
+      rua: "B",
+      codigo: "A5",
+      quantidade: 10,
+      responsavel: "Ana",
+      fotoDataUri: FOTO_1X1,
+      produto: "Liquidificador",
+      voltagem: "220V",
+    });
+    const entrada = await registrarMovimentacao({
+      rua: "B", codigo: "A5", tipo: "entrada", quantidade: 3, responsavel: "Bruno", motivo: "Reposição", expectedUltimaId: inicial.id,
+    });
+    const saida = await registrarMovimentacao({
+      rua: "B", codigo: "A5", tipo: "saida", quantidade: 2, responsavel: "Carla", motivo: "Separação de pedido", expectedUltimaId: entrada[0].id,
+    });
+    const ajuste = await registrarMovimentacao({
+      rua: "B", codigo: "A5", tipo: "ajuste", quantidade: 9, responsavel: "Diego", motivo: "Correção de saldo", expectedUltimaId: saida[0].id,
+    });
+
+    expect(entrada[0]).toMatchObject({ tipo: "entrada", quantidadeAnterior: 10, quantidade: 13, motivo: "Reposição" });
+    expect(saida[0]).toMatchObject({ tipo: "saida", quantidadeAnterior: 13, quantidade: 11, motivo: "Separação de pedido" });
+    expect(ajuste[0]).toMatchObject({ tipo: "ajuste", quantidadeAnterior: 11, quantidade: 9, motivo: "Correção de saldo" });
+    expect((await obterHistorico("B", "A5")).map((evento) => evento.quantidade)).toEqual([9, 11, 13, 10]);
+  });
+
+  it("transfere saldo atomicamente entre gavetas do mesmo produto e voltagem", async () => {
+    const { adicionarProduto, registrarContagem, registrarMovimentacao, listarEstoque } = await freshEstoque();
+    await adicionarProduto("Liquidificador");
+    const origem = await registrarContagem({
+      rua: "B", codigo: "A1", quantidade: 10, responsavel: "Ana", fotoDataUri: FOTO_1X1, produto: "Liquidificador", voltagem: "220V",
+    });
+    const destino = await registrarContagem({
+      rua: "B", codigo: "A2", quantidade: 2, responsavel: "Ana", fotoDataUri: FOTO_1X1, produto: "Liquidificador", voltagem: "220V",
+    });
+    const eventos = await registrarMovimentacao({
+      rua: "B",
+      codigo: "A1",
+      tipo: "transferencia",
+      quantidade: 4,
+      responsavel: "Bruno",
+      motivo: "Reorganização do galpão",
+      expectedUltimaId: origem.id,
+      destino: { rua: "B", codigo: "A2", expectedUltimaId: destino.id },
+    });
+
+    expect(eventos).toHaveLength(2);
+    expect(eventos[0].movimentacaoId).toBe(eventos[1].movimentacaoId);
+    const posicoes = (await listarEstoque())[0].posicoes;
+    expect(posicoes.map((posicao) => posicao.ultima.quantidade)).toEqual([6, 6]);
+  });
+
+  it("não permite saída maior que o saldo nem transferência para outro produto", async () => {
+    const { adicionarProduto, registrarContagem, registrarMovimentacao } = await freshEstoque();
+    await adicionarProduto("Liquidificador");
+    await adicionarProduto("Ventilador");
+    const origem = await registrarContagem({
+      rua: "B", codigo: "A1", quantidade: 3, responsavel: "Ana", fotoDataUri: FOTO_1X1, produto: "Liquidificador", voltagem: "220V",
+    });
+    const destino = await registrarContagem({
+      rua: "B", codigo: "A2", quantidade: 1, responsavel: "Ana", fotoDataUri: FOTO_1X1, produto: "Ventilador", voltagem: "220V",
+    });
+    await expect(
+      registrarMovimentacao({ rua: "B", codigo: "A1", tipo: "saida", quantidade: 4, responsavel: "Ana", motivo: "Teste", expectedUltimaId: origem.id }),
+    ).rejects.toThrow(/maior que o saldo atual/i);
+    await expect(
+      registrarMovimentacao({
+        rua: "B", codigo: "A1", tipo: "transferencia", quantidade: 1, responsavel: "Ana", motivo: "Teste", expectedUltimaId: origem.id,
+        destino: { rua: "B", codigo: "A2", expectedUltimaId: destino.id },
+      }),
+    ).rejects.toThrow(/mesmo produto e voltagem/i);
   });
 
   describe("catálogo de produtos", () => {

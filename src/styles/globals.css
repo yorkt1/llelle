@@ -2357,6 +2357,12 @@ body:has(.settings-overlay) .app-bottom-nav {
   gap: 0.6rem;
 }
 
+.estoque-historico-evolucao {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 600;
+}
+
 .estoque-historico-miniatura {
   width: 2.5rem;
   height: 2.5rem;

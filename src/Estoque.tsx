@@ -10,6 +10,13 @@ interface RegistroContagem {
   /** URL pública do Cloudinary — nunca um caminho/arquivo local (ver lib/estoque.ts). */
   fotoUrl: string;
   criadoEm: string;
+  tipo?: "contagem" | "entrada" | "saida" | "transferencia" | "ajuste";
+  motivo?: string;
+  quantidadeAnterior?: number;
+  quantidadeMovimentada?: number;
+  movimentacaoId?: string;
+  origem?: { rua: string; codigo: string };
+  destino?: { rua: string; codigo: string };
 }
 
 const VOLTAGENS = ["110V", "220V", "Bivolt"] as const;
@@ -22,6 +29,21 @@ interface PosicaoResumo {
   /** null só pra posição criada antes dessa funcionalidade existir. */
   produto: string | null;
   voltagem: Voltagem | null;
+}
+
+function rotuloEventoEstoque(tipo: RegistroContagem["tipo"]): string {
+  switch (tipo) {
+    case "entrada":
+      return "Entrada";
+    case "saida":
+      return "Saída";
+    case "transferencia":
+      return "Transferência";
+    case "ajuste":
+      return "Ajuste";
+    default:
+      return "Contagem";
+  }
 }
 
 /** Item da busca no cadastro do Tiny (ver lib/catalogoTiny.ts). */
@@ -239,7 +261,7 @@ function validarNumeroGaveta(numero: string): string | null {
 function validarQuantidade(quantidade: string): string | null {
   if (!quantidade.trim()) return "Informe a quantidade contada.";
   const numero = Number(quantidade);
-  if (!Number.isFinite(numero) || numero < 0) return "Quantidade precisa ser um número maior ou igual a zero.";
+  if (!Number.isSafeInteger(numero) || numero < 0) return "Quantidade precisa ser um número inteiro maior ou igual a zero.";
   return null;
 }
 
@@ -266,6 +288,68 @@ function isUnidadesPorCaixa(value: unknown): value is Record<string, number> {
     !Array.isArray(value) &&
     Object.entries(value).every(([, unidades]) => typeof unidades === "number" && Number.isSafeInteger(unidades) && unidades >= 1)
   );
+}
+
+function useDialogAccessibility(onClose: () => void) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const activeBeforeRef = useRef<HTMLElement | null>(
+    typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  );
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const activeBefore = activeBeforeRef.current;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = [...panel.querySelectorAll<HTMLElement>(focusableSelector)].filter(
+        (element) => !element.hidden && getComputedStyle(element).display !== "none" && getComputedStyle(element).visibility !== "hidden",
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    (panel.querySelector<HTMLElement>("[autofocus]") ?? panel.querySelector<HTMLElement>(focusableSelector) ?? panel).focus();
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (activeBefore?.isConnected) activeBefore.focus();
+    };
+  }, []);
+
+  return panelRef;
+}
+
+function mensagemErro(error: unknown, fallback: string): string {
+  if (error instanceof TypeError && /failed to fetch|networkerror|load failed/i.test(error.message)) {
+    return "Falha de comunicação com o servidor. Verifique sua conexão. Os dados digitados foram mantidos; atualize o estoque antes de repetir uma operação para evitar duplicidade.";
+  }
+  return error instanceof Error ? error.message : fallback;
 }
 
 /**
@@ -377,18 +461,24 @@ function FormularioContagem({
   modal,
   produtos,
   unidadesPorCaixa,
+  responsaveis,
+  mensagemResponsaveis,
   onFechar,
   onSalvo,
   onMetadadosSalvos,
   onExcluida,
+  onAbrirMovimentacao,
 }: {
   modal: Exclude<Modal, null>;
   produtos: string[];
   unidadesPorCaixa: Record<string, number>;
+  responsaveis: string[];
+  mensagemResponsaveis: string | null;
   onFechar: () => void;
   onSalvo: (rua: string, codigo: string) => void;
   onMetadadosSalvos: (rua: string, codigo: string, produto: string, voltagem: Voltagem) => void;
   onExcluida: (rua: string, codigo: string) => void;
+  onAbrirMovimentacao: (posicao: PosicaoResumo) => void;
 }) {
   // Rua: fixa numa gaveta existente; numa nova, escolhida aqui (uma das existentes ou uma letra nova).
   const [ruaNova, setRuaNova] = useState(() =>
@@ -400,6 +490,7 @@ function FormularioContagem({
   const [quantidade, setQuantidade] = useState(() =>
     modal.modo === "existente" ? String(modal.ultima.quantidade) : modal.produtoInicial ? "" : "0",
   );
+  const [motivoContagem, setMotivoContagem] = useState("");
   const [responsavel, setResponsavel] = useState(() => (modal.modo === "existente" ? modal.ultima.responsavel : lerUltimoResponsavel()));
   // Posição nova, ou existente que foi registrada vazia (sem produto): escolhe o produto aqui — ou
   // "Posição vazia", que registra 0 un. sem produto nem voltagem.
@@ -412,10 +503,12 @@ function FormularioContagem({
   const [arrastandoFoto, setArrastandoFoto] = useState(false);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [historico, setHistorico] = useState<RegistroContagem[] | null>(null);
+  const [erroHistorico, setErroHistorico] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [tocados, setTocados] = useState<Set<string>>(new Set());
   const [tentouSalvar, setTentouSalvar] = useState(false);
+  const [alterado, setAlterado] = useState(false);
 
   // Edição de produto/voltagem de uma posição já existente — fica fechado por padrão (os dois
   // normalmente não mudam numa recontagem), só abre se a pessoa pedir pra corrigir.
@@ -424,6 +517,11 @@ function FormularioContagem({
   const [voltagemEdit, setVoltagemEdit] = useState(modal.modo === "existente" ? modal.voltagem ?? "" : "");
   const [salvandoMetadados, setSalvandoMetadados] = useState(false);
   const [erroMetadados, setErroMetadados] = useState<string | null>(null);
+  const solicitarFechamento = useCallback(() => {
+    if (alterado && !window.confirm("Descartar as alterações desta contagem?")) return;
+    onFechar();
+  }, [alterado, onFechar]);
+  const painelRef = useDialogAccessibility(solicitarFechamento);
 
   const inputFotoRef = useRef<HTMLInputElement>(null);
   const codigoRef = useRef<HTMLInputElement>(null);
@@ -433,7 +531,8 @@ function FormularioContagem({
   const setQuantidadeInputRef = useCallback((input: HTMLInputElement | null) => {
     quantidadeRef.current = input;
   }, []);
-  const responsavelRef = useRef<HTMLInputElement>(null);
+  const responsavelRef = useRef<HTMLSelectElement>(null);
+  const motivoContagemRef = useRef<HTMLTextAreaElement>(null);
   const fotoBotaoRef = useRef<HTMLButtonElement>(null);
 
   const tocar = useCallback((campo: string) => {
@@ -478,9 +577,12 @@ function FormularioContagem({
         : null
     : validarQuantidade(quantidade) ??
       (vazia && Number(quantidade) > 0 ? "Gaveta vazia fica com 0 un. — pra contar unidades, escolha o produto." : null);
-  const erroResponsavel = validarResponsavel(responsavel);
+  const precisaMotivoContagem = modal.modo === "existente" && Number(quantidade) !== modal.ultima.quantidade;
+  const erroMotivoContagem = precisaMotivoContagem && !motivoContagem.trim() ? "Informe o motivo da diferença." : null;
+  const responsavelSelecionado = responsaveis.includes(responsavel) ? responsavel : responsaveis[0] ?? "";
+  const erroResponsavel = responsaveis.length === 0 ? (mensagemResponsaveis ?? "Nenhuma pessoa disponível para selecionar.") : validarResponsavel(responsavelSelecionado);
   const erroFoto = validarFoto(fotoPreview);
-  const formularioInvalido = Boolean(erroCodigo || erroProduto || erroVoltagem || erroQuantidade || erroResponsavel || erroFoto);
+  const formularioInvalido = Boolean(erroCodigo || erroProduto || erroVoltagem || erroQuantidade || erroMotivoContagem || erroResponsavel || erroFoto);
 
   const ajustarQuantidade = useCallback((delta: number) => {
     setQuantidade((atual) => String(Math.max(0, (Number(atual) || 0) + delta)));
@@ -494,6 +596,7 @@ function FormularioContagem({
     setErro(null);
     try {
       setFotoPreview(await comprimirFoto(arquivo));
+      setAlterado(true);
     } catch {
       setErro("Não consegui processar essa foto — tenta tirar de novo.");
     }
@@ -522,12 +625,14 @@ function FormularioContagem({
     if (modal.modo !== "existente") return;
     setMostrarHistorico((atual) => !atual);
     if (historico) return;
+    setErroHistorico(null);
     try {
       const resposta = await fetch(`${API_URL}/api/estoque/${encodeURIComponent(modal.rua)}/${encodeURIComponent(modal.codigo)}/historico`);
       const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui carregar o histórico.");
       setHistorico(json.historico ?? []);
-    } catch {
-      setHistorico([]);
+    } catch (error) {
+      setErroHistorico(mensagemErro(error, "Não consegui carregar o histórico."));
     }
   }, [historico, modal]);
 
@@ -543,12 +648,14 @@ function FormularioContagem({
               ? fotoBotaoRef.current
               : erroQuantidade
                 ? quantidadeRef.current
-                : erroResponsavel
-                  ? responsavelRef.current
-                  : null;
+                : erroMotivoContagem
+                  ? motivoContagemRef.current
+                  : erroResponsavel
+                    ? responsavelRef.current
+                    : null;
     refAlvo?.scrollIntoView({ behavior: "smooth", block: "center" });
     refAlvo?.focus();
-  }, [modal, definirProduto, erroCodigo, erroProduto, erroVoltagem, erroFoto, erroQuantidade, erroResponsavel]);
+  }, [modal, definirProduto, erroCodigo, erroProduto, erroVoltagem, erroFoto, erroQuantidade, erroMotivoContagem, erroResponsavel]);
 
   const salvar = useCallback(async () => {
     setTentouSalvar(true);
@@ -566,22 +673,24 @@ function FormularioContagem({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           quantidade: Number(quantidade),
-          responsavel: responsavel.trim(),
+          responsavel: responsavelSelecionado.trim(),
           fotoDataUri: fotoPreview,
+          expectedUltimaId: modal.modo === "existente" ? modal.ultima.id : null,
+          ...(precisaMotivoContagem ? { motivo: motivoContagem.trim() } : {}),
           ...(definirProduto && !vazia ? { produto: produto.trim(), voltagem } : {}),
         }),
       });
       const json = await resposta.json();
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui salvar a contagem.");
 
-      salvarUltimoResponsavel(responsavel.trim());
+      salvarUltimoResponsavel(responsavelSelecionado.trim());
       onSalvo(ruaAtual, codigoFinal);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui salvar a contagem.");
+      setErro(mensagemErro(error, "Não consegui salvar a contagem."));
     } finally {
       setSalvando(false);
     }
-  }, [numeroGaveta, ruaAtual, definirProduto, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavel, vazia, voltagem]);
+  }, [numeroGaveta, ruaAtual, definirProduto, fotoPreview, formularioInvalido, focarPrimeiroErro, modal, onSalvo, produto, quantidade, responsavelSelecionado, vazia, voltagem, precisaMotivoContagem, motivoContagem]);
 
   const excluirPosicao = useCallback(async () => {
     if (modal.modo !== "existente") return;
@@ -592,7 +701,7 @@ function FormularioContagem({
       if (!resposta.ok) throw new Error((await resposta.json().catch(() => ({}))).error ?? "Não consegui excluir a gaveta.");
       onExcluida(modal.rua, modal.codigo);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui excluir a gaveta.");
+      setErro(mensagemErro(error, "Não consegui excluir a gaveta."));
     }
   }, [modal, onExcluida]);
 
@@ -617,7 +726,7 @@ function FormularioContagem({
       onMetadadosSalvos(modal.rua, modal.codigo, produtoEdit.trim(), voltagemFinal as Voltagem);
       setEditandoMetadados(false);
     } catch (error) {
-      setErroMetadados(error instanceof Error ? error.message : "Não consegui salvar produto/voltagem.");
+      setErroMetadados(mensagemErro(error, "Não consegui salvar produto/voltagem."));
     } finally {
       setSalvandoMetadados(false);
     }
@@ -627,9 +736,8 @@ function FormularioContagem({
   // nunca é reaproveitada ao salvar: toda contagem exige tirar uma foto nova (ver `salvar`).
   const fotoAnteriorUrl = modal.modo === "existente" ? modal.ultima.fotoUrl : null;
 
-  // "Anteriores" exclui a contagem atual (modal.ultima, sempre historico[0]) — já está nos campos
-  // do formulário logo acima, repetir ela na lista só confunde quem tá vendo.
   const historicoAnterior = modal.modo === "existente" && historico ? historico.filter((item) => item.id !== modal.ultima.id) : [];
+  const contagemAnterior = historicoAnterior[0] ?? null;
 
   // Código em destaque pra bater com a etiqueta física da prateleira — só o código da posição
   // (mesmo texto que já aparece no card e, em tese, na etiqueta colada na prateleira), sem juntar
@@ -639,13 +747,22 @@ function FormularioContagem({
     modal.modo === "existente" ? modal.codigo : ruaAtual && numeroGaveta.trim() ? `${ruaAtual}${numeroGaveta.trim()}` : "?";
 
   return (
-    <div className="settings-overlay" onClick={onFechar}>
-      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+    <div className="settings-overlay" onClick={solicitarFechamento}>
+      <div
+        ref={painelRef}
+        className="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="estoque-contagem-titulo"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onChangeCapture={() => setAlterado(true)}
+      >
         <div className="settings-panel-header">
-          <button className="settings-close" onClick={onFechar} aria-label="Fechar">
+          <button className="settings-close" onClick={solicitarFechamento} aria-label="Fechar">
             ×
           </button>
-          <h2 className="settings-title">
+          <h2 id="estoque-contagem-titulo" className="settings-title">
             Rua {ruaAtual || "?"}
             {modal.modo === "existente" ? ` · ${modal.codigo}` : " · nova gaveta"}
           </h2>
@@ -899,18 +1016,43 @@ function FormularioContagem({
             </label>
           )}
 
+          {precisaMotivoContagem && (
+            <label className="field">
+              <span className="field-label">Motivo da diferença <span className="field-obrigatorio">*</span></span>
+              <textarea
+                ref={motivoContagemRef}
+                className="field-input"
+                rows={2}
+                maxLength={500}
+                value={motivoContagem}
+                onChange={(event) => setMotivoContagem(event.target.value)}
+                placeholder="Ex.: diferença encontrada na conferência física"
+                aria-invalid={Boolean(erroMotivoContagem)}
+              />
+              {erroMotivoContagem && <span className="field-erro">{erroMotivoContagem}</span>}
+            </label>
+          )}
+
           <label className="field">
             <span className="field-label">
               Quem contou <span className="field-obrigatorio">*</span>
             </span>
-            <input
+            <select
               ref={responsavelRef}
               className={`field-input${mostrar("responsavel", erroResponsavel) ? " field-input--erro" : ""}`}
-              value={responsavel}
-              onChange={(event) => setResponsavel(event.target.value)}
+              value={responsavelSelecionado}
+              onChange={(event) => {
+                setResponsavel(event.target.value);
+                setErro(null);
+              }}
               onBlur={() => tocar("responsavel")}
-              placeholder="Seu nome"
-            />
+              disabled={responsaveis.length === 0}
+              aria-invalid={Boolean(mostrar("responsavel", erroResponsavel))}
+            >
+              <option value="">Selecione quem contou</option>
+              {responsaveis.map((nome) => <option key={nome} value={nome}>{nome}</option>)}
+            </select>
+            {responsaveis.length === 0 && <span className="field-erro">{mensagemResponsaveis}</span>}
             {mostrar("responsavel", erroResponsavel) && <span className="field-erro">{mostrar("responsavel", erroResponsavel)}</span>}
           </label>
 
@@ -919,21 +1061,44 @@ function FormularioContagem({
               <button type="button" className="buscas-recentes-item" onClick={() => void carregarHistorico()}>
                 {mostrarHistorico ? "Ocultar histórico" : "Ver histórico"}
               </button>
+              {mostrarHistorico && erroHistorico && <p className="error-banner" role="alert">{erroHistorico}</p>}
               {mostrarHistorico && historico && (
-                historicoAnterior.length === 0 ? (
-                  <p className="field-value--muted">Nenhuma contagem anterior.</p>
-                ) : (
-                  <ul className="estoque-historico">
-                    {historicoAnterior.map((item) => (
-                      <li key={item.id} className="estoque-historico-item">
-                        <img className="estoque-historico-miniatura" src={item.fotoUrl} alt={`Foto da contagem de ${formatarDataHora(item.criadoEm)}`} />
-                        <span>
-                          <strong>{item.quantidade}</strong> un. — {item.responsavel} · {formatarDataHora(item.criadoEm)}
+                <ul className="estoque-historico">
+                  <li key={modal.ultima.id} className="estoque-historico-item">
+                    {(modal.ultima.tipo ?? "contagem") === "contagem" && (
+                      <img className="estoque-historico-miniatura" src={modal.ultima.fotoUrl} alt={`Foto da contagem de ${formatarDataHora(modal.ultima.criadoEm)}`} />
+                    )}
+                    <span>
+                      <strong>
+                        {(modal.ultima.tipo ?? "contagem") === "contagem" ? "Contagem atual" : `Saldo atual (${rotuloEventoEstoque(modal.ultima.tipo)})`}: {modal.ultima.quantidade}
+                      </strong>{" "}
+                      un. — {modal.ultima.responsavel} · {formatarDataHora(modal.ultima.criadoEm)}
+                      {contagemAnterior ? (
+                        <span className="estoque-historico-evolucao">
+                          Era {contagemAnterior.quantidade} → agora {modal.ultima.quantidade} un.
                         </span>
-                      </li>
-                    ))}
-                  </ul>
-                )
+                      ) : (modal.ultima.tipo ?? "contagem") === "contagem" ? (
+                        <span className="estoque-historico-evolucao">Primeira contagem registrada.</span>
+                      ) : null}
+                      {modal.ultima.motivo && <span className="estoque-historico-evolucao">Motivo: {modal.ultima.motivo}</span>}
+                    </span>
+                  </li>
+                  {historicoAnterior.length > 0 && (
+                    <>
+                      {historicoAnterior.map((item) => (
+                        <li key={item.id} className="estoque-historico-item">
+                          {(item.tipo ?? "contagem") === "contagem" && (
+                            <img className="estoque-historico-miniatura" src={item.fotoUrl} alt={`Foto da contagem de ${formatarDataHora(item.criadoEm)}`} />
+                          )}
+                          <span>
+                            <strong>{rotuloEventoEstoque(item.tipo)}: {item.quantidade}</strong> un. — {item.responsavel} · {formatarDataHora(item.criadoEm)}
+                            {item.motivo && <span className="estoque-historico-evolucao">Motivo: {item.motivo}</span>}
+                          </span>
+                        </li>
+                      ))}
+                    </>
+                  )}
+                </ul>
               )}
             </>
           )}
@@ -944,12 +1109,211 @@ function FormularioContagem({
           <button className="btn-primario" onClick={() => void salvar()} disabled={salvando || (tentouSalvar && formularioInvalido)}>
             {salvando ? "Salvando..." : "Salvar"}
           </button>
+          {modal.modo === "existente" && modal.produto && (
+            <button
+              type="button"
+              className="refresh-btn"
+              onClick={() =>
+                onAbrirMovimentacao({
+                  rua: modal.rua,
+                  codigo: modal.codigo,
+                  ultima: modal.ultima,
+                  produto: modal.produto,
+                  voltagem: modal.voltagem,
+                })
+              }
+              disabled={salvando}
+            >
+              Movimentar estoque
+            </button>
+          )}
           {modal.modo === "existente" && (
             <button type="button" className="btn-perigo-texto" onClick={() => void excluirPosicao()} disabled={salvando}>
               Excluir gaveta {modal.codigo}
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+type TipoMovimentacao = "entrada" | "saida" | "transferencia" | "ajuste";
+
+function ModalMovimentacao({
+  posicao,
+  posicoes,
+  responsaveis,
+  mensagemResponsaveis,
+  onFechar,
+  onSalvo,
+}: {
+  posicao: PosicaoResumo;
+  posicoes: PosicaoResumo[];
+  responsaveis: string[];
+  mensagemResponsaveis: string | null;
+  onFechar: () => void;
+  onSalvo: () => void;
+}) {
+  const [tipo, setTipo] = useState<TipoMovimentacao>("entrada");
+  const [quantidade, setQuantidade] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [responsavel, setResponsavel] = useState(posicao.ultima.responsavel || lerUltimoResponsavel());
+  const [destino, setDestino] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [alterado, setAlterado] = useState(false);
+  const responsavelSelecionado = responsaveis.includes(responsavel) ? responsavel : responsaveis[0] ?? "";
+  const solicitarFechamento = useCallback(() => {
+    if (alterado && !window.confirm("Descartar a movimentação não salva?")) return;
+    onFechar();
+  }, [alterado, onFechar]);
+  const painelRef = useDialogAccessibility(solicitarFechamento);
+
+  const destinos = posicoes.filter(
+    (item) =>
+      item.codigo !== posicao.codigo ||
+      item.rua !== posicao.rua,
+  ).filter(
+    (item) =>
+      item.produto?.toLowerCase() === posicao.produto?.toLowerCase() &&
+      item.voltagem === posicao.voltagem,
+  );
+  const numero = Number(quantidade);
+  const quantidadeValida =
+    Number.isSafeInteger(numero) &&
+    (tipo === "ajuste" ? numero >= 0 : numero > 0) &&
+    (tipo !== "saida" && tipo !== "transferencia" || numero <= posicao.ultima.quantidade);
+
+  const salvar = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!quantidadeValida) {
+      setErro(tipo === "ajuste" ? "Informe um saldo final inteiro igual ou maior que zero." : "Informe uma quantidade inteira maior que zero e não superior ao saldo.");
+      return;
+    }
+    if (!motivo.trim()) {
+      setErro("Informe o motivo da movimentação.");
+      return;
+    }
+    if (!responsavelSelecionado.trim() || !responsaveis.includes(responsavelSelecionado)) {
+      setErro(mensagemResponsaveis ?? "Selecione quem registrou a movimentação.");
+      return;
+    }
+    const destinoSelecionado = tipo === "transferencia" ? destinos.find((item) => `${item.rua}|${item.codigo}` === destino) : undefined;
+    if (tipo === "transferencia" && !destinoSelecionado) {
+      setErro("Selecione uma gaveta de destino do mesmo produto e voltagem.");
+      return;
+    }
+
+    setSalvando(true);
+    setErro(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/${encodeURIComponent(posicao.rua)}/${encodeURIComponent(posicao.codigo)}/movimentos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo,
+          quantidade: numero,
+          motivo: motivo.trim(),
+          responsavel: responsavelSelecionado.trim(),
+          expectedUltimaId: posicao.ultima.id,
+          ...(destinoSelecionado
+            ? {
+                destino: {
+                  rua: destinoSelecionado.rua,
+                  codigo: destinoSelecionado.codigo,
+                  expectedUltimaId: destinoSelecionado.ultima.id,
+                },
+              }
+            : {}),
+        }),
+      });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui registrar a movimentação.");
+      salvarUltimoResponsavel(responsavelSelecionado.trim());
+      onSalvo();
+    } catch (error) {
+      setErro(mensagemErro(error, "Não consegui registrar a movimentação."));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div className="settings-overlay" onClick={solicitarFechamento}>
+      <div
+        ref={painelRef}
+        className="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="estoque-movimentacao-titulo"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onChangeCapture={() => setAlterado(true)}
+      >
+        <div className="settings-panel-header">
+          <button className="settings-close" onClick={solicitarFechamento} aria-label="Fechar movimentação">×</button>
+          <h2 id="estoque-movimentacao-titulo" className="settings-title">Movimentar gaveta {posicao.codigo}</h2>
+          <p className="settings-hint">{posicao.produto} · {posicao.voltagem} · saldo atual: {posicao.ultima.quantidade} un.</p>
+        </div>
+        <form onSubmit={(event) => void salvar(event)}>
+          <div className="settings-panel-body">
+            <label className="field">
+              <span className="field-label">Tipo de movimentação</span>
+              <select className="field-input" value={tipo} onChange={(event) => { setTipo(event.target.value as TipoMovimentacao); setErro(null); }}>
+                <option value="entrada">Entrada</option>
+                <option value="saida">Saída</option>
+                <option value="transferencia">Transferência</option>
+                <option value="ajuste">Ajuste de saldo</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label">{tipo === "ajuste" ? "Saldo final" : "Quantidade"}</span>
+              <input
+                className="field-input"
+                type="number"
+                min={tipo === "ajuste" ? 0 : 1}
+                step={1}
+                inputMode="numeric"
+                value={quantidade}
+                onChange={(event) => setQuantidade(event.target.value)}
+                aria-label={tipo === "ajuste" ? "Saldo final" : "Quantidade"}
+              />
+            </label>
+            {tipo === "transferencia" && (
+              <label className="field">
+                <span className="field-label">Gaveta de destino</span>
+                <select className="field-input" value={destino} onChange={(event) => setDestino(event.target.value)}>
+                  <option value="">Selecione…</option>
+                  {destinos.map((item) => (
+                    <option key={`${item.rua}|${item.codigo}`} value={`${item.rua}|${item.codigo}`}>
+                      {item.codigo} · saldo {item.ultima.quantidade}
+                    </option>
+                  ))}
+                </select>
+                {destinos.length === 0 && <span className="field-value--muted">Não há outra gaveta cadastrada para este produto e voltagem.</span>}
+              </label>
+            )}
+            <label className="field">
+              <span className="field-label">Motivo <span className="field-obrigatorio">*</span></span>
+              <textarea className="field-input" rows={2} maxLength={500} value={motivo} onChange={(event) => setMotivo(event.target.value)} />
+            </label>
+            <label className="field">
+              <span className="field-label">Quem registrou <span className="field-obrigatorio">*</span></span>
+              <select className="field-input" value={responsavelSelecionado} onChange={(event) => setResponsavel(event.target.value)} disabled={responsaveis.length === 0}>
+                <option value="">Selecione quem registrou</option>
+                {responsaveis.map((nome) => <option key={nome} value={nome}>{nome}</option>)}
+              </select>
+              {responsaveis.length === 0 && <span className="field-erro">{mensagemResponsaveis}</span>}
+            </label>
+          </div>
+          <div className="settings-panel-footer">
+            {erro && <p className="error-banner" role="alert">{erro}</p>}
+            <button className="btn-primario" type="submit" disabled={salvando}>
+              {salvando ? "Salvando..." : "Registrar movimentação"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -980,7 +1344,7 @@ function CampoUnidadesPorCaixa({
     try {
       await onSalvar(produto, unidades);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui salvar a quantidade por caixa.");
+      setErro(mensagemErro(error, "Não consegui salvar a quantidade por caixa."));
     } finally {
       setSalvando(false);
     }
@@ -1028,13 +1392,12 @@ function ModalProdutos({
   onFotosAtualizadas: (info: Record<string, InfoProduto>) => void;
   onSalvarUnidadesPorCaixa: (produto: string, unidades: number | null) => Promise<void>;
 }) {
-  const [novoProduto, setNovoProduto] = useState("");
+  const [alterado, setAlterado] = useState(false);
   const [erroProdutos, setErroProdutos] = useState<string | null>(null);
   const [salvandoProduto, setSalvandoProduto] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Cadastro em lote: "tiny" busca no cadastro de produtos do Tiny; "colar" aceita uma lista, um por linha.
-  const [modo, setModo] = useState<"lista" | "tiny" | "colar" | "sugestoes">("lista");
+  const [modo, setModo] = useState<"lista" | "tiny" | "colar" | "sugestoes">("tiny");
   const [termoTiny, setTermoTiny] = useState("koti");
   const [resultadosTiny, setResultadosTiny] = useState<ProdutoTiny[] | null>(null);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -1050,7 +1413,14 @@ function ModalProdutos({
   const [buscandoFotos, setBuscandoFotos] = useState(false);
   const [progressoFotos, setProgressoFotos] = useState<{ atual: number; total: number; aguardando?: boolean } | null>(null);
   const [textoColado, setTextoColado] = useState("");
+  const [produtoParaMesclar, setProdutoParaMesclar] = useState<string | null>(null);
+  const [destinoMescla, setDestinoMescla] = useState("");
   const [avisoLote, setAvisoLote] = useState<string | null>(null);
+  const solicitarFechamento = useCallback(() => {
+    if (alterado && !window.confirm("Descartar as alterações não salvas nos produtos?")) return;
+    onFechar();
+  }, [alterado, onFechar]);
+  const painelRef = useDialogAccessibility(solicitarFechamento);
   const noCatalogo = useMemo(() => new Set(produtos.map(chaveComparacaoProduto)), [produtos]);
   const fotosPendentes = produtos.filter((nome) => !info[chaveDoProduto(nome)]?.fotoUrl);
 
@@ -1105,7 +1475,7 @@ function ModalProdutos({
       );
       if (detalhes.size > 0) setErroProdutos([...detalhes].slice(0, 4).join(" · "));
     } catch (error) {
-      setErroProdutos(error instanceof Error ? error.message : "Não consegui buscar as fotos no Tiny.");
+      setErroProdutos(mensagemErro(error, "Não consegui buscar as fotos no Tiny."));
     } finally {
       setBuscandoFotos(false);
       setProgressoFotos(null);
@@ -1121,9 +1491,9 @@ function ModalProdutos({
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui buscar no Tiny.");
       const lista: ProdutoTiny[] = json.produtos ?? [];
       setResultadosTiny(lista);
-      setSelecionados(new Set(lista.map((p) => p.sugestao).filter((nome) => !noCatalogo.has(chaveComparacaoProduto(nome)))));
+      setSelecionados(new Set(lista.filter((produto) => produto.idsTiny.length > 0 && produto.codigos.length > 0).map((p) => p.sugestao).filter((nome) => !noCatalogo.has(chaveComparacaoProduto(nome)))));
     } catch (error) {
-      setErroProdutos(error instanceof Error ? error.message : "Não consegui buscar no Tiny.");
+      setErroProdutos(mensagemErro(error, "Não consegui buscar no Tiny."));
     } finally {
       setBuscandoTiny(false);
     }
@@ -1144,42 +1514,17 @@ function ModalProdutos({
         if (!resposta.ok) throw new Error(json.error ?? "Não consegui cadastrar os produtos.");
         onAlterado(json.produtos ?? []);
         setAvisoLote(`${json.adicionados} produto(s) adicionado(s)${json.adicionados < nomes.length ? ` — ${nomes.length - json.adicionados} já estavam no catálogo` : ""}.`);
+        setAlterado(false);
         setModo("lista");
         setResultadosTiny(null);
         setTextoColado("");
       } catch (error) {
-        setErroProdutos(error instanceof Error ? error.message : "Não consegui cadastrar os produtos.");
+        setErroProdutos(mensagemErro(error, "Não consegui cadastrar os produtos."));
       } finally {
         setSalvandoProduto(false);
       }
     },
     [onAlterado],
-  );
-
-  const adicionarProdutoCatalogo = useCallback(
-    async (event: FormEvent) => {
-      event.preventDefault();
-      const nome = novoProduto.trim();
-      if (!nome) return;
-      setSalvandoProduto(true);
-      setErroProdutos(null);
-      try {
-        const resposta = await fetch(`${API_URL}/api/estoque/produtos`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nome }),
-        });
-        const json = await resposta.json();
-        if (!resposta.ok) throw new Error(json.error ?? "Não consegui cadastrar o produto.");
-        onAlterado(json.produtos ?? []);
-        setNovoProduto("");
-      } catch (error) {
-        setErroProdutos(error instanceof Error ? error.message : "Não consegui cadastrar o produto.");
-      } finally {
-        setSalvandoProduto(false);
-      }
-    },
-    [novoProduto, onAlterado],
   );
 
   const removerProdutoCatalogo = useCallback(
@@ -1191,20 +1536,55 @@ function ModalProdutos({
         if (!resposta.ok) throw new Error("Não consegui remover esse produto agora.");
         onAlterado(produtos.filter((p) => p !== nome));
       } catch (error) {
-        setErroProdutos(error instanceof Error ? error.message : "Não consegui remover esse produto agora.");
+        setErroProdutos(mensagemErro(error, "Não consegui remover esse produto agora."));
       }
     },
     [onAlterado, produtos],
   );
 
+  const mesclarProdutoCatalogo = useCallback(async (origem: string, destino: string) => {
+    if (!destino) return;
+    if (!window.confirm(`Mesclar "${origem}" em "${destino}"? As gavetas e contagens ficam preservadas, e "${origem}" sai do catálogo.`)) return;
+    setSalvandoProduto(true);
+    setErroProdutos(null);
+    try {
+      const resposta = await fetch(`${API_URL}/api/estoque/produtos/mesclar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ origem, destino }),
+      });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.error ?? "Não consegui mesclar os produtos.");
+      onAlterado(json.produtos ?? []);
+      onFotosAtualizadas(json.info ?? {});
+      setProdutoParaMesclar(null);
+      setDestinoMescla("");
+      setAvisoLote(`"${origem}" foi mesclado em "${destino}".`);
+      setAlterado(false);
+    } catch (error) {
+      setErroProdutos(mensagemErro(error, "Não consegui mesclar os produtos."));
+    } finally {
+      setSalvandoProduto(false);
+    }
+  }, [onAlterado, onFotosAtualizadas]);
+
   return (
-    <div className="settings-overlay" onClick={onFechar}>
-      <div className={`settings-panel${modo === "lista" ? "" : " settings-panel--largo"}`} onClick={(event) => event.stopPropagation()}>
+    <div className="settings-overlay" onClick={solicitarFechamento}>
+      <div
+        ref={painelRef}
+        className={`settings-panel${modo === "lista" ? "" : " settings-panel--largo"}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="estoque-produtos-titulo"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onChangeCapture={() => setAlterado(true)}
+      >
         <div className="settings-panel-header">
-          <button className="settings-close" onClick={onFechar} aria-label="Fechar">
+          <button className="settings-close" onClick={solicitarFechamento} aria-label="Fechar">
             ×
           </button>
-          <h2 className="settings-title">Produtos</h2>
+          <h2 id="estoque-produtos-titulo" className="settings-title">Produtos</h2>
           <p className="settings-hint">
             Produtos disponíveis pra escolher ao criar uma posição nova. Remover um produto daqui não afeta posições que já usam ele.
           </p>
@@ -1214,10 +1594,8 @@ function ModalProdutos({
           <div className="abas" role="tablist" aria-label="Como cadastrar">
             {(
               [
-                ["lista", "Um por um"],
                 ["tiny", "Buscar no Tiny"],
-                ["colar", "Colar uma lista"],
-                ["sugestoes", "Sugestões de produtos"],
+                ["lista", "Produtos cadastrados"],
               ] as const
             ).map(([valor, rotulo]) => (
               <button
@@ -1366,7 +1744,7 @@ function ModalProdutos({
                         className="refresh-btn"
                         onClick={() =>
                           setSelecionados(
-                            selecionados.size > 0 ? new Set() : new Set(resultadosTiny.map((p) => p.sugestao).filter((n) => !noCatalogo.has(chaveComparacaoProduto(n)))),
+                            selecionados.size > 0 ? new Set() : new Set(resultadosTiny.filter((p) => p.idsTiny.length > 0 && p.codigos.length > 0).map((p) => p.sugestao).filter((n) => !noCatalogo.has(chaveComparacaoProduto(n)))),
                           )
                         }
                       >
@@ -1381,8 +1759,8 @@ function ModalProdutos({
                             <label className={`lote-item${jaTem ? " lote-item--desabilitado" : ""}`}>
                               <input
                                 type="checkbox"
-                                disabled={jaTem}
-                                checked={jaTem || selecionados.has(p.sugestao)}
+                                disabled={jaTem || p.idsTiny.length === 0 || p.codigos.length === 0}
+                                checked={jaTem || (p.idsTiny.length > 0 && p.codigos.length > 0 && selecionados.has(p.sugestao))}
                                 onChange={(event) => {
                                   const novo = new Set(selecionados);
                                   if (event.target.checked) novo.add(p.sugestao);
@@ -1393,7 +1771,7 @@ function ModalProdutos({
                               <span>
                                 {p.sugestao}
                                 <span className="field-value--muted">
-                                  {jaTem ? " · já no catálogo" : p.nomesTiny.length > 1 ? ` · ${p.nomesTiny.length} variações no Tiny` : ""}
+                                  {jaTem ? " · já no catálogo" : p.idsTiny.length === 0 || p.codigos.length === 0 ? " · sem SKU no Tiny" : p.nomesTiny.length > 1 ? ` · ${p.nomesTiny.length} variações no Tiny` : ""}
                                   {p.codigos.length > 0 ? ` · ${p.codigos.slice(0, 3).join(", ")}${p.codigos.length > 3 ? "…" : ""}` : ""}
                                 </span>
                               </span>
@@ -1441,29 +1819,13 @@ function ModalProdutos({
 
           {modo === "lista" && (
           <>
-          <form className="estoque-form-produto" onSubmit={adicionarProdutoCatalogo}>
-            <label className="field">
-              <span className="field-label">Novo produto</span>
-              <input
-                ref={inputRef}
-                className="field-input"
-                value={novoProduto}
-                onChange={(event) => setNovoProduto(event.target.value)}
-                placeholder="Ex.: Liquidificador 110V"
-                autoFocus
-              />
-            </label>
-            <button className="btn-primario" type="submit" disabled={salvandoProduto || !novoProduto.trim()}>
-              {salvandoProduto ? "Salvando..." : "Adicionar"}
-            </button>
-          </form>
           {erroProdutos && <p className="error-banner">{erroProdutos}</p>}
 
           {produtos.length === 0 ? (
             <div className="estado-vazio estado-vazio--compacto">
-              <p className="estado-vazio-titulo">Nenhum produto cadastrado.</p>
-              <button type="button" className="btn-primario" onClick={() => inputRef.current?.focus()}>
-                + Adicionar produto
+              <p className="estado-vazio-titulo">Nenhum produto cadastrado. Busque no Tiny para adicionar pelo SKU.</p>
+              <button type="button" className="btn-primario" onClick={() => setModo("tiny")}>
+                Buscar no Tiny
               </button>
             </div>
           ) : (
@@ -1484,6 +1846,44 @@ function ModalProdutos({
                     unidadesPorCaixa={unidadesPorCaixa[chaveDoProduto(nome)]}
                     onSalvar={onSalvarUnidadesPorCaixa}
                   />
+                  {produtoParaMesclar === nome ? (
+                    <>
+                      <select
+                        className="field-input"
+                        aria-label={`Produto de destino para ${nome}`}
+                        value={destinoMescla}
+                        onChange={(event) => setDestinoMescla(event.target.value)}
+                      >
+                        <option value="">Mesclar em…</option>
+                        {produtos.filter((destino) => chaveComparacaoProduto(destino) !== chaveComparacaoProduto(nome)).map((destino) => (
+                          <option key={destino} value={destino}>{destino}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="refresh-btn"
+                        disabled={salvandoProduto || !destinoMescla}
+                        onClick={() => void mesclarProdutoCatalogo(nome, destinoMescla)}
+                      >
+                        {salvandoProduto ? "Mesclando..." : "Confirmar mesclagem"}
+                      </button>
+                      <button type="button" className="refresh-btn" onClick={() => setProdutoParaMesclar(null)} disabled={salvandoProduto}>
+                        Cancelar
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="refresh-btn"
+                      aria-label={`Mesclar ${nome} em outro produto`}
+                      onClick={() => {
+                        setProdutoParaMesclar(nome);
+                        setDestinoMescla("");
+                      }}
+                    >
+                      Mesclar em…
+                    </button>
+                  )}
                   <button type="button" className="refresh-btn" onClick={() => void removerProdutoCatalogo(nome)}>
                     Excluir
                   </button>
@@ -1538,13 +1938,23 @@ function lerFiltrosEstoqueDaUrl(): FiltrosEstoque {
     busca: params.get("estoqueBusca") ?? "",
     filtroVoltagem: voltagem ?? "",
     ordem: ordem === "unidades" ? "unidades" : "nome",
-    soComEstoque: params.get("estoqueSoComEstoque") === "1",
+    soComEstoque: params.get("estoqueSoComEstoque") !== "0",
     visaoEstoque: params.get("estoqueVisao") === "longarinas" ? "longarinas" : "produtos",
   };
 }
 
 function chaveDoProduto(nome: string): string {
   return nome.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function baixarCsv(nome: string, linhas: (string | number)[][]): void {
+  const csv = linhas.map((linha) => linha.map((valor) => `"${String(valor).replace(/"/g, '""')}"`).join(";")).join("\n");
+  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function normalizar(texto: string): string {
@@ -1621,6 +2031,7 @@ function ModalProduto({
   onSepararVoltagem: (grupo: GrupoProduto) => void;
 }) {
   const inputFotoRef = useRef<HTMLInputElement>(null);
+  const painelRef = useDialogAccessibility(onFechar);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [arrastandoFoto, setArrastandoFoto] = useState(false);
   const [avisoFoto, setAvisoFoto] = useState<string | null>(null);
@@ -1642,7 +2053,7 @@ function ModalProduto({
     try {
       await onExcluirProduto(grupo.nome);
     } catch (error) {
-      setErroExcluirProduto(error instanceof Error ? error.message : "Não consegui excluir o produto.");
+      setErroExcluirProduto(mensagemErro(error, "Não consegui excluir o produto."));
     } finally {
       setExcluindoProduto(false);
     }
@@ -1669,7 +2080,7 @@ function ModalProduto({
         setAvisoFoto("Foto atualizada.");
         onFotoAlterada();
       } catch (error) {
-        setErroFoto(error instanceof Error ? error.message : "Não consegui trocar a foto.");
+        setErroFoto(mensagemErro(error, "Não consegui trocar a foto."));
       } finally {
         setEnviandoFoto(false);
       }
@@ -1705,7 +2116,7 @@ function ModalProduto({
 
   return (
     <div className="settings-overlay" onClick={onFechar}>
-      <div className="settings-panel settings-panel--largo" onClick={(event) => event.stopPropagation()}>
+      <div ref={painelRef} className="settings-panel settings-panel--largo" role="dialog" aria-modal="true" aria-labelledby="estoque-produto-detalhe-titulo" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
         <div className="settings-panel-header produto-detalhe-cabecalho">
           <button className="settings-close" onClick={onFechar} aria-label="Fechar">
             ×
@@ -1737,7 +2148,7 @@ function ModalProduto({
             </button>
           </div>
           <div className="produto-detalhe-texto">
-            <h2 className="settings-title">{grupo.nome}</h2>
+            <h2 id="estoque-produto-detalhe-titulo" className="settings-title">{grupo.nome}</h2>
             <p className="produto-detalhe-total tabular">{grupo.total} un.</p>
             <p className="settings-hint">
               {grupo.gavetas.length === 0
@@ -1836,6 +2247,7 @@ function ModalSepararVoltagem({
 }) {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const painelRef = useDialogAccessibility(onFechar);
 
   const confirmar = useCallback(async () => {
     setEnviando(true);
@@ -1851,7 +2263,7 @@ function ModalSepararVoltagem({
       const novos = (json.divisoes ?? []).reduce((s: number, d: { novos: string[] }) => s + d.novos.length, 0);
       onConcluido(`${novos} produto(s) criado(s), ${json.gavetasAtualizadas} gaveta(s) atualizada(s)`);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui separar.");
+      setErro(mensagemErro(error, "Não consegui separar."));
     } finally {
       setEnviando(false);
     }
@@ -1859,12 +2271,12 @@ function ModalSepararVoltagem({
 
   return (
     <div className="settings-overlay" onClick={onFechar}>
-      <div className="settings-panel settings-panel--largo" onClick={(event) => event.stopPropagation()}>
+      <div ref={painelRef} className="settings-panel settings-panel--largo" role="dialog" aria-modal="true" aria-labelledby="estoque-separar-voltagem-titulo" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
         <div className="settings-panel-header">
           <button className="settings-close" onClick={onFechar} aria-label="Fechar">
             ×
           </button>
-          <h2 className="settings-title">Separar por voltagem</h2>
+          <h2 id="estoque-separar-voltagem-titulo" className="settings-title">Separar por voltagem</h2>
           <p className="settings-hint">
             Cada voltagem vira um produto próprio, e cada gaveta passa pro produto da voltagem dela. Contagens, fotos e histórico das gavetas não
             mudam. A foto do produto é copiada pros novos (dá pra trocar depois).
@@ -1934,6 +2346,12 @@ function ModalLongarinas({
   const [nomeEditado, setNomeEditado] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [alterado, setAlterado] = useState(false);
+  const solicitarFechamento = useCallback(() => {
+    if (alterado && !window.confirm("Descartar as alterações da longarina?")) return;
+    onFechar();
+  }, [alterado, onFechar]);
+  const painelRef = useDialogAccessibility(solicitarFechamento);
 
   const criar = async (event: FormEvent) => {
     event.preventDefault();
@@ -1942,8 +2360,9 @@ function ModalLongarinas({
     try {
       await onCriar(novaLongarina);
       setNovaLongarina("");
+      setAlterado(false);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui criar a longarina.");
+      setErro(mensagemErro(error, "Não consegui criar a longarina."));
     } finally {
       setSalvando(false);
     }
@@ -1958,21 +2377,22 @@ function ModalLongarinas({
       await onRenomear(editando, nomeEditado);
       setEditando(null);
       setNomeEditado("");
+      setAlterado(false);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui renomear a longarina.");
+      setErro(mensagemErro(error, "Não consegui renomear a longarina."));
     } finally {
       setSalvando(false);
     }
   };
 
   return (
-    <div className="settings-overlay" onClick={onFechar}>
-      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+    <div className="settings-overlay" onClick={solicitarFechamento}>
+      <div ref={painelRef} className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="estoque-longarinas-titulo" tabIndex={-1} onClick={(event) => event.stopPropagation()} onChangeCapture={() => setAlterado(true)}>
         <div className="settings-panel-header">
-          <button className="settings-close" onClick={onFechar} aria-label="Fechar">
+          <button className="settings-close" onClick={solicitarFechamento} aria-label="Fechar">
             ×
           </button>
-          <h2 className="settings-title">Gerenciar longarinas</h2>
+          <h2 id="estoque-longarinas-titulo" className="settings-title">Gerenciar longarinas</h2>
           <p className="settings-hint">Crie longarinas vazias ou renomeie uma existente. Ao renomear, as gavetas e seus históricos são preservados.</p>
         </div>
         <div className="settings-panel-body">
@@ -2066,6 +2486,12 @@ function ModalConfiguracaoAlerta({
   const [limite, setLimite] = useState(String(limiteAtual));
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [alterado, setAlterado] = useState(false);
+  const solicitarFechamento = useCallback(() => {
+    if (alterado && !window.confirm("Descartar a alteração do limite de estoque?")) return;
+    onFechar();
+  }, [alterado, onFechar]);
+  const painelRef = useDialogAccessibility(solicitarFechamento);
 
   const salvar = async (event: FormEvent) => {
     event.preventDefault();
@@ -2080,20 +2506,20 @@ function ModalConfiguracaoAlerta({
       await onSalvar(valor);
       onFechar();
     } catch (error) {
-      setErro(error instanceof Error ? error.message : "Não consegui salvar o limite.");
+      setErro(mensagemErro(error, "Não consegui salvar o limite."));
     } finally {
       setSalvando(false);
     }
   };
 
   return (
-    <div className="settings-overlay" onClick={onFechar}>
-      <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+    <div className="settings-overlay" onClick={solicitarFechamento}>
+      <div ref={painelRef} className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="estoque-config-alerta-titulo" tabIndex={-1} onClick={(event) => event.stopPropagation()} onChangeCapture={() => setAlterado(true)}>
         <div className="settings-panel-header">
-          <button className="settings-close" onClick={onFechar} aria-label="Fechar configuração">
+          <button className="settings-close" onClick={solicitarFechamento} aria-label="Fechar configuração">
             ×
           </button>
-          <h2 className="settings-title">Configuração geral do estoque</h2>
+          <h2 id="estoque-config-alerta-titulo" className="settings-title">Configuração geral do estoque</h2>
           <p className="settings-hint">Este limite vale para todos os produtos e fica salvo para todos os aparelhos.</p>
         </div>
         <form onSubmit={(event) => void salvar(event)}>
@@ -2134,8 +2560,12 @@ export function Estoque() {
   const [unidadesPorCaixa, setUnidadesPorCaixa] = useState<Record<string, number>>({});
   const [erroUnidadesPorCaixa, setErroUnidadesPorCaixa] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
+  const [movimentacao, setMovimentacao] = useState<PosicaoResumo | null>(null);
   const [carregou, setCarregou] = useState(false);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
+  const [responsaveisCadastrados, setResponsaveisCadastrados] = useState<string[]>([]);
+  const [erroResponsaveis, setErroResponsaveis] = useState<string | null>(null);
+  const [carregandoResponsaveis, setCarregandoResponsaveis] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [ultimaGavetaSalva, setUltimaGavetaSalva] = useState<{ rua: string; codigo: string } | null>(null);
 
@@ -2155,7 +2585,7 @@ export function Estoque() {
   // "Separar por voltagem" aberto: um produto (do detalhe) ou todos os que estão nessa situação.
   const [separando, setSeparando] = useState<{ grupos: GrupoProduto[]; todos: boolean } | null>(null);
 
-  // Excluir rua: confirmação digitando o nome da rua (apaga todas as gavetas dela de uma vez).
+  // Excluir longarina vazia: confirmar digitando o nome da rua.
   const [excluindoRua, setExcluindoRua] = useState<string | null>(null);
   const [confirmacaoRua, setConfirmacaoRua] = useState("");
   const [erroExcluirRua, setErroExcluirRua] = useState<string | null>(null);
@@ -2174,15 +2604,31 @@ export function Estoque() {
       setRuas(json.ruas ?? []);
       setErroCarregamento(null);
     } catch (error) {
-      const mensagem =
-        error instanceof TypeError && /failed to fetch|networkerror|load failed/i.test(error.message)
-          ? "Não foi possível carregar o estoque. Verifique sua conexão e tente novamente."
-          : error instanceof Error
-            ? error.message
-            : "Não consegui carregar o estoque.";
-      setErroCarregamento(mensagem);
+      setErroCarregamento(mensagemErro(error, "Não consegui carregar o estoque."));
     } finally {
       setCarregou(true);
+    }
+  }, []);
+
+  const carregarResponsaveis = useCallback(async () => {
+    setCarregandoResponsaveis(true);
+    try {
+      const resposta = await fetch(`${API_URL}/api/embalagem/colaboradores`, { cache: "no-store" });
+      const json = await resposta.json();
+      if (!resposta.ok) throw new Error(json.erro ?? "Não consegui carregar a lista de colaboradores.");
+      if (!Array.isArray(json.colaboradores)) throw new Error("O servidor retornou uma lista de colaboradores inválida.");
+      const colaboradores: unknown[] = json.colaboradores;
+      const nomes = colaboradores.flatMap((valor): string[] => {
+        if (typeof valor !== "object" || valor === null || !("nome" in valor) || typeof valor.nome !== "string") return [];
+        const nome = valor.nome.trim();
+        return nome ? [nome] : [];
+      });
+      setResponsaveisCadastrados([...new Set(nomes)]);
+      setErroResponsaveis(null);
+    } catch (error) {
+      setErroResponsaveis(mensagemErro(error, "Não consegui carregar a lista de colaboradores."));
+    } finally {
+      setCarregandoResponsaveis(false);
     }
   }, []);
 
@@ -2195,7 +2641,7 @@ export function Estoque() {
     definirParametro("estoqueBusca", busca, "");
     definirParametro("estoqueVoltagem", filtroVoltagem, "");
     definirParametro("estoqueOrdem", ordem, "nome");
-    definirParametro("estoqueSoComEstoque", soComEstoque ? "1" : "", "");
+    definirParametro("estoqueSoComEstoque", soComEstoque ? "1" : "0", "1");
     definirParametro("estoqueVisao", visaoEstoque, "produtos");
     const query = params.toString();
     const url = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
@@ -2258,7 +2704,7 @@ export function Estoque() {
       setErroUnidadesPorCaixa(null);
     } catch (error) {
       // Catálogo, fotos e embalagens não travam a tela — os cards aparecem a partir das gavetas.
-      setErroUnidadesPorCaixa(error instanceof Error ? error.message : "Não consegui carregar a configuração de embalagem.");
+      setErroUnidadesPorCaixa(mensagemErro(error, "Não consegui carregar a configuração de embalagem."));
     }
   }, []);
 
@@ -2301,7 +2747,7 @@ export function Estoque() {
       setLimiteEstoqueBaixo(json.limiteEstoqueBaixo);
       setErroConfiguracaoAlerta(null);
     } catch (error) {
-      setErroConfiguracaoAlerta(error instanceof Error ? error.message : "Não consegui carregar o limite de estoque baixo.");
+      setErroConfiguracaoAlerta(mensagemErro(error, "Não consegui carregar o limite de estoque baixo."));
     }
   }, []);
 
@@ -2322,18 +2768,26 @@ export function Estoque() {
       void carregar();
       void carregarProdutos();
       void carregarConfiguracaoAlerta();
+      void carregarResponsaveis();
     }, 0);
     const id = setInterval(() => {
       void carregar();
       void carregarProdutos(); // as fotos chegam aos poucos, em segundo plano
+      void carregarResponsaveis();
     }, POLL_MS);
     return () => {
       clearTimeout(kickoff);
       clearInterval(id);
     };
-  }, [carregar, carregarProdutos, carregarConfiguracaoAlerta]);
+  }, [carregar, carregarProdutos, carregarConfiguracaoAlerta, carregarResponsaveis]);
 
   const todasAsGavetas = useMemo(() => ruas.flatMap((r) => r.posicoes), [ruas]);
+  const responsaveisEstoque = useMemo(
+    () => [...responsaveisCadastrados].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [responsaveisCadastrados],
+  );
+  const mensagemListaResponsaveis =
+    erroResponsaveis ?? (carregandoResponsaveis ? "Carregando a lista de pessoas..." : "Cadastre colaboradores no módulo Embalagem para registrar contagens.");
   const gavetasVazias = todasAsGavetas.filter((p) => !p.produto).sort(ordenarGavetas);
 
   const grupos = useMemo<GrupoProduto[]>(() => {
@@ -2372,7 +2826,7 @@ export function Estoque() {
 
   const gruposExibidos = grupos
     .filter((g) => !soComEstoque || g.total > 0)
-    .filter((g) => !filtroVoltagem || g.gavetas.some((l) => l.voltagem === filtroVoltagem || (l.produto && voltagemDoNome(l.produto) === filtroVoltagem)))
+    .filter((g) => !filtroVoltagem || voltagemDoNome(g.nome) === filtroVoltagem || g.gavetas.some((l) => l.voltagem === filtroVoltagem || (l.produto && voltagemDoNome(l.produto) === filtroVoltagem)))
     .filter((g) => !termo || bateTermos(g.nome) || g.gavetas.some((l) => bateTermos(`${l.codigo} rua ${l.rua} ${l.rua}${l.codigo}`)))
     .sort((a, b) => (ordem === "unidades" ? b.total - a.total : 0) || a.nome.localeCompare(b.nome, "pt-BR"));
 
@@ -2406,6 +2860,7 @@ export function Estoque() {
   const abrirNovaGaveta = useCallback(
     (produtoInicial?: string) => {
       setProdutoAberto(null);
+      setMovimentacao(null);
       const codigosUltimaRua = ultimaGavetaSalva ? codigosPorRua[ultimaGavetaSalva.rua] ?? [] : [];
       const codigosAtualizados = ultimaGavetaSalva
         ? {
@@ -2434,7 +2889,13 @@ export function Estoque() {
 
   const abrirGaveta = useCallback((p: PosicaoResumo) => {
     setProdutoAberto(null);
+    setMovimentacao(null);
     setModal({ modo: "existente", rua: p.rua, codigo: p.codigo, ultima: p.ultima, produto: p.produto, voltagem: p.voltagem });
+  }, []);
+
+  const abrirMovimentacao = useCallback((posicao: PosicaoResumo) => {
+    setModal(null);
+    setMovimentacao(posicao);
   }, []);
 
   const aoSalvar = useCallback(
@@ -2461,6 +2922,12 @@ export function Estoque() {
     [carregar, mostrarToast],
   );
 
+  const aoSalvarMovimentacao = useCallback(() => {
+    setMovimentacao(null);
+    void carregar();
+    mostrarToast("Movimentação registrada");
+  }, [carregar, mostrarToast]);
+
   const confirmarExclusaoRua = useCallback(async () => {
     if (!excluindoRua) return;
     setExcluindo(true);
@@ -2469,16 +2936,22 @@ export function Estoque() {
       const resposta = await fetch(`${API_URL}/api/estoque/longarinas/${encodeURIComponent(excluindoRua)}`, { method: "DELETE" });
       const json = await resposta.json();
       if (!resposta.ok) throw new Error(json.error ?? "Não consegui excluir a longarina.");
-      mostrarToast(`Longarina ${excluindoRua} excluída (${json.gavetasExcluidas ?? 0} gaveta(s) arquivadas)`);
+      mostrarToast(`Longarina ${excluindoRua} excluída`);
       setExcluindoRua(null);
       setConfirmacaoRua("");
       void carregar();
     } catch (error) {
-      setErroExcluirRua(error instanceof Error ? error.message : "Não consegui excluir a longarina.");
+      setErroExcluirRua(mensagemErro(error, "Não consegui excluir a longarina."));
     } finally {
       setExcluindo(false);
     }
   }, [carregar, excluindoRua, mostrarToast]);
+
+  const fecharExclusaoRua = useCallback(() => {
+    if (confirmacaoRua.trim() && !window.confirm("Descartar a confirmação e cancelar a exclusão?")) return;
+    setExcluindoRua(null);
+    setConfirmacaoRua("");
+  }, [confirmacaoRua]);
 
   const filtroAtivo = termo !== "" || filtroVoltagem !== "" || soComEstoque;
 
@@ -2555,7 +3028,15 @@ export function Estoque() {
             placeholder="Buscar produto, rua ou gaveta (ex.: F3)"
           />
         </label>
-        <select className="field-input" aria-label="Filtrar por voltagem" value={filtroVoltagem} onChange={(event) => setFiltroVoltagem(event.target.value)}>
+        <select
+          className="field-input"
+          aria-label="Filtrar por voltagem"
+          value={filtroVoltagem}
+          onChange={(event) => {
+            setFiltroVoltagem(event.target.value);
+            if (event.target.value) setSoComEstoque(false);
+          }}
+        >
           <option value="">Todas as voltagens</option>
           {VOLTAGENS.map((item) => (
             <option key={item} value={item}>
@@ -2571,6 +3052,27 @@ export function Estoque() {
           <input type="checkbox" checked={soComEstoque} onChange={(event) => setSoComEstoque(event.target.checked)} />
           Só com estoque
         </label>
+        {visaoEstoque === "produtos" && (
+          <button
+            type="button"
+            className="refresh-btn"
+            onClick={() =>
+              baixarCsv(`estoque-${new Date().toISOString().slice(0, 10)}.csv`, [
+                ["Produto", "SKU", "Voltagem", "Unidades", "Gavetas", "Última contagem"],
+                ...gruposExibidos.map((grupo) => [
+                  grupo.nome,
+                  grupo.info?.codigos?.join(", ") ?? "",
+                  grupo.porVoltagem.map((item) => `${item.voltagem}: ${item.quantidade}`).join(" · ") || voltagemDoNome(grupo.nome) || "",
+                  grupo.total,
+                  grupo.gavetas.map((gaveta) => `${gaveta.codigo} (${gaveta.ultima.quantidade})`).join(", "),
+                  grupo.ultimaContagem ? formatarDataHora(grupo.ultimaContagem) : "",
+                ]),
+              ])
+            }
+          >
+            Exportar CSV
+          </button>
+        )}
       </div>
 
       {paraSeparar.length > 0 && (
@@ -2687,10 +3189,7 @@ export function Estoque() {
                   <span className="produto-card-linha">
                     <span className="produto-card-total tabular">{g.total} un.</span>
                     {g.total === 0 ? (
-                      <span className="estado-chip estado-chip--ruptura">
-                        <span className="alerta-estoque-ponto" aria-hidden="true" />
-                        Sem estoque
-                      </span>
+                      <span className="estado-chip estado-chip--vazia">Sem estoque</span>
                     ) : baixo ? (
                       <span className="estado-chip estado-chip--baixo">
                         <span className="alerta-estoque-ponto" aria-hidden="true" />
@@ -2698,20 +3197,25 @@ export function Estoque() {
                       </span>
                     ) : null}
                   </span>
-                  {g.porVoltagem.length > 0 && (
-                    <span className="produto-card-meta">{g.porVoltagem.map((v) => `${v.voltagem}: ${v.quantidade}`).join(" · ")}</span>
+                  {(g.porVoltagem.length > 0 || voltagemDoNome(g.nome)) && (
+                    <span className="produto-card-meta">
+                      {g.porVoltagem.length > 0 ? g.porVoltagem.map((v) => `${v.voltagem}: ${v.quantidade}`).join(" · ") : voltagemDoNome(g.nome)}
+                    </span>
                   )}
+                  <span className="produto-card-meta">
+                    {g.info?.codigos?.length ? `SKU: ${g.info.codigos.join(", ")}` : "SKU não vinculado"}
+                    {g.ultimaContagem ? ` · última contagem ${formatarDataHora(g.ultimaContagem)}` : " · sem contagem"}
+                  </span>
                   {g.gavetas.length === 0 ? (
                     <span className="produto-card-meta">Não está em nenhuma gaveta</span>
                   ) : (
                     <span className="produto-card-locais" aria-label="Onde está">
-                      {g.gavetas.slice(0, 4).map((l) => (
+                      {g.gavetas.map((l) => (
                         <span key={`${l.rua}::${l.codigo}`} className="local-chip" title={`Rua ${l.rua} · gaveta ${l.codigo} · ${l.ultima.quantidade} un.`}>
                           {l.codigo}
                           <span className="local-chip-qtd tabular">{l.ultima.quantidade}</span>
                         </span>
                       ))}
-                      {g.gavetas.length > 4 && <span className="local-chip local-chip--mais">+{g.gavetas.length - 4}</span>}
                     </span>
                   )}
                 </span>
@@ -2785,19 +3289,43 @@ export function Estoque() {
       )}
 
       {excluindoRua && (
-        <div className="settings-overlay" onClick={() => setExcluindoRua(null)}>
-          <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="settings-overlay"
+          onClick={fecharExclusaoRua}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              fecharExclusaoRua();
+            } else if (event.key === "Tab") {
+              const focusable = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled])')];
+              if (focusable.length === 0) return;
+              const first = focusable[0];
+              const last = focusable[focusable.length - 1];
+              if (event.shiftKey && event.target === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && event.target === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }
+          }}
+        >
+          <div className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="estoque-excluir-longarina-titulo" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
             <div className="settings-panel-header">
-              <button className="settings-close" onClick={() => setExcluindoRua(null)} aria-label="Fechar">
+              <button className="settings-close" onClick={fecharExclusaoRua} aria-label="Fechar">
                 ×
               </button>
-              <h2 className="settings-title">Excluir longarina {excluindoRua}?</h2>
+              <h2 id="estoque-excluir-longarina-titulo" className="settings-title">Excluir longarina {excluindoRua}?</h2>
             </div>
             <div className="settings-panel-body">
-              <p className="field-value">
-                As <strong>{ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0} gaveta(s)</strong> dessa longarina serão arquivadas com o histórico
-                de contagens. Nada é apagado de vez: fica guardado num arquivo de excluídos e dá pra recuperar se precisar.
-              </p>
+              {(ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0) > 0 ? (
+                <p className="field-value">
+                  Esta longarina ainda tem <strong>{ruas.find((r) => r.rua === excluindoRua)?.posicoes.length} gaveta(s)</strong>. Remova ou mova cada gaveta antes de excluir a longarina; o histórico delas será mantido.
+                </p>
+              ) : (
+                <p className="field-value">A longarina está vazia e pode ser removida.</p>
+              )}
               <label className="field">
                 <span className="field-label">
                   Pra confirmar, digite <strong>{excluindoRua}</strong>
@@ -2810,10 +3338,14 @@ export function Estoque() {
               <button
                 type="button"
                 className="btn-perigo"
-                disabled={excluindo || confirmacaoRua.trim().toUpperCase() !== excluindoRua.toUpperCase()}
+                disabled={
+                  excluindo ||
+                  (ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0) > 0 ||
+                  confirmacaoRua.trim().toUpperCase() !== excluindoRua.toUpperCase()
+                }
                 onClick={() => void confirmarExclusaoRua()}
               >
-                {excluindo ? "Excluindo..." : `Excluir longarina ${excluindoRua}`}
+                {excluindo ? "Excluindo..." : (ruas.find((r) => r.rua === excluindoRua)?.posicoes.length ?? 0) > 0 ? "Remova as gavetas antes de excluir" : `Excluir longarina ${excluindoRua}`}
               </button>
             </div>
           </div>
@@ -2840,10 +3372,24 @@ export function Estoque() {
           modal={modal}
           produtos={produtos}
           unidadesPorCaixa={unidadesPorCaixa}
+          responsaveis={responsaveisEstoque}
+          mensagemResponsaveis={mensagemListaResponsaveis}
+          onAbrirMovimentacao={abrirMovimentacao}
           onFechar={() => setModal(null)}
           onSalvo={aoSalvar}
           onMetadadosSalvos={aoSalvarMetadados}
           onExcluida={aoExcluirGaveta}
+        />
+      )}
+
+      {movimentacao && (
+        <ModalMovimentacao
+          posicao={movimentacao}
+          posicoes={todasAsGavetas}
+          responsaveis={responsaveisEstoque}
+          mensagemResponsaveis={mensagemListaResponsaveis}
+          onFechar={() => setMovimentacao(null)}
+          onSalvo={aoSalvarMovimentacao}
         />
       )}
 

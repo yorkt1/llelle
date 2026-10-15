@@ -29,6 +29,13 @@ export interface RegistroContagem {
   /** URL pública do Cloudinary — não um caminho/arquivo local. */
   fotoUrl: string;
   criadoEm: string;
+  tipo?: "contagem" | "entrada" | "saida" | "transferencia" | "ajuste";
+  motivo?: string;
+  quantidadeAnterior?: number;
+  quantidadeMovimentada?: number;
+  movimentacaoId?: string;
+  origem?: { rua: string; codigo: string };
+  destino?: { rua: string; codigo: string };
 }
 
 type HistoricoPorPosicao = Record<string, RegistroContagem[]>; // chave: "RUA::CODIGO", mais recente primeiro
@@ -267,6 +274,31 @@ export async function removerProduto(nome: string): Promise<void> {
   await store.update<string[]>(CHAVE_PRODUTOS, (atual) => (atual ?? []).filter((p) => p !== nome));
 }
 
+/** Mescla o cadastro de um produto em outro sem alterar as contagens históricas das gavetas. */
+export async function mesclarProdutos(origem: string, destino: string): Promise<{ produtos: string[]; posicoesAtualizadas: number }> {
+  const catalogo = await listarProdutos();
+  const produtoOrigem = catalogo.find((produto) => produto.toLocaleLowerCase("pt-BR") === origem.trim().toLocaleLowerCase("pt-BR"));
+  const produtoDestino = catalogo.find((produto) => produto.toLocaleLowerCase("pt-BR") === destino.trim().toLocaleLowerCase("pt-BR"));
+  if (!produtoOrigem || !produtoDestino) throw new Error("Escolha dois produtos que estejam no catálogo.");
+  if (produtoOrigem.toLocaleLowerCase("pt-BR") === produtoDestino.toLocaleLowerCase("pt-BR")) throw new Error("Escolha produtos diferentes para mesclar.");
+
+  let posicoesAtualizadas = 0;
+  await store.update<MetadadosPorPosicao>(CHAVE_METADADOS, (atual) => {
+    const metadados = { ...(atual ?? {}) };
+    for (const [chavePosicao, meta] of Object.entries(metadados)) {
+      if (meta?.produto?.toLocaleLowerCase("pt-BR") !== produtoOrigem.toLocaleLowerCase("pt-BR")) continue;
+      metadados[chavePosicao] = { ...meta, produto: produtoDestino };
+      posicoesAtualizadas++;
+    }
+    return metadados;
+  });
+
+  const produtos = await store.update<string[]>(CHAVE_PRODUTOS, (atual) =>
+    (atual ?? []).filter((produto) => produto.toLocaleLowerCase("pt-BR") !== produtoOrigem.toLocaleLowerCase("pt-BR")),
+  );
+  return { produtos, posicoesAtualizadas };
+}
+
 
 /** Cadastra vários produtos de uma vez (lista colada ou importada do Tiny). Já existentes são ignorados, sem erro. */
 export async function adicionarProdutos(nomes: string[]): Promise<{ produtos: string[]; adicionados: number }> {
@@ -481,15 +513,23 @@ export async function removerPosicao(rua: string, codigo: string): Promise<void>
 }
 
 /** Exclui a rua inteira (todas as posições dela). Devolve quantas posições foram arquivadas. */
+export class LongarinaComGavetasError extends Error {
+  constructor() {
+    super("Não é possível excluir uma longarina que ainda tenha gavetas. Remova ou mova as gavetas antes.");
+    this.name = "LongarinaComGavetasError";
+  }
+}
+
+/** Remove apenas longarinas vazias; posições e seus históricos precisam ser tratados individualmente. */
 export async function removerRua(rua: string): Promise<number> {
   const longarina = normalizar(rua);
   const prefixo = `${longarina}::`;
   const historicos = (await store.get<HistoricoPorPosicao>(CHAVE_STORE)) ?? {};
   const metadados = (await store.get<MetadadosPorPosicao>(CHAVE_METADADOS)) ?? {};
   const chaves = [...new Set([...Object.keys(historicos), ...Object.keys(metadados)])].filter((k) => k.startsWith(prefixo));
-  const excluidas = await excluirChaves(chaves);
+  if (chaves.length > 0) throw new LongarinaComGavetasError();
   await store.update<string[]>(CHAVE_LONGARINAS, (atuais) => (atuais ?? []).filter((item) => normalizar(item) !== longarina));
-  return excluidas;
+  return 0;
 }
 const FORMATOS_AUTORIZADOS = new Set(["jpeg", "jpg", "png", "webp"]);
 
@@ -565,6 +605,9 @@ export interface RegistrarContagemParams {
    * EVENTO de contagem, não uma foto genérica reaproveitada de uma vez qualquer no passado.
    */
   fotoDataUri: string;
+  /** ID da contagem que estava aberta no formulário; null indica que a gaveta ainda não existia. */
+  expectedUltimaId?: string | null;
+  motivo?: string;
   /**
    * Só usados enquanto a posição ainda não tem produto (posição nova, ou registrada vazia) — depois
    * ficam fixos, só mudam por uma correção explícita (ver `definirMetadados`), nunca de novo aqui.
@@ -574,9 +617,28 @@ export interface RegistrarContagemParams {
   voltagem?: string;
 }
 
+export class ContagemConflitoError extends Error {
+  constructor() {
+    super("Esta gaveta foi atualizada por outra pessoa desde que você abriu o formulário. Feche e abra a gaveta novamente para conferir o estoque atual.");
+    this.name = "ContagemConflitoError";
+  }
+}
+
 export async function registrarContagem(params: RegistrarContagemParams): Promise<RegistroContagem> {
+  if (!Number.isSafeInteger(params.quantidade) || params.quantidade < 0) {
+    throw new Error("Quantidade precisa ser um número inteiro maior ou igual a zero.");
+  }
+
   const k = chave(params.rua, params.codigo);
+  const historicoExistente = await obterHistorico(params.rua, params.codigo);
+  const ultimaExistente = historicoExistente[0] ?? null;
+  if (params.expectedUltimaId !== undefined && (ultimaExistente?.id ?? null) !== params.expectedUltimaId) {
+    throw new ContagemConflitoError();
+  }
   const metadadosAtuais = await obterMetadados(params.rua, params.codigo);
+  if (metadadosAtuais && ultimaExistente && params.quantidade !== ultimaExistente.quantidade && !params.motivo?.trim()) {
+    throw new Error("Informe o motivo da diferença entre a contagem anterior e a atual.");
+  }
   if (!metadadosAtuais) {
     // Posição sem produto definido (nova, ou registrada vazia antes): só pode ser contada com 0 un.
     // — é a "posição vazia". Pra ter unidades, precisa produto+voltagem, que ficam fixos daí em diante.
@@ -595,10 +657,20 @@ export async function registrarContagem(params: RegistrarContagemParams): Promis
     responsavel: params.responsavel,
     fotoUrl,
     criadoEm: new Date().toISOString(),
+    tipo: "contagem",
+    ...(params.motivo?.trim() ? { motivo: params.motivo.trim() } : {}),
+    ...(ultimaExistente && params.quantidade !== ultimaExistente.quantidade
+      ? { quantidadeAnterior: ultimaExistente.quantidade }
+      : {}),
   };
 
   await store.update<HistoricoPorPosicao>(CHAVE_STORE, (atual) => {
     const tudo = atual ?? {};
+    const ultimaAtual = tudo[k]?.[0]?.id ?? null;
+    if (params.expectedUltimaId !== undefined && ultimaAtual !== params.expectedUltimaId) throw new ContagemConflitoError();
+    if (metadadosAtuais && tudo[k]?.[0] && params.quantidade !== tudo[k][0].quantidade && !params.motivo?.trim()) {
+      throw new Error("Informe o motivo da diferença entre a contagem anterior e a atual.");
+    }
     return { ...tudo, [k]: [registro, ...(tudo[k] ?? [])] };
   });
   await store.update<string[]>(CHAVE_LONGARINAS, (atuais) => {
@@ -609,4 +681,126 @@ export async function registrarContagem(params: RegistrarContagemParams): Promis
   });
 
   return registro;
+}
+
+export type TipoMovimentacaoEstoque = "entrada" | "saida" | "transferencia" | "ajuste";
+
+export interface RegistrarMovimentacaoParams {
+  rua: string;
+  codigo: string;
+  tipo: TipoMovimentacaoEstoque;
+  quantidade: number;
+  responsavel: string;
+  motivo: string;
+  expectedUltimaId: string;
+  destino?: { rua: string; codigo: string; expectedUltimaId: string };
+}
+
+export async function registrarMovimentacao(params: RegistrarMovimentacaoParams): Promise<RegistroContagem[]> {
+  if (!Number.isSafeInteger(params.quantidade) || params.quantidade < 0 || (params.tipo !== "ajuste" && params.quantidade === 0)) {
+    throw new Error(params.tipo === "ajuste"
+      ? "Informe um saldo final inteiro maior ou igual a zero."
+      : "A quantidade movimentada precisa ser um número inteiro maior que zero.");
+  }
+  const motivo = params.motivo.trim();
+  const responsavel = params.responsavel.trim();
+  if (!motivo) throw new Error("Informe o motivo da movimentação.");
+  if (!responsavel) throw new Error("Informe quem registrou a movimentação.");
+  if (!params.expectedUltimaId) throw new Error("Atualize a gaveta antes de registrar a movimentação.");
+
+  const chaveOrigem = chave(params.rua, params.codigo);
+  const metadadosOrigem = await obterMetadados(params.rua, params.codigo);
+  if (!metadadosOrigem) throw new Error("A gaveta precisa ter produto e voltagem para movimentar estoque.");
+  const metadadosDestino =
+    params.tipo === "transferencia" && params.destino
+      ? await obterMetadados(params.destino.rua, params.destino.codigo)
+      : null;
+  if (params.tipo === "transferencia") {
+    if (!params.destino) throw new Error("Selecione a gaveta de destino.");
+    if (!params.destino.expectedUltimaId) throw new Error("Atualize a gaveta de destino antes de transferir.");
+    if (chave(params.destino.rua, params.destino.codigo) === chaveOrigem) throw new Error("A origem e o destino precisam ser gavetas diferentes.");
+    if (!metadadosDestino) throw new Error("A gaveta de destino precisa ter produto e voltagem.");
+    if (metadadosDestino.produto.toLowerCase() !== metadadosOrigem.produto.toLowerCase() || metadadosDestino.voltagem !== metadadosOrigem.voltagem) {
+      throw new Error("A transferência só pode ser feita entre gavetas do mesmo produto e voltagem.");
+    }
+  } else if (params.destino) {
+    throw new Error("Destino só deve ser informado para uma transferência.");
+  }
+
+  const criadoEm = new Date().toISOString();
+  const movimentacaoId = crypto.randomUUID();
+  const eventos: RegistroContagem[] = [];
+
+  await store.update<HistoricoPorPosicao>(CHAVE_STORE, (atual) => {
+    const tudo = { ...(atual ?? {}) };
+    const historicoOrigem = tudo[chaveOrigem] ?? [];
+    const saldoOrigem = historicoOrigem[0];
+    if (!saldoOrigem) throw new Error("A gaveta de origem não existe.");
+    if (saldoOrigem.id !== params.expectedUltimaId) throw new ContagemConflitoError();
+
+    let quantidadeOrigem: number;
+    let quantidadeDestino: number | undefined;
+    let historicoDestino: RegistroContagem[] | undefined;
+    let chaveDestino: string | undefined;
+    if (params.tipo === "entrada") {
+      quantidadeOrigem = saldoOrigem.quantidade + params.quantidade;
+    } else if (params.tipo === "saida") {
+      if (params.quantidade > saldoOrigem.quantidade) throw new Error("A saída não pode ser maior que o saldo atual da gaveta.");
+      quantidadeOrigem = saldoOrigem.quantidade - params.quantidade;
+    } else if (params.tipo === "ajuste") {
+      if (params.quantidade === saldoOrigem.quantidade) throw new Error("O saldo informado já é igual ao saldo atual.");
+      quantidadeOrigem = params.quantidade;
+    } else {
+      const destino = params.destino!;
+      chaveDestino = chave(destino.rua, destino.codigo);
+      historicoDestino = tudo[chaveDestino] ?? [];
+      const saldoAtualDestino = historicoDestino[0];
+      if (!saldoAtualDestino) throw new Error("A gaveta de destino não existe.");
+      if (saldoAtualDestino.id !== destino.expectedUltimaId) throw new ContagemConflitoError();
+      quantidadeDestino = saldoAtualDestino.quantidade + params.quantidade;
+      quantidadeOrigem = saldoOrigem.quantidade - params.quantidade;
+      if (params.quantidade > saldoOrigem.quantidade) throw new Error("A transferência não pode ser maior que o saldo atual da gaveta.");
+
+      const eventoDestino: RegistroContagem = {
+        id: crypto.randomUUID(),
+        quantidade: quantidadeDestino,
+        responsavel,
+        fotoUrl: saldoAtualDestino.fotoUrl,
+        criadoEm,
+        tipo: "transferencia",
+        motivo,
+        quantidadeAnterior: saldoAtualDestino.quantidade,
+        quantidadeMovimentada: params.quantidade,
+        movimentacaoId,
+        origem: { rua: params.rua, codigo: params.codigo },
+        destino: { rua: destino.rua, codigo: destino.codigo },
+      };
+      eventos.push(eventoDestino);
+      tudo[chaveDestino] = [eventoDestino, ...historicoDestino];
+    }
+
+    const eventoOrigem: RegistroContagem = {
+      id: crypto.randomUUID(),
+      quantidade: quantidadeOrigem,
+      responsavel,
+      fotoUrl: saldoOrigem.fotoUrl,
+      criadoEm,
+      tipo: params.tipo,
+      motivo,
+      quantidadeAnterior: saldoOrigem.quantidade,
+      quantidadeMovimentada: params.tipo === "ajuste" ? Math.abs(params.quantidade - saldoOrigem.quantidade) : params.quantidade,
+      ...(params.tipo === "transferencia"
+        ? {
+            movimentacaoId,
+            origem: { rua: params.rua, codigo: params.codigo },
+            destino: params.destino,
+          }
+        : {}),
+    };
+    eventos.push(eventoOrigem);
+    tudo[chaveOrigem] = [eventoOrigem, ...historicoOrigem];
+    return tudo;
+  });
+
+  return eventos;
 }

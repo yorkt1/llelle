@@ -1,7 +1,6 @@
 import { Router } from "express";
 import {
   CloudinaryConfigError,
-  adicionarProduto,
   criarLongarina,
   definirMetadados,
   listarEstoque,
@@ -19,10 +18,15 @@ import {
   definirLimiteEstoqueBaixo,
   listarUnidadesPorCaixa,
   definirUnidadesPorCaixa,
+  ContagemConflitoError,
+  registrarMovimentacao,
+  mesclarProdutos,
+  LongarinaComGavetasError,
 } from "../../lib/estoque";
 import { StoreConfigError } from "../../lib/store";
 import { OlistConfigError } from "../../lib/olist";
 import { buscarProdutosTiny } from "../../lib/catalogoTiny";
+import { listarColaboradores } from "../../lib/embalagem";
 import {
   copiarFotoParaProdutos,
   definirFotoManual,
@@ -33,6 +37,12 @@ import {
 } from "../../lib/fotosProdutos";
 
 export const estoqueRouter = Router();
+
+async function responsavelEstaCadastrado(nome: string): Promise<boolean> {
+  const chave = nome.trim().toLocaleLowerCase("pt-BR");
+  const colaboradores = await listarColaboradores();
+  return colaboradores.some((colaborador) => colaborador.nome.trim().toLocaleLowerCase("pt-BR") === chave);
+}
 
 estoqueRouter.get("/", async (_req, res) => {
   try {
@@ -100,21 +110,37 @@ estoqueRouter.put("/produtos/embalagens", async (req, res) => {
 });
 
 estoqueRouter.post("/produtos", async (req, res) => {
-  const nome = paraTextoObrigatorio(req.body?.nome);
-  if (!nome) {
-    res.status(400).json({ error: "Informe o nome do produto." });
+  res.status(400).json({ error: "Cadastre novos produtos pela busca do Tiny, vinculando o SKU." });
+});
+
+estoqueRouter.post("/produtos/mesclar", async (req, res) => {
+  const origem = paraTextoObrigatorio(req.body?.origem);
+  const destino = paraTextoObrigatorio(req.body?.destino);
+  if (!origem || !destino) {
+    res.status(400).json({ error: "Selecione o produto de origem e o produto que vai mantê-lo." });
     return;
   }
   try {
-    const produtos = await adicionarProduto(nome);
-    await registrarInfoProdutos([{ nome }]);
-    res.status(201).json({ produtos });
+    const catalogo = await listarProdutos();
+    const produtoOrigem = catalogo.find((produto) => produto.toLocaleLowerCase("pt-BR") === origem.toLocaleLowerCase("pt-BR"));
+    const produtoDestino = catalogo.find((produto) => produto.toLocaleLowerCase("pt-BR") === destino.toLocaleLowerCase("pt-BR"));
+    if (!produtoOrigem || !produtoDestino) {
+      res.status(400).json({ error: "Escolha dois produtos que estejam no catálogo." });
+      return;
+    }
+    if (produtoOrigem.toLocaleLowerCase("pt-BR") === produtoDestino.toLocaleLowerCase("pt-BR")) {
+      res.status(400).json({ error: "Escolha produtos diferentes para mesclar." });
+      return;
+    }
+    await normalizarInfoProdutos({ [produtoOrigem]: produtoDestino });
+    const resultado = await mesclarProdutos(produtoOrigem, produtoDestino);
+    res.status(200).json({ ...resultado, info: await listarInfoProdutos() });
   } catch (error) {
     if (error instanceof StoreConfigError) {
       res.status(503).json({ error: error.message });
       return;
     }
-    res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao cadastrar o produto." });
+    res.status(400).json({ error: error instanceof Error ? error.message : "Não consegui mesclar os produtos." });
   }
 });
 
@@ -179,7 +205,7 @@ estoqueRouter.delete("/longarinas/:rua", async (req, res) => {
     const gavetasExcluidas = await removerRua(String(req.params.rua));
     res.status(200).json({ gavetasExcluidas });
   } catch (error) {
-    res.status(error instanceof StoreConfigError ? 503 : 500).json({
+    res.status(error instanceof StoreConfigError ? 503 : error instanceof LongarinaComGavetasError ? 409 : 500).json({
       error: error instanceof Error ? error.message : "Não consegui excluir a longarina.",
     });
   }
@@ -212,14 +238,29 @@ estoqueRouter.post("/produtos/lote", async (req, res) => {
     res.status(400).json({ error: "Nenhum nome de produto informado." });
     return;
   }
-  // `itens` (opcional, vindo da busca do Tiny) traz os IDs de cada produto — a foto sai deles.
-  const itens: { nome: string; idsTiny?: string[]; codigos?: string[] }[] = Array.isArray(req.body?.itens)
-    ? req.body.itens.filter((i: unknown): i is { nome: string } => typeof (i as { nome?: unknown })?.nome === "string")
+  const itens: { nome: string; idsTiny: string[]; codigos: string[] }[] = Array.isArray(req.body?.itens)
+    ? req.body.itens.flatMap((value: unknown) => {
+        if (typeof value !== "object" || value === null) return [];
+        const item = value as { nome?: unknown; idsTiny?: unknown; codigos?: unknown };
+        if (typeof item.nome !== "string" || !Array.isArray(item.idsTiny) || !Array.isArray(item.codigos)) return [];
+        return [{
+          nome: item.nome.trim(),
+          idsTiny: item.idsTiny.filter((id): id is string => typeof id === "string" && id.trim() !== ""),
+          codigos: item.codigos.filter((codigo): codigo is string => typeof codigo === "string" && codigo.trim() !== ""),
+        }];
+      })
     : [];
+  const porNome = new Map(itens.map((item) => [item.nome.toLocaleLowerCase(), item]));
+  if (validos.some((nome) => {
+    const item = porNome.get(nome.trim().toLocaleLowerCase());
+    return !item || item.idsTiny.length === 0 || item.codigos.length === 0;
+  })) {
+    res.status(400).json({ error: "Cada produto precisa ser selecionado no Tiny e ter SKU vinculado." });
+    return;
+  }
   try {
     const resultado = await adicionarProdutos(validos);
-    const porNome = new Map(itens.map((i) => [i.nome.trim().toLowerCase(), i]));
-    await registrarInfoProdutos(validos.map((nome) => porNome.get(nome.trim().toLowerCase()) ?? { nome }));
+    await registrarInfoProdutos(validos.map((nome) => porNome.get(nome.trim().toLocaleLowerCase())!));
     res.status(201).json(resultado);
   } catch (error) {
     if (error instanceof StoreConfigError) {
@@ -304,7 +345,9 @@ estoqueRouter.delete("/rua/:rua", async (req, res) => {
     const posicoes = await removerRua(String(req.params.rua));
     res.status(200).json({ posicoesExcluidas: posicoes });
   } catch (error) {
-    res.status(500).json({ error: error instanceof Error ? error.message : "Erro inesperado ao excluir a rua." });
+    res.status(error instanceof LongarinaComGavetasError ? 409 : error instanceof StoreConfigError ? 503 : 500).json({
+      error: error instanceof Error ? error.message : "Erro inesperado ao excluir a rua.",
+    });
   }
 });
 
@@ -344,9 +387,86 @@ estoqueRouter.put("/:rua/:codigo/metadados", async (req, res) => {
   }
 });
 
+estoqueRouter.post("/:rua/:codigo/movimentos", async (req, res) => {
+  const tipo = req.body?.tipo;
+  const quantidade = paraQuantidade(req.body?.quantidade);
+  const responsavel = paraTextoObrigatorio(req.body?.responsavel);
+  const motivo = paraTextoObrigatorio(req.body?.motivo);
+  const expectedUltimaId = req.body?.expectedUltimaId;
+  const destinoBody = req.body?.destino;
+  const destino =
+    destinoBody && typeof destinoBody === "object"
+      ? {
+          rua: paraTextoObrigatorio(destinoBody.rua),
+          codigo: paraTextoObrigatorio(destinoBody.codigo),
+          expectedUltimaId: destinoBody.expectedUltimaId,
+        }
+      : undefined;
+
+  if (!["entrada", "saida", "transferencia", "ajuste"].includes(tipo)) {
+    res.status(400).json({ error: "Tipo de movimentação inválido." });
+    return;
+  }
+  if (
+    quantidade === null ||
+    (tipo !== "ajuste" && quantidade === 0) ||
+    !responsavel ||
+    !motivo ||
+    motivo.length > 500 ||
+    typeof expectedUltimaId !== "string" ||
+    !expectedUltimaId
+  ) {
+    res.status(400).json({ error: "Informe uma quantidade válida, o motivo (até 500 caracteres), quem movimentou e a versão atual da gaveta." });
+    return;
+  }
+  if (
+    tipo === "transferencia" &&
+    (!destino?.rua || !destino.codigo || typeof destino.expectedUltimaId !== "string" || !destino.expectedUltimaId)
+  ) {
+    res.status(400).json({ error: "Informe a gaveta de destino e sua versão atual." });
+    return;
+  }
+
+  try {
+    if (!(await responsavelEstaCadastrado(responsavel))) {
+      res.status(400).json({ error: "Selecione uma pessoa cadastrada no módulo Embalagem." });
+      return;
+    }
+    const eventos = await registrarMovimentacao({
+      rua: String(req.params.rua),
+      codigo: String(req.params.codigo),
+      tipo,
+      quantidade,
+      responsavel,
+      motivo,
+      expectedUltimaId,
+      ...(tipo === "transferencia"
+        ? {
+            destino: {
+              rua: destino!.rua!,
+              codigo: destino!.codigo!,
+              expectedUltimaId: destino!.expectedUltimaId as string,
+            },
+          }
+        : {}),
+    });
+    res.status(201).json({ eventos });
+  } catch (error) {
+    if (error instanceof ContagemConflitoError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    if (error instanceof StoreConfigError) {
+      res.status(503).json({ error: error.message });
+      return;
+    }
+    res.status(400).json({ error: error instanceof Error ? error.message : "Erro inesperado ao registrar a movimentação." });
+  }
+});
+
 function paraQuantidade(valor: unknown): number | null {
   const numero = typeof valor === "number" ? valor : typeof valor === "string" ? Number(valor) : NaN;
-  return Number.isFinite(numero) && numero >= 0 ? numero : null;
+  return Number.isSafeInteger(numero) && numero >= 0 ? numero : null;
 }
 
 function paraTextoObrigatorio(valor: unknown): string | null {
@@ -361,13 +481,14 @@ estoqueRouter.post("/:rua/:codigo", async (req, res) => {
   const fotoDataUri = paraTextoObrigatorio(req.body?.fotoDataUri);
   const produto = paraTextoObrigatorio(req.body?.produto) ?? undefined;
   const voltagem = paraTextoObrigatorio(req.body?.voltagem) ?? undefined;
+  const expectedUltimaId = req.body?.expectedUltimaId;
 
   if (!rua || !codigo) {
     res.status(400).json({ error: "Rua e código da posição são obrigatórios." });
     return;
   }
   if (quantidade === null) {
-    res.status(400).json({ error: "Quantidade precisa ser um número maior ou igual a zero." });
+    res.status(400).json({ error: "Quantidade precisa ser um número inteiro maior ou igual a zero." });
     return;
   }
   if (!responsavel) {
@@ -378,11 +499,30 @@ estoqueRouter.post("/:rua/:codigo", async (req, res) => {
     res.status(400).json({ error: "Tire ou escolha uma foto — toda contagem precisa de uma foto própria." });
     return;
   }
+  if (expectedUltimaId !== undefined && expectedUltimaId !== null && typeof expectedUltimaId !== "string") {
+    res.status(400).json({ error: "Identificador da contagem anterior inválido." });
+    return;
+  }
+  if (expectedUltimaId === undefined) {
+    res.status(400).json({ error: "Atualize a gaveta antes de registrar a contagem." });
+    return;
+  }
 
   try {
-    const registro = await registrarContagem({ rua, codigo, quantidade, responsavel, fotoDataUri, produto, voltagem });
+    if (!(await responsavelEstaCadastrado(responsavel))) {
+      res.status(400).json({ error: "Selecione uma pessoa cadastrada no módulo Embalagem." });
+      return;
+    }
+    const registro = await registrarContagem({
+      rua, codigo, quantidade, responsavel, fotoDataUri, produto, voltagem, expectedUltimaId,
+      motivo: paraTextoObrigatorio(req.body?.motivo) ?? undefined,
+    });
     res.status(201).json({ registro });
   } catch (error) {
+    if (error instanceof ContagemConflitoError) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
     if (error instanceof CloudinaryConfigError || error instanceof StoreConfigError) {
       res.status(503).json({ error: error.message });
       return;
