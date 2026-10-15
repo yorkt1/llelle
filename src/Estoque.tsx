@@ -2944,7 +2944,7 @@ export function Estoque() {
   const codigosPorRua = useMemo(() => Object.fromEntries(ruas.map((r) => [r.rua, r.posicoes.map((p) => p.codigo)])), [ruas]);
 
   const abrirNovaGaveta = useCallback(
-    (produtoInicial?: string) => {
+    (produtoInicial?: string, ruaInicialPreferida?: string) => {
       setProdutoAberto(null);
       setMovimentacao(null);
       const codigosUltimaRua = ultimaGavetaSalva ? codigosPorRua[ultimaGavetaSalva.rua] ?? [] : [];
@@ -2956,8 +2956,9 @@ export function Estoque() {
               : [...codigosUltimaRua, ultimaGavetaSalva.codigo],
           }
         : codigosPorRua;
-      const ruaInicial =
-        ultimaGavetaSalva && RUAS_DISPONIVEIS.some((rua) => rua === ultimaGavetaSalva.rua)
+      const ruaInicial = ruaInicialPreferida && RUAS_DISPONIVEIS.some((rua) => rua === ruaInicialPreferida)
+        ? ruaInicialPreferida
+        : ultimaGavetaSalva && RUAS_DISPONIVEIS.some((rua) => rua === ultimaGavetaSalva.rua)
           ? ultimaGavetaSalva.rua
           : ruas.length === 1 && RUAS_DISPONIVEIS.some((rua) => rua === ruas[0].rua)
             ? ruas[0].rua
@@ -3237,7 +3238,14 @@ export function Estoque() {
             return (
               <section className="estoque-longarina" key={rua.rua}>
                 <div className="estoque-longarina-cabecalho">
-                  <h2>Longarina {rua.rua}</h2>
+                  <button
+                    type="button"
+                    className="estoque-longarina-titulo"
+                    onClick={() => abrirNovaGaveta(undefined, rua.rua)}
+                    aria-label={`Criar gaveta na Longarina ${rua.rua}`}
+                  >
+                    <span>Longarina {rua.rua}</span>
+                  </button>
                   <span className="field-value--muted">
                     {total} un. · {ocupadasNaRua}/{rua.posicoes.length} gavetas ocupadas
                   </span>
@@ -3266,6 +3274,13 @@ export function Estoque() {
                     </button>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  className="refresh-btn estoque-longarina-criar"
+                  onClick={() => abrirNovaGaveta(undefined, rua.rua)}
+                >
+                  + Criar gaveta
+                </button>
               </section>
             );
           })}

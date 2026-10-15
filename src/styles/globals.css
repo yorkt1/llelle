@@ -3680,10 +3680,34 @@ th.matriz-dia {
   font-size: 1rem;
 }
 
+.estoque-longarina-titulo {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.estoque-longarina-titulo:hover {
+  color: var(--brand);
+}
+
+.estoque-longarina-titulo:focus-visible {
+  border-radius: var(--radius-control);
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+}
+
 .estoque-longarina-posicoes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 8rem), 1fr));
   gap: 0.5rem;
+}
+
+.estoque-longarina-criar {
+  margin-top: 0.75rem;
 }
 
 .estoque-longarina-gaveta {

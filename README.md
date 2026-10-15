@@ -432,6 +432,8 @@ contagens e movimentações.
   todas as gavetas e a data da última
   contagem. A ação principal “Nova contagem” permite escolher uma gaveta
   existente ou criar uma nova; cadastro e configurações ficam em “Mais ações”.
+  Na visão por longarinas, o título da longarina e o botão “Criar gaveta”
+  abrem o cadastro com aquela longarina já selecionada.
   No celular, o formulário ocupa a tela, usa alvos de toque maiores e mantém
   Salvar acessível enquanto o conteúdo rola. A visão de produtos pode ser
   exportada para CSV.

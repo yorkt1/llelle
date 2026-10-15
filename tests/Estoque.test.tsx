@@ -90,6 +90,42 @@ describe("Estoque", () => {
     expect(await screen.findByRole("dialog", { name: /nova gaveta/i })).toBeInTheDocument();
   });
 
+  it("abre a criação de gaveta já direcionada à longarina pelo título ou pelo botão abaixo", async () => {
+    window.history.replaceState(null, "", "/?estoqueVisao=longarinas");
+    vi.stubGlobal("fetch", vi.fn((input: unknown) => {
+      const url = String(input);
+      if (url.endsWith("/api/estoque")) {
+        return jsonResponse({
+          ruas: [{
+            rua: "A",
+            posicoes: [{
+              rua: "A",
+              codigo: "A1",
+              produto: "Liquidificador 220V",
+              voltagem: "220V",
+              ultima: { id: "atual", quantidade: 8, responsavel: "Ana", fotoUrl: "foto", criadoEm: "2026-10-15T12:00:00.000Z" },
+            }],
+          }],
+        });
+      }
+      if (url.endsWith("/api/estoque/produtos")) return jsonResponse({ produtos: ["Liquidificador 220V"], info: {}, unidadesPorCaixa: {} });
+      if (url.endsWith("/api/estoque/configuracao-alerta")) return jsonResponse({ limiteEstoqueBaixo: 5 });
+      if (url.endsWith("/api/embalagem/colaboradores")) return jsonResponse({ colaboradores: [{ nome: "Ana" }] });
+      return jsonResponse({});
+    }));
+    const user = userEvent.setup();
+    render(<Estoque />);
+
+    await user.click(await screen.findByRole("button", { name: "Criar gaveta na Longarina A" }));
+    let dialog = await screen.findByRole("dialog", { name: /nova gaveta/i });
+    expect(within(dialog).getByLabelText(/rua/i)).toHaveValue("A");
+    await user.click(within(dialog).getByRole("button", { name: "Fechar" }));
+
+    await user.click(screen.getByRole("button", { name: "+ Criar gaveta" }));
+    dialog = await screen.findByRole("dialog", { name: /nova gaveta/i });
+    expect(within(dialog).getByLabelText(/rua/i)).toHaveValue("A");
+  });
+
   it("mostra erro de rede em português e permite tentar carregar novamente", async () => {
     const fetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
     vi.stubGlobal("fetch", fetch);
