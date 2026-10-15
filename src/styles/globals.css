@@ -3733,6 +3733,36 @@ th.matriz-dia {
   flex-shrink: 0;
 }
 
+.produto-foto-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.produto-foto-upload--sem-foto {
+  padding: 0.35rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+}
+
+.produto-foto-upload--arrastando {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, var(--bg));
+}
+
+.produto-foto-upload--enviando {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.produto-foto-upload-instrucao {
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-align: center;
+}
+
 /* Ação secundária em forma de link (ex.: "Trocar foto"). */
 .link-acao {
   background: none;

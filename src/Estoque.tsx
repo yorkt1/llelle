@@ -1583,6 +1583,7 @@ function ModalProduto({
 }) {
   const inputFotoRef = useRef<HTMLInputElement>(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [arrastandoFoto, setArrastandoFoto] = useState(false);
   const [avisoFoto, setAvisoFoto] = useState<string | null>(null);
   const [erroFoto, setErroFoto] = useState<string | null>(null);
   const [excluindoProduto, setExcluindoProduto] = useState(false);
@@ -1608,11 +1609,12 @@ function ModalProduto({
     }
   }, [grupo.gavetas.length, grupo.noCatalogo, grupo.nome, grupo.total, onExcluirProduto]);
 
-  const trocarFoto = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const arquivo = event.target.files?.[0];
-      event.target.value = ""; // permite escolher o mesmo arquivo de novo
-      if (!arquivo) return;
+  const enviarFoto = useCallback(
+    async (arquivo: File) => {
+      if (!arquivo.type.startsWith("image/")) {
+        setErroFoto("Escolha um arquivo de imagem.");
+        return;
+      }
       setEnviandoFoto(true);
       setErroFoto(null);
       setAvisoFoto(null);
@@ -1636,6 +1638,25 @@ function ModalProduto({
     [grupo.nome, onFotoAlterada],
   );
 
+  const trocarFoto = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const arquivo = event.target.files?.[0];
+      event.target.value = ""; // permite escolher o mesmo arquivo de novo
+      if (arquivo) void enviarFoto(arquivo);
+    },
+    [enviarFoto],
+  );
+
+  const soltarFoto = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setArrastandoFoto(false);
+      const arquivo = event.dataTransfer.files[0];
+      if (arquivo) void enviarFoto(arquivo);
+    },
+    [enviarFoto],
+  );
+
   const origemFoto =
     grupo.info?.fotoUrl
       ? grupo.info.fotoOrigem === "manual"
@@ -1651,10 +1672,29 @@ function ModalProduto({
             ×
           </button>
           <div className="produto-detalhe-foto-coluna">
-            <FotoProduto info={grupo.info} nome={grupo.nome} className="produto-detalhe-foto" />
+            <div
+              className={`produto-foto-upload${!grupo.info?.fotoUrl ? " produto-foto-upload--sem-foto" : ""}${arrastandoFoto ? " produto-foto-upload--arrastando" : ""}${enviandoFoto ? " produto-foto-upload--enviando" : ""}`}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setArrastandoFoto(true);
+              }}
+              onDragOver={(event) => event.preventDefault()}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setArrastandoFoto(false);
+              }}
+              onDrop={soltarFoto}
+              aria-busy={enviandoFoto}
+            >
+              <FotoProduto info={grupo.info} nome={grupo.nome} className="produto-detalhe-foto" />
+              {!grupo.info?.fotoUrl && (
+                <span className="produto-foto-upload-instrucao">
+                  {enviandoFoto ? "Enviando foto…" : arrastandoFoto ? "Solte a foto aqui" : "Arraste uma foto ou"}
+                </span>
+              )}
+            </div>
             <input ref={inputFotoRef} type="file" accept="image/*" onChange={(event) => void trocarFoto(event)} hidden />
             <button type="button" className="link-acao" onClick={() => inputFotoRef.current?.click()} disabled={enviandoFoto}>
-              {enviandoFoto ? "Enviando…" : "Trocar foto"}
+              {enviandoFoto ? "Enviando…" : grupo.info?.fotoUrl ? "Trocar foto" : "Escolher foto"}
             </button>
           </div>
           <div className="produto-detalhe-texto">
