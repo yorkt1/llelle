@@ -166,7 +166,7 @@ interface RuaResumo {
 type Modal =
   | { modo: "existente"; rua: string; codigo: string; ultima: RegistroContagem; produto: string | null; voltagem: Voltagem | null }
   // Gaveta nova: a rua é escolhida no próprio formulário (a tela é por produto, não por rua).
-  | { modo: "nova"; ruasExistentes: string[]; codigosPorRua: Record<string, string[]>; produtoInicial?: string }
+  | { modo: "nova"; ruasExistentes: string[]; codigosPorRua: Record<string, string[]>; produtoInicial?: string; ruaInicial?: string }
   | null;
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -391,7 +391,9 @@ function FormularioContagem({
   onExcluida: (rua: string, codigo: string) => void;
 }) {
   // Rua: fixa numa gaveta existente; numa nova, escolhida aqui (uma das existentes ou uma letra nova).
-  const [ruaNova, setRuaNova] = useState(() => (modal.modo === "nova" && modal.ruasExistentes.length === 1 ? modal.ruasExistentes[0] : ""));
+  const [ruaNova, setRuaNova] = useState(() =>
+    modal.modo === "nova" ? (modal.ruaInicial ?? (modal.ruasExistentes.length === 1 ? modal.ruasExistentes[0] : "")) : "",
+  );
   const ruaAtual = modal.modo === "existente" ? modal.rua : ruaNova.trim().toUpperCase();
   const codigosExistentes = modal.modo === "nova" ? modal.codigosPorRua[ruaAtual] ?? [] : [];
   const [numeroGaveta, setNumeroGaveta] = useState(() => (modal.modo === "nova" && ruaAtual ? proximoNumeroGavetaSugerido(ruaAtual, codigosExistentes) : ""));
@@ -2098,6 +2100,7 @@ export function Estoque() {
   const [carregou, setCarregou] = useState(false);
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [ultimaGavetaSalva, setUltimaGavetaSalva] = useState<{ rua: string; codigo: string } | null>(null);
 
   const [filtrosIniciais] = useState(lerFiltrosEstoqueDaUrl);
   const [mostrarModalProdutos, setMostrarModalProdutos] = useState(false);
@@ -2366,9 +2369,30 @@ export function Estoque() {
   const abrirNovaGaveta = useCallback(
     (produtoInicial?: string) => {
       setProdutoAberto(null);
-      setModal({ modo: "nova", ruasExistentes: ruas.map((r) => r.rua), codigosPorRua, produtoInicial });
+      const codigosUltimaRua = ultimaGavetaSalva ? codigosPorRua[ultimaGavetaSalva.rua] ?? [] : [];
+      const codigosAtualizados = ultimaGavetaSalva
+        ? {
+            ...codigosPorRua,
+            [ultimaGavetaSalva.rua]: codigosUltimaRua.includes(ultimaGavetaSalva.codigo)
+              ? codigosUltimaRua
+              : [...codigosUltimaRua, ultimaGavetaSalva.codigo],
+          }
+        : codigosPorRua;
+      const ruaInicial =
+        ultimaGavetaSalva && RUAS_DISPONIVEIS.some((rua) => rua === ultimaGavetaSalva.rua)
+          ? ultimaGavetaSalva.rua
+          : ruas.length === 1 && RUAS_DISPONIVEIS.some((rua) => rua === ruas[0].rua)
+            ? ruas[0].rua
+            : undefined;
+      setModal({
+        modo: "nova",
+        ruasExistentes: ruas.map((r) => r.rua),
+        codigosPorRua: codigosAtualizados,
+        produtoInicial,
+        ruaInicial,
+      });
     },
-    [ruas, codigosPorRua],
+    [ruas, codigosPorRua, ultimaGavetaSalva],
   );
 
   const abrirGaveta = useCallback((p: PosicaoResumo) => {
@@ -2377,7 +2401,8 @@ export function Estoque() {
   }, []);
 
   const aoSalvar = useCallback(
-    (_rua: string, codigo: string) => {
+    (rua: string, codigo: string) => {
+      setUltimaGavetaSalva({ rua, codigo });
       setModal(null);
       void carregar();
       mostrarToast(`Gaveta ${codigo} salva`);
