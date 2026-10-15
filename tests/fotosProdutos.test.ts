@@ -118,7 +118,7 @@ describe("fotos manuais dos produtos", () => {
           retorno: {
             status: "OK",
             numero_paginas: 1,
-            produtos: [{ produto: { id: 99, nome: "Air Fryer Koti 4L 220V", codigo: "AF-4L-220", tipoVariacao: "N" } }],
+            produtos: [{ produto: { id: 99, nome: "Air Fryer Koti 4L", codigo: "AF-4L", tipoVariacao: "N" } }],
           },
         }), { status: 200 });
       }
@@ -137,9 +137,74 @@ describe("fotos manuais dos produtos", () => {
     const info = (await listarInfoProdutos())["air fryer koti 4l"];
 
     expect(resultados).toEqual([{ nome: "Air Fryer Koti 4L", status: "importada" }]);
-    expect(info).toMatchObject({ idsTiny: ["99"], codigos: ["AF-4L-220"], fotoStatus: "ok", fotoOrigem: "tiny" });
+    expect(info).toMatchObject({ idsTiny: ["99"], codigos: ["AF-4L"], fotoStatus: "ok", fotoOrigem: "tiny" });
     expect(uploadMock).toHaveBeenCalledWith("https://tiny.test/externa.png", expect.objectContaining({ folder: "llelle-produtos" }));
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("tenta um fragmento do nome quando a pesquisa longa do Tiny não retorna registros", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/produtos.pesquisa.php")) {
+        if (url.searchParams.get("pesquisa") === "Aquecedor Elétrico Thermo Confort Koti 110V") {
+          return new Response(JSON.stringify({
+            retorno: { status: "Erro", codigo_erro: "20", erros: [{ erro: "A consulta não retornou registros" }] },
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          retorno: {
+            status: "OK",
+            numero_paginas: 1,
+            produtos: [{ produto: { id: 77, nome: "Aquecedor Elétrico Thermo Confort Koti 110V", codigo: "AQ-110", tipoVariacao: "N" } }],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        retorno: {
+          status: "OK",
+          produto: { anexos: [{ anexo: "https://tiny.test/aquecedor.jpg" }] },
+        },
+      }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { adicionarProduto, importarFotosFaltantesTiny, listarInfoProdutos } = await fresh();
+    const nome = "Aquecedor Elétrico Thermo Confort Koti 110V";
+    await adicionarProduto(nome);
+
+    const resultados = await importarFotosFaltantesTiny([nome]);
+    const info = (await listarInfoProdutos())["aquecedor elétrico thermo confort koti 110v"];
+
+    expect(resultados).toEqual([{ nome, status: "importada" }]);
+    expect(info).toMatchObject({ idsTiny: ["77"], codigos: ["AQ-110"], fotoStatus: "ok", fotoOrigem: "tiny" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("não vincula a foto de outra voltagem ao produto", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/produtos.pesquisa.php")) {
+        return new Response(JSON.stringify({
+          retorno: {
+            status: "OK",
+            numero_paginas: 1,
+            produtos: [{ produto: { id: 77, nome: "Aquecedor Elétrico Thermo Confort Koti 220V", codigo: "AQ-220", tipoVariacao: "N" } }],
+          },
+        }), { status: 200 });
+      }
+      throw new Error("Não deveria abrir ou salvar o produto de outra voltagem.");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { adicionarProduto, importarFotosFaltantesTiny, listarInfoProdutos } = await fresh();
+    const nome = "Aquecedor Elétrico Thermo Confort Koti 110V";
+    await adicionarProduto(nome);
+
+    const resultados = await importarFotosFaltantesTiny([nome]);
+    const info = (await listarInfoProdutos())["aquecedor elétrico thermo confort koti 110v"];
+
+    expect(resultados).toEqual([{ nome, status: "sem-vinculo", mensagem: "Não encontrei um produto com nome correspondente no Tiny." }]);
+    expect(info).toMatchObject({ idsTiny: [], fotoStatus: "nao-encontrado" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(uploadMock).not.toHaveBeenCalled();
   });
 
   it("não sobrescreve uma foto manual ao buscar imagens faltantes", async () => {

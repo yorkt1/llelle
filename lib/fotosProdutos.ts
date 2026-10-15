@@ -1,9 +1,10 @@
 import * as store from "./store";
 import { CloudinaryConfigError, listarProdutos, salvarImagemRemota } from "./estoque";
-import { buscarProdutosTiny, nomeSemVoltagem } from "./catalogoTiny";
+import { buscarProdutosTiny, nomeSemVoltagem, type ProdutoTiny } from "./catalogoTiny";
 import { tinyGet } from "./tinyClient";
 import { OlistConfigError } from "./olist";
 import { StoreConfigError } from "./store";
+import { nomeProdutoComVoltagemUnica } from "./nomeProduto";
 
 /**
  * Fotos manuais do catálogo do Estoque, guardadas no Cloudinary.
@@ -145,13 +146,49 @@ export interface ResultadoImportacaoFoto {
 }
 
 function normalizarNomeParaBusca(nome: string): string {
-  return nomeSemVoltagem(nome)
+  const canonico = nomeProdutoComVoltagemUnica(nome)?.nome ?? nome;
+  return canonico
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLocaleLowerCase("pt-BR")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
-    .replace(/\s+/g, " ");
+    .replace(/\s+/g, " ")
+    .replace(/\b(\w+)(?:\s+\1)+\b/g, "$1");
+}
+
+function termosBuscaTiny(nome: string): string[] {
+  const termos = [nome.trim()];
+  const palavras = nomeSemVoltagem(nome)
+    .replace(/\bou\b/gi, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (palavras.length < 5) return [...new Set(termos)];
+
+  const inicioFinal = palavras.length - 4;
+  const inicioMeio = Math.max(0, Math.floor((palavras.length - 4) / 2));
+  for (const inicio of [inicioFinal, inicioMeio, 0]) {
+    const termo = palavras.slice(inicio, inicio + 4).join(" ");
+    if (termo) termos.push(termo);
+  }
+  return [...new Set(termos)];
+}
+
+async function encontrarProdutosTinyPorNome(nome: string): Promise<ProdutoTiny[]> {
+  for (const termo of termosBuscaTiny(nome)) {
+    let encontrados: ProdutoTiny[];
+    try {
+      encontrados = await buscarProdutosTiny(termo, 2);
+    } catch (error) {
+      if (error instanceof Error && /consulta não retornou registros/i.test(error.message)) continue;
+      throw error;
+    }
+    const correspondencias = encontrados.filter(
+      (produto) => normalizarNomeParaBusca(produto.sugestao) === normalizarNomeParaBusca(nome),
+    );
+    if (correspondencias.length > 0) return correspondencias;
+  }
+  return [];
 }
 
 function urlImagensProduto(produto: NonNullable<ProdutoDetalheTiny["retorno"]>["produto"]): string[] {
@@ -214,9 +251,7 @@ export async function importarFotosFaltantesTiny(nomes: string[]): Promise<Resul
     let codigos = atual?.codigos ?? [];
     try {
       if (idsTiny.length === 0) {
-        const correspondencias = (await buscarProdutosTiny(nome, 2)).filter(
-          (produto) => normalizarNomeParaBusca(produto.sugestao) === normalizarNomeParaBusca(nome),
-        );
+        const correspondencias = await encontrarProdutosTinyPorNome(nome);
         idsTiny = [...new Set(correspondencias.flatMap((produto) => produto.idsTiny))];
         codigos = [...new Set(correspondencias.flatMap((produto) => produto.codigos))];
         if (idsTiny.length === 0) {

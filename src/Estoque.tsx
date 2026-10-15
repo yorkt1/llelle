@@ -172,6 +172,7 @@ type Modal =
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const POLL_MS = 30_000;
 const RESPONSAVEL_STORAGE_KEY = "estoque:ultimoResponsavel";
+const RUAS_DISPONIVEIS = ["A", "B", "C", "D", "E", "F", "G", "H"] as const;
 const LADO_MAXIMO_FOTO = 1600; // px — reduz fotos de celular (3-8MB) pra algo leve de enviar/guardar.
 const TOAST_MS = 3_000;
 
@@ -394,12 +395,16 @@ function FormularioContagem({
   const ruaAtual = modal.modo === "existente" ? modal.rua : ruaNova.trim().toUpperCase();
   const codigosExistentes = modal.modo === "nova" ? modal.codigosPorRua[ruaAtual] ?? [] : [];
   const [numeroGaveta, setNumeroGaveta] = useState(() => (modal.modo === "nova" && ruaAtual ? proximoNumeroGavetaSugerido(ruaAtual, codigosExistentes) : ""));
-  const [quantidade, setQuantidade] = useState(modal.modo === "existente" ? String(modal.ultima.quantidade) : "");
+  const [quantidade, setQuantidade] = useState(() =>
+    modal.modo === "existente" ? String(modal.ultima.quantidade) : modal.produtoInicial ? "" : "0",
+  );
   const [responsavel, setResponsavel] = useState(() => (modal.modo === "existente" ? modal.ultima.responsavel : lerUltimoResponsavel()));
   // Posição nova, ou existente que foi registrada vazia (sem produto): escolhe o produto aqui — ou
   // "Posição vazia", que registra 0 un. sem produto nem voltagem.
   const definirProduto = modal.modo === "nova" || !modal.produto;
-  const [produto, setProduto] = useState(modal.modo === "existente" ? (modal.produto ? "" : PRODUTO_VAZIA) : (modal.produtoInicial ?? ""));
+  const [produto, setProduto] = useState(() =>
+    modal.modo === "existente" ? (modal.produto ? "" : PRODUTO_VAZIA) : (modal.produtoInicial ?? PRODUTO_VAZIA),
+  );
   const [voltagemEscolhida, setVoltagemEscolhida] = useState("");
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
@@ -441,7 +446,14 @@ function FormularioContagem({
    * em branco não começa gritando "obrigatório" em tudo de uma vez. */
   const mostrar = useCallback((campo: string, erroCampo: string | null) => (tentouSalvar || tocados.has(campo) ? erroCampo : null), [tentouSalvar, tocados]);
 
-  const erroRua = modal.modo === "nova" ? (!ruaAtual ? "Informe a rua (letra)." : !/^[A-Z]+$/.test(ruaAtual) ? "Rua é só a letra (ex.: F)." : null) : null;
+  const erroRua =
+    modal.modo === "nova"
+      ? !ruaAtual
+        ? "Selecione a rua."
+        : !RUAS_DISPONIVEIS.some((rua) => rua === ruaAtual)
+          ? "Selecione uma rua entre A e H."
+          : null
+      : null;
   const erroCodigoFormato = modal.modo === "nova" ? validarNumeroGaveta(numeroGaveta) : null;
   const erroCodigoDuplicado =
     modal.modo === "nova" && !erroCodigoFormato && codigosExistentes.includes(`${ruaAtual}${numeroGaveta.trim()}`) ? "Essa gaveta já existe nessa rua." : null;
@@ -621,24 +633,26 @@ function FormularioContagem({
                 <span className="field-label">
                   Rua <span className="field-obrigatorio">*</span>
                 </span>
-                <input
+                <select
                   className={`field-input${mostrar("codigo", erroRua) ? " field-input--erro" : ""}`}
-                  list="estoque-ruas-existentes"
                   value={ruaNova}
                   onChange={(event) => {
-                    const rua = event.target.value.toUpperCase().replace(/[^A-Z]/g, "");
+                    const rua = event.target.value;
                     setRuaNova(rua);
-                    // Enquanto a pessoa não mexeu no código, ele acompanha a rua (F → próxima gaveta livre da F).
-                    if (!tocados.has("codigo") && rua) setNumeroGaveta(proximoNumeroGavetaSugerido(rua, modal.codigosPorRua[rua] ?? []));
+                    if (!tocados.has("codigo") && rua) {
+                      setNumeroGaveta(proximoNumeroGavetaSugerido(rua, modal.codigosPorRua[rua] ?? []));
+                    }
                   }}
-                  placeholder="Ex.: F"
+                  onBlur={() => tocar("codigo")}
                   autoFocus
-                />
-                <datalist id="estoque-ruas-existentes">
-                  {modal.ruasExistentes.map((r) => (
-                    <option key={r} value={r} />
+                >
+                  <option value="">Selecione a rua…</option>
+                  {RUAS_DISPONIVEIS.map((rua) => (
+                    <option key={rua} value={rua}>
+                      Rua {rua}
+                    </option>
                   ))}
-                </datalist>
+                </select>
               </label>
               <label className="field">
                 <span className="field-label">

@@ -12,7 +12,7 @@ import { tinyGet } from "./tinyClient";
  */
 
 const MAX_PAGINAS = 10;
-const SEM_REGISTROS_ERROR_CODE = 32;
+const SEM_REGISTROS_ERROR_CODES = new Set([20, 32]);
 
 interface ProdutosPesquisaResponse {
   retorno: {
@@ -105,7 +105,7 @@ export async function buscarProdutosTiny(termo: string, maxPaginas = MAX_PAGINAS
   do {
     const { retorno } = await tinyGet<ProdutosPesquisaResponse>("produtos.pesquisa.php", { pesquisa, situacao: "A", pagina: String(pagina) });
     if (retorno.status !== "OK") {
-      if (Number(retorno.codigo_erro) === SEM_REGISTROS_ERROR_CODE) break;
+      if (SEM_REGISTROS_ERROR_CODES.has(Number(retorno.codigo_erro))) break;
       throw new Error(`Tiny recusou a busca: ${retorno.erros?.map((e) => e.erro).join("; ") || "erro desconhecido"}`);
     }
     for (const { produto } of retorno.produtos ?? []) {
