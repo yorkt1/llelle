@@ -409,6 +409,7 @@ function FormularioContagem({
   );
   const [voltagemEscolhida, setVoltagemEscolhida] = useState("");
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+  const [arrastandoFoto, setArrastandoFoto] = useState(false);
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [historico, setHistorico] = useState<RegistroContagem[] | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -485,15 +486,37 @@ function FormularioContagem({
     setQuantidade((atual) => String(Math.max(0, (Number(atual) || 0) + delta)));
   }, []);
 
-  const aoEscolherFoto = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const arquivo = event.target.files?.[0];
-    if (!arquivo) return;
+  const carregarArquivoFoto = useCallback(async (arquivo: File) => {
+    if (!arquivo.type.startsWith("image/")) {
+      setErro("Escolha um arquivo de imagem.");
+      return;
+    }
+    setErro(null);
     try {
       setFotoPreview(await comprimirFoto(arquivo));
     } catch {
       setErro("Não consegui processar essa foto — tenta tirar de novo.");
     }
   }, []);
+
+  const aoEscolherFoto = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const arquivo = event.target.files?.[0];
+      event.target.value = "";
+      if (arquivo) void carregarArquivoFoto(arquivo);
+    },
+    [carregarArquivoFoto],
+  );
+
+  const aoSoltarFoto = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setArrastandoFoto(false);
+      const arquivo = event.dataTransfer.files[0];
+      if (arquivo) void carregarArquivoFoto(arquivo);
+    },
+    [carregarArquivoFoto],
+  );
 
   const carregarHistorico = useCallback(async () => {
     if (modal.modo !== "existente") return;
@@ -797,16 +820,30 @@ function FormularioContagem({
               Foto desta contagem <span className="field-obrigatorio">*</span>
             </span>
             <span className="estoque-codigo-destaque">Gaveta {codigoEmDestaque}</span>
-            {fotoPreview ? (
-              <img className="estoque-foto-preview" src={fotoPreview} alt="Foto tirada agora" />
-            ) : fotoAnteriorUrl ? (
-              <>
-                <img className="estoque-foto-preview" src={fotoAnteriorUrl} alt="Foto da última contagem" />
-                <span className="field-value--muted">Essa é a foto da última contagem — ainda falta tirar uma nova.</span>
-              </>
-            ) : (
-              <div className="estoque-foto-placeholder">Sem foto ainda</div>
-            )}
+            <div
+              className={`estoque-foto-soltar${arrastandoFoto ? " estoque-foto-soltar--arrastando" : ""}`}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setArrastandoFoto(true);
+              }}
+              onDragOver={(event) => event.preventDefault()}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setArrastandoFoto(false);
+              }}
+              onDrop={aoSoltarFoto}
+              aria-label="Solte uma imagem aqui para anexar à contagem"
+            >
+              {fotoPreview ? (
+                <img className="estoque-foto-preview" src={fotoPreview} alt="Foto selecionada para esta contagem" />
+              ) : fotoAnteriorUrl ? (
+                <>
+                  <img className="estoque-foto-preview" src={fotoAnteriorUrl} alt="Foto da última contagem" />
+                  <span className="field-value--muted">Essa é a foto da última contagem — ainda falta tirar uma nova.</span>
+                </>
+              ) : (
+                <div className="estoque-foto-placeholder">{arrastandoFoto ? "Solte a imagem aqui" : "Arraste uma foto aqui"}</div>
+              )}
+            </div>
             <input ref={inputFotoRef} type="file" accept="image/*" capture="environment" onChange={aoEscolherFoto} hidden />
             <button
               ref={fotoBotaoRef}

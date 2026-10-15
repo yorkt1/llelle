@@ -2289,11 +2289,23 @@ body:has(.settings-overlay) .app-bottom-nav {
   background: var(--bg);
 }
 
+.estoque-foto-soltar {
+  padding: 0.4rem;
+  border: 1px dashed transparent;
+  border-radius: 0.65rem;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.estoque-foto-soltar--arrastando {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, var(--bg));
+}
+
 .estoque-foto-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 6rem;
+  min-height: 7.5rem;
   border: 1px dashed var(--line);
   border-radius: 0.5rem;
   color: var(--muted);
